@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.util.Map;
 
@@ -47,7 +46,6 @@ public class AuthController {
             ObjectProvider<VerificationEmailSender> verificationEmailSenderProvider,
             @Value("${choir.auth.registration.enabled:false}") boolean registrationEnabled,
             @Value("${choir.auth.verification-url-base:}") String verificationUrlBase) {
-
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.directorRepository = directorRepository;
@@ -60,7 +58,8 @@ public class AuthController {
 
     @GetMapping("/csrf")
     public Mono<Map<String, String>> csrf(ServerWebExchange exchange) {
-        Mono<CsrfToken> csrfToken = exchange.getAttribute(CsrfToken.class.getName());
+        Mono<CsrfToken> csrfToken =
+                exchange.getAttribute(CsrfToken.class.getName());
 
         if (csrfToken == null) {
             return Mono.error(new IllegalStateException(
@@ -73,7 +72,6 @@ public class AuthController {
     @PostMapping("/register")
     public Mono<ResponseEntity<AuthApiResponse>> register(
             @Valid @RequestBody RegisterRequest request) {
-
         VerificationEmailSender sender =
                 verificationEmailSenderProvider.getIfAvailable();
 
@@ -81,20 +79,17 @@ public class AuthController {
                 || sender == null
                 || verificationUrlBase == null
                 || verificationUrlBase.isBlank()) {
-
             return Mono.just(ResponseEntity
                     .status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body((AuthApiResponse)
                             new ErrorResponse("registration_unavailable")));
         }
 
-        return Mono.fromRunnable(() ->
-                        registrationService.register(
-                                request.displayName(),
-                                request.email(),
-                                request.password(),
-                                verificationUrlBase))
-                .subscribeOn(Schedulers.boundedElastic())
+        return registrationService.register(
+                        request.displayName(),
+                        request.email(),
+                        request.password(),
+                        verificationUrlBase)
                 .thenReturn(ResponseEntity
                         .status(HttpStatus.ACCEPTED)
                         .body((AuthApiResponse) new MessageResponse(
@@ -104,10 +99,7 @@ public class AuthController {
     @PostMapping("/verify-email")
     public Mono<ResponseEntity<AuthApiResponse>> verifyEmail(
             @Valid @RequestBody VerifyEmailRequest request) {
-
-        return Mono.fromCallable(() ->
-                        verificationService.verifyToken(request.token()))
-                .subscribeOn(Schedulers.boundedElastic())
+        return verificationService.verifyToken(request.token())
                 .map(verified -> verified
                         ? verifiedResponse()
                         : invalidVerificationTokenResponse());
@@ -117,21 +109,17 @@ public class AuthController {
     public Mono<ResponseEntity<AuthApiResponse>> login(
             @Valid @RequestBody LoginRequest request,
             ServerWebExchange exchange) {
-
         return authenticationManager.authenticate(
                         new org.springframework.security.authentication
                                 .UsernamePasswordAuthenticationToken(
-                                request.email(),
-                                request.password()))
+                                request.email(), request.password()))
                 .flatMap(authentication ->
                         findDirector(request.email())
                                 .flatMap(director ->
                                         exchange.getSession()
                                                 .flatMap(session -> {
                                                     session.changeSessionId();
-
-                                                    return securityContextRepository
-                                                            .save(
+                                                    return securityContextRepository.save(
                                                                     exchange,
                                                                     new org.springframework.security
                                                                             .core.context
@@ -140,15 +128,13 @@ public class AuthController {
                                                             .thenReturn(okAuthResponse(director));
                                                 })))
                 .onErrorResume(
-                        org.springframework.security.core
-                                .AuthenticationException.class,
+                        org.springframework.security.core.AuthenticationException.class,
                         exception -> Mono.just(unauthorizedResponse()));
     }
 
     @GetMapping("/me")
     public Mono<ResponseEntity<AuthApiResponse>> me(
             Authentication authentication) {
-
         if (authentication == null || !authentication.isAuthenticated()) {
             return Mono.just(unauthorizedResponse());
         }
@@ -158,21 +144,17 @@ public class AuthController {
     }
 
     private Mono<Director> findDirector(String email) {
-        return Mono.fromCallable(() ->
-                        directorRepository.findByEmailIgnoreCase(email)
-                                .orElseThrow(() ->
-                                        new IllegalStateException("Director not found")))
-                .subscribeOn(Schedulers.boundedElastic());
+        return directorRepository.findByEmailIgnoreCase(email)
+                .switchIfEmpty(Mono.error(
+                        new IllegalStateException("Director not found")));
     }
 
     private ResponseEntity<AuthApiResponse> okAuthResponse(Director director) {
-        return ResponseEntity.ok(
-                (AuthApiResponse) AuthResponse.from(director));
+        return ResponseEntity.ok((AuthApiResponse) AuthResponse.from(director));
     }
 
     private ResponseEntity<AuthApiResponse> unauthorizedResponse() {
-        return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ErrorResponse("invalid_credentials"));
     }
 
@@ -181,8 +163,7 @@ public class AuthController {
     }
 
     private ResponseEntity<AuthApiResponse> invalidVerificationTokenResponse() {
-        return ResponseEntity
-                .badRequest()
+        return ResponseEntity.badRequest()
                 .body(new ErrorResponse("invalid_or_expired_token"));
     }
 
@@ -202,15 +183,10 @@ public class AuthController {
     }
 
     public record AuthResponse(
-            Long id,
-            String displayName,
-            String email) implements AuthApiResponse {
-
+            Long id, String displayName, String email) implements AuthApiResponse {
         static AuthResponse from(Director director) {
             return new AuthResponse(
-                    director.getId(),
-                    director.getDisplayName(),
-                    director.getEmail());
+                    director.getId(), director.getDisplayName(), director.getEmail());
         }
     }
 

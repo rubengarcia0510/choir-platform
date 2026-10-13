@@ -6,6 +6,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +25,6 @@ public class DirectorRegistrationService {
             DirectorEmailVerificationService verificationService,
             PasswordEncoder passwordEncoder,
             ObjectProvider<VerificationEmailSender> senderProvider) {
-
         this.directorRepository = directorRepository;
         this.verificationService = verificationService;
         this.passwordEncoder = passwordEncoder;
@@ -32,54 +32,49 @@ public class DirectorRegistrationService {
     }
 
     @Transactional
-    public void register(
+    public Mono<Void> register(
             String displayName,
             String email,
             String password,
             String verificationUrlBase) {
-
         VerificationEmailSender sender = senderProvider.getIfAvailable();
 
         if (sender == null) {
-            throw new IllegalStateException(
-                    "No hay un proveedor de correo configurado");
+            return Mono.error(new IllegalStateException(
+                    "No hay un proveedor de correo configurado"));
         }
 
         String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 
-        if (directorRepository.findByEmailIgnoreCase(normalizedEmail).isPresent()) {
-            return;
-        }
+        return directorRepository.findByEmailIgnoreCase(normalizedEmail)
+                .map(existing -> false)
+                .defaultIfEmpty(true)
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> {
+                    Director director = Director.create(
+                            displayName.trim(), normalizedEmail);
+                    director.setPasswordHash(passwordEncoder.encode(password));
+                    director.setEmailVerified(false);
 
-        Director director = Director.create(
-                displayName.trim(),
-                normalizedEmail);
-
-        director.setPasswordHash(passwordEncoder.encode(password));
-        director.setEmailVerified(false);
-
-        directorRepository.saveAndFlush(director);
-
-        DirectorEmailVerificationService.IssuedToken issuedToken =
-                verificationService.issueToken(director);
-
-        String verificationUrl = buildVerificationUrl(
-                verificationUrlBase,
-                issuedToken.token());
-
-        sender.sendVerificationEmail(
-                normalizedEmail,
-                director.getDisplayName(),
-                verificationUrl,
-                issuedToken.expiresAt());
+                    return directorRepository.save(director)
+                            .flatMap(saved -> verificationService.issueToken(saved)
+                                    .flatMap(issued -> {
+                                        String verificationUrl = buildVerificationUrl(
+                                                verificationUrlBase, issued.token());
+                                        return Mono.fromRunnable(() ->
+                                                sender.sendVerificationEmail(
+                                                        normalizedEmail,
+                                                        saved.getDisplayName(),
+                                                        verificationUrl,
+                                                        issued.expiresAt()));
+                                    }));
+                })
+                .then();
     }
 
     private String buildVerificationUrl(String baseUrl, String token) {
         String separator = baseUrl.contains("?") ? "&" : "?";
-
-        return baseUrl
-                + separator
-                + "token="
+        return baseUrl + separator + "token="
                 + URLEncoder.encode(token, StandardCharsets.UTF_8);
     }
 }

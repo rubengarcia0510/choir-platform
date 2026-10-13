@@ -1,26 +1,30 @@
 package com.rubengarcia.choir.repository;
 
 import com.rubengarcia.choir.domain.DirectorEmailVerificationToken;
-import jakarta.persistence.LockModeType;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.r2dbc.repository.Modifying;
+import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-import java.util.Optional;
+import java.time.LocalDateTime;
 
 public interface DirectorEmailVerificationTokenRepository
-        extends JpaRepository<DirectorEmailVerificationToken, Long> {
+        extends ReactiveCrudRepository<DirectorEmailVerificationToken, Long> {
 
-    void deleteAllByDirector_Id(Long directorId);
+    Mono<Void> deleteAllByDirectorId(Long directorId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Mono<DirectorEmailVerificationToken> findByTokenHash(String tokenHash);
+
+    @Modifying
     @Query("""
-            select token
-            from DirectorEmailVerificationToken token
-            join fetch token.director
-            where token.tokenHash = :tokenHash
+            UPDATE director_email_verification_tokens
+            SET consumed_at = :now
+            WHERE id = :id
+              AND consumed_at IS NULL
+              AND expires_at > :now
             """)
-    Optional<DirectorEmailVerificationToken> findByTokenHashForUpdate(
-            @Param("tokenHash") String tokenHash);
+    Mono<Integer> consumeIfValid(
+            @Param("id") Long id,
+            @Param("now") LocalDateTime now);
 }

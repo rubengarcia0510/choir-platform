@@ -1,59 +1,114 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "formation_positions")
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
+@Table("formation_positions")
 public class FormationPosition {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "formation_version_id", nullable = false)
-private FormationVersion formationVersion;
+    @Id
+    private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY)
-@JoinColumn(name = "singer_id")
-private Singer singer;
+    @Column("formation_version_id")
+    private Long formationVersionId;
 
-@Column(name = "singer_name_snapshot", nullable = false, length = 160)
-private String singerNameSnapshot;
+    @Column("singer_id")
+    private Long singerId;
 
-@Column(name = "voice_part_snapshot", length = 40)
-private String voicePartSnapshot;
+    @Column("singer_name_snapshot")
+    private String singerNameSnapshot;
 
-@Column(name = "position_label", length = 80)
-private String positionLabel;
+    @Column("voice_part_snapshot")
+    private String voicePartSnapshot;
 
-@Column(name = "x_coordinate", nullable = false, precision = 10, scale = 3)
-private BigDecimal xCoordinate;
+    @Column("position_label")
+    private String positionLabel;
 
-@Column(name = "y_coordinate", nullable = false, precision = 10, scale = 3)
-private BigDecimal yCoordinate;
+    @Column("x_coordinate")
+    private BigDecimal xCoordinate;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    @Column("y_coordinate")
+    private BigDecimal yCoordinate;
 
-protected FormationPosition() {}
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-public Long getId() { return id; }
-public FormationVersion getFormationVersion() { return formationVersion; }
-public void setFormationVersion(FormationVersion value) { this.formationVersion = value; }
-public Singer getSinger() { return singer; }
-public void setSinger(Singer singer) { this.singer = singer; }
-public String getSingerNameSnapshot() { return singerNameSnapshot; }
-public void setSingerNameSnapshot(String value) { this.singerNameSnapshot = value; }
-public String getVoicePartSnapshot() { return voicePartSnapshot; }
-public void setVoicePartSnapshot(String value) { this.voicePartSnapshot = value; }
-public String getPositionLabel() { return positionLabel; }
-public void setPositionLabel(String value) { this.positionLabel = value; }
-public BigDecimal getXCoordinate() { return xCoordinate; }
-public void setXCoordinate(BigDecimal value) { this.xCoordinate = value; }
-public BigDecimal getYCoordinate() { return yCoordinate; }
-public void setYCoordinate(BigDecimal value) { this.yCoordinate = value; }
-public LocalDateTime getCreatedAt() { return createdAt; }
+    public FormationPosition() {
+    }
 
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getFormationVersionId() {
+        return formationVersionId;
+    }
+
+    public void setFormationVersionId(Long formationVersionId) {
+        this.formationVersionId = formationVersionId;
+    }
+
+    public Long getSingerId() {
+        return singerId;
+    }
+
+    public void setSingerId(Long singerId) {
+        this.singerId = singerId;
+    }
+
+    public String getSingerNameSnapshot() {
+        return singerNameSnapshot;
+    }
+
+    public void setSingerNameSnapshot(String singerNameSnapshot) {
+        this.singerNameSnapshot = singerNameSnapshot;
+    }
+
+    public String getVoicePartSnapshot() {
+        return voicePartSnapshot;
+    }
+
+    public void setVoicePartSnapshot(String voicePartSnapshot) {
+        this.voicePartSnapshot = voicePartSnapshot;
+    }
+
+    public String getPositionLabel() {
+        return positionLabel;
+    }
+
+    public void setPositionLabel(String positionLabel) {
+        this.positionLabel = positionLabel;
+    }
+
+    public BigDecimal getXCoordinate() {
+        return xCoordinate;
+    }
+
+    public void setXCoordinate(BigDecimal xCoordinate) {
+        this.xCoordinate = xCoordinate;
+    }
+
+    public BigDecimal getYCoordinate() {
+        return yCoordinate;
+    }
+
+    public void setYCoordinate(BigDecimal yCoordinate) {
+        this.yCoordinate = yCoordinate;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }

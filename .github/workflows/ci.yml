@@ -45,6 +45,7 @@ jobs:
     env:
       SPRING_PROFILES_ACTIVE: prod
       DATABASE_URL: jdbc:postgresql://localhost:5432/choir
+      R2DBC_URL: r2dbc:postgresql://localhost:5432/choir
       DATABASE_USERNAME: choir
       DATABASE_PASSWORD: choir
     steps:

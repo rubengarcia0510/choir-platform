@@ -1,10 +1,11 @@
 package com.rubengarcia.choir.repository;
 
 import com.rubengarcia.choir.domain.Director;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 
-import java.util.Optional;
+public interface DirectorRepository
+        extends ReactiveCrudRepository<Director, Long> {
 
-public interface DirectorRepository extends JpaRepository<Director, Long> {
-    Optional<Director> findByEmailIgnoreCase(String email);
+    Mono<Director> findByEmailIgnoreCase(String email);
 }

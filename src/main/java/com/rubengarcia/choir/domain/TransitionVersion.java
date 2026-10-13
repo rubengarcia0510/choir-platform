@@ -1,65 +1,111 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(
-name = "transition_versions",
-uniqueConstraints = @UniqueConstraint(
-name = "uq_transition_version",
-columnNames = {"transition_id", "version_number"}
-)
-)
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
+@Table("transition_versions")
 public class TransitionVersion {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "transition_id", nullable = false)
-private Transition transition;
+    @Id
+    private Long id;
 
-@Column(name = "version_number", nullable = false)
-private int versionNumber;
+    @Column("transition_id")
+    private Long transitionId;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "from_formation_version_id", nullable = false)
-private FormationVersion fromFormationVersion;
+    @Column("version_number")
+    private int versionNumber;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "to_formation_version_id", nullable = false)
-private FormationVersion toFormationVersion;
+    @Column("from_formation_version_id")
+    private Long fromFormationVersionId;
 
-@Column(nullable = false, length = 20)
-private String status = "DRAFT";
+    @Column("to_formation_version_id")
+    private Long toFormationVersionId;
 
-@Column(length = 4000)
-private String instructions;
+    private String status = "DRAFT";
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    private String instructions;
 
-@Column(name = "published_at")
-private LocalDateTime publishedAt;
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-protected TransitionVersion() {}
+    @Column("published_at")
+    private LocalDateTime publishedAt;
 
-public Long getId() { return id; }
-public Transition getTransition() { return transition; }
-public void setTransition(Transition value) { this.transition = value; }
-public int getVersionNumber() { return versionNumber; }
-public void setVersionNumber(int value) { this.versionNumber = value; }
-public FormationVersion getFromFormationVersion() { return fromFormationVersion; }
-public void setFromFormationVersion(FormationVersion value) { this.fromFormationVersion = value; }
-public FormationVersion getToFormationVersion() { return toFormationVersion; }
-public void setToFormationVersion(FormationVersion value) { this.toFormationVersion = value; }
-public String getStatus() { return status; }
-public void setStatus(String value) { this.status = value; }
-public String getInstructions() { return instructions; }
-public void setInstructions(String value) { this.instructions = value; }
-public LocalDateTime getCreatedAt() { return createdAt; }
-public LocalDateTime getPublishedAt() { return publishedAt; }
-public void setPublishedAt(LocalDateTime value) { this.publishedAt = value; }
+    public TransitionVersion() {
+    }
 
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getTransitionId() {
+        return transitionId;
+    }
+
+    public void setTransitionId(Long transitionId) {
+        this.transitionId = transitionId;
+    }
+
+    public int getVersionNumber() {
+        return versionNumber;
+    }
+
+    public void setVersionNumber(int versionNumber) {
+        this.versionNumber = versionNumber;
+    }
+
+    public Long getFromFormationVersionId() {
+        return fromFormationVersionId;
+    }
+
+    public void setFromFormationVersionId(Long fromFormationVersionId) {
+        this.fromFormationVersionId = fromFormationVersionId;
+    }
+
+    public Long getToFormationVersionId() {
+        return toFormationVersionId;
+    }
+
+    public void setToFormationVersionId(Long toFormationVersionId) {
+        this.toFormationVersionId = toFormationVersionId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getInstructions() {
+        return instructions;
+    }
+
+    public void setInstructions(String instructions) {
+        this.instructions = instructions;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+    }
 }
