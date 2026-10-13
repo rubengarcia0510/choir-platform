@@ -25,13 +25,26 @@ ChoirDomainMigrationTests(JdbcTemplate jdbcTemplate) {
 
 @Test
 void migrationCreatesAllDomainTables() {
-    List<String> tables = jdbcTemplate.queryForList("""
-            SELECT TABLE_NAME
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = 'PUBLIC'
-            """, String.class).stream()
-            .map(String::toLowerCase)
-            .toList();
+    List<String> tables = jdbcTemplate.execute(
+            (org.springframework.jdbc.core.ConnectionCallback<List<String>>) connection -> {
+                List<String> names = new java.util.ArrayList<>();
+
+                try (java.sql.ResultSet resultSet =
+                             connection.getMetaData().getTables(
+                                     connection.getCatalog(),
+                                     null,
+                                     "%",
+                                     new String[]{"TABLE"})) {
+                    while (resultSet.next()) {
+                        String schema = resultSet.getString("TABLE_SCHEM");
+                        if (schema != null && schema.equalsIgnoreCase("public")) {
+                            names.add(resultSet.getString("TABLE_NAME")
+                                    .toLowerCase(java.util.Locale.ROOT));
+                        }
+                    }
+                }
+                return names;
+            });
 
     assertThat(tables).contains(
             "directors",
