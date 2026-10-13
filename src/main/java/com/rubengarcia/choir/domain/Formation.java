@@ -1,37 +1,33 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "formations")
+@Table("formations")
 public class Formation {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "choir_id", nullable = false)
-private Choir choir;
+    @Column("choir_id")
+    private Long choirId;
 
-@Column(nullable = false, length = 160)
-private String name;
+    private String name;
+    private String description;
 
-@Column(length = 1000)
-private String description;
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    protected Formation() {}
 
-protected Formation() {}
-
-public Long getId() { return id; }
-public Choir getChoir() { return choir; }
-public void setChoir(Choir choir) { this.choir = choir; }
-public String getName() { return name; }
-public void setName(String name) { this.name = name; }
-public String getDescription() { return description; }
-public void setDescription(String description) { this.description = description; }
-public LocalDateTime getCreatedAt() { return createdAt; }
-
+    public Long getId() { return id; }
+    public Long getChoirId() { return choirId; }
+    public void setChoirId(Long choirId) { this.choirId = choirId; }
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
 }

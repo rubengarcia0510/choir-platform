@@ -1,54 +1,93 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "absences")
+@Table("absences")
 public class Absence {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "singer_id", nullable = false)
-private Singer singer;
+    @Id
+    private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY)
-@JoinColumn(name = "concert_id")
-private Concert concert;
+    @Column("singer_id")
+    private Long singerId;
 
-@Column(name = "start_date", nullable = false)
-private LocalDate startDate;
+    @Column("concert_id")
+    private Long concertId;
 
-@Column(name = "end_date", nullable = false)
-private LocalDate endDate;
+    @Column("start_date")
+    private LocalDate startDate;
 
-@Column(length = 500)
-private String reason;
+    @Column("end_date")
+    private LocalDate endDate;
 
-@Column(nullable = false, length = 20)
-private String status = "CONFIRMED";
+    private String reason;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    private String status;
 
-protected Absence() {}
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-public Long getId() { return id; }
-public Singer getSinger() { return singer; }
-public void setSinger(Singer singer) { this.singer = singer; }
-public Concert getConcert() { return concert; }
-public void setConcert(Concert concert) { this.concert = concert; }
-public LocalDate getStartDate() { return startDate; }
-public void setStartDate(LocalDate value) { this.startDate = value; }
-public LocalDate getEndDate() { return endDate; }
-public void setEndDate(LocalDate value) { this.endDate = value; }
-public String getReason() { return reason; }
-public void setReason(String value) { this.reason = value; }
-public String getStatus() { return status; }
-public void setStatus(String value) { this.status = value; }
-public LocalDateTime getCreatedAt() { return createdAt; }
+    protected Absence() {
+    }
 
+    public Long getId() {
+        return id;
+    }
+
+    public Long getSingerId() {
+        return singerId;
+    }
+
+    public void setSingerId(Long singerId) {
+        this.singerId = singerId;
+    }
+
+    public Long getConcertId() {
+        return concertId;
+    }
+
+    public void setConcertId(Long concertId) {
+        this.concertId = concertId;
+    }
+
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
+
+    public LocalDate getEndDate() {
+        return endDate;
+    }
+
+    public void setEndDate(LocalDate endDate) {
+        this.endDate = endDate;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }

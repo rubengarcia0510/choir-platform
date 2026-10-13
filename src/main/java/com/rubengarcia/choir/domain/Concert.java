@@ -1,53 +1,92 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "concerts")
+@Table("concerts")
 public class Concert {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "choir_id", nullable = false)
-private Choir choir;
+    @Id
+    private Long id;
 
-@Column(nullable = false, length = 200)
-private String title;
+    @Column("choir_id")
+    private Long choirId;
 
-@Column(name = "concert_date")
-private LocalDate concertDate;
+    private String title;
 
-@Column(length = 250)
-private String venue;
+    @Column("concert_date")
+    private LocalDate concertDate;
 
-@Column(nullable = false, length = 20)
-private String status = "PLANNED";
+    private String venue;
 
-@Column(name = "published_at")
-private LocalDateTime publishedAt;
+    private String status;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    @Column("published_at")
+    private LocalDateTime publishedAt;
 
-protected Concert() {}
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-public Long getId() { return id; }
-public Choir getChoir() { return choir; }
-public void setChoir(Choir choir) { this.choir = choir; }
-public String getTitle() { return title; }
-public void setTitle(String title) { this.title = title; }
-public LocalDate getConcertDate() { return concertDate; }
-public void setConcertDate(LocalDate concertDate) { this.concertDate = concertDate; }
-public String getVenue() { return venue; }
-public void setVenue(String venue) { this.venue = venue; }
-public String getStatus() { return status; }
-public void setStatus(String status) { this.status = status; }
-public LocalDateTime getPublishedAt() { return publishedAt; }
-public void setPublishedAt(LocalDateTime publishedAt) { this.publishedAt = publishedAt; }
-public LocalDateTime getCreatedAt() { return createdAt; }
+    protected Concert() {
+    }
 
+    public Long getId() {
+        return id;
+    }
+
+    public Long getChoirId() {
+        return choirId;
+    }
+
+    public void setChoirId(Long choirId) {
+        this.choirId = choirId;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public LocalDate getConcertDate() {
+        return concertDate;
+    }
+
+    public void setConcertDate(LocalDate concertDate) {
+        this.concertDate = concertDate;
+    }
+
+    public String getVenue() {
+        return venue;
+    }
+
+    public void setVenue(String venue) {
+        this.venue = venue;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
