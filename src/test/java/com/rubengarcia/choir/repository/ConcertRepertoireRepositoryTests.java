@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestConstructor;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
@@ -24,6 +26,79 @@ class ConcertRepertoireRepositoryTests {
             ConcertRepertoireRepository repository) {
         this.jdbcTemplate = jdbcTemplate;
         this.repository = repository;
+    }
+
+    @Test
+    void insertRejectsMissingConcertAndDoesNotPersistRow() {
+        Long missingConcertId = Long.MAX_VALUE;
+        Long repertoireItemId = null;
+        String suffix = UUID.randomUUID().toString();
+
+        try {
+            jdbcTemplate.update("""
+                    INSERT INTO directors (display_name, email)
+                    VALUES (?, ?)
+                    """, "Director test", suffix + "@example.test");
+
+            Long directorId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM directors WHERE email = ?",
+                    Long.class, suffix + "@example.test");
+
+            jdbcTemplate.update("""
+                    INSERT INTO choirs (director_id, name)
+                    VALUES (?, ?)
+                    """, directorId, "Coro " + suffix);
+
+            Long choirId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                    Long.class, directorId, "Coro " + suffix);
+
+            jdbcTemplate.update("""
+                    INSERT INTO repertoire_items (choir_id, title)
+                    VALUES (?, ?)
+                    """, choirId, "Obra " + suffix);
+
+            repertoireItemId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                    Long.class, choirId, "Obra " + suffix);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM concerts WHERE id = ?",
+                    Integer.class, missingConcertId))
+                    .isZero();
+
+            ConcertRepertoire item =
+                    new ConcertRepertoire(missingConcertId, repertoireItemId, 10);
+
+            assertThatThrownBy(() -> repository.insert(item).block())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Concert does not exist")
+                    .hasMessageContaining(missingConcertId.toString());
+
+            assertThat(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM concert_repertoire
+                    WHERE concert_id = ? AND repertoire_item_id = ?
+                    """, Integer.class, missingConcertId, repertoireItemId))
+                    .isZero();
+        } finally {
+            if (repertoireItemId != null) {
+                jdbcTemplate.update(
+                        "DELETE FROM concert_repertoire WHERE repertoire_item_id = ?",
+                        repertoireItemId);
+                jdbcTemplate.update(
+                        "DELETE FROM repertoire_items WHERE id = ?",
+                        repertoireItemId);
+            }
+
+            jdbcTemplate.update(
+                    "DELETE FROM choirs WHERE name = ?",
+                    "Coro " + suffix);
+
+            jdbcTemplate.update(
+                    "DELETE FROM directors WHERE email = ?",
+                    suffix + "@example.test");
+        }
     }
 
     @Test
