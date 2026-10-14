@@ -164,6 +164,21 @@ void formationVersionNumberMustBePositive() {
     }
 
     @Test
+    void formationPositionRejectsSingerWithNullAuxiliaryChoirId() {
+        long choirId = createTestChoir();
+        long versionId = insertFormationVersion(choirId);
+        long singerId = insertSinger(choirId);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO formation_positions
+                    (formation_version_id, singer_id, singer_name_snapshot,
+                     x_coordinate, y_coordinate, choir_id, singer_choir_id)
+                VALUES (?, ?, 'Cantante', 1.0, 2.0, ?, NULL)
+                """, versionId, singerId, choirId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     void transitionVersionRejectsFormationVersionFromAnotherChoir() {
         long choirA = createTestChoir();
         long choirB = createTestChoir();
@@ -198,6 +213,21 @@ void formationVersionNumberMustBePositive() {
                      choir_id, source_singer_choir_id)
                 VALUES (?, ?, 'Cantante', ?, ?)
                 """, concertId, singerId, choirA, choirB))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void concertCastSnapshotRejectsSingerWithNullAuxiliaryChoirId() {
+        long choirId = createTestChoir();
+        long concertId = insertConcert(choirId);
+        long singerId = insertSinger(choirId);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO concert_cast_snapshots
+                    (concert_id, source_singer_id, singer_name_snapshot,
+                     choir_id, source_singer_choir_id)
+                VALUES (?, ?, 'Cantante', ?, NULL)
+                """, concertId, singerId, choirId))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
