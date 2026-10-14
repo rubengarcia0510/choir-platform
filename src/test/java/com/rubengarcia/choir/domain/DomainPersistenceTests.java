@@ -28,7 +28,8 @@ class DomainPersistenceTests {
         for (String table : tables) {
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
-                            + "WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = ?",
+                            + "WHERE UPPER(TABLE_SCHEMA) = UPPER(CURRENT_SCHEMA()) "
+                            + "AND UPPER(TABLE_NAME) = UPPER(?)",
                     Integer.class,
                     table.toUpperCase());
 
