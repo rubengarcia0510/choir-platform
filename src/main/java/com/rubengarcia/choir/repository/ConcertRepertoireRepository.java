@@ -70,10 +70,15 @@ public class ConcertRepertoireRepository {
                 .bind("orderIndex", item.getOrderIndex())
                 .fetch()
                 .rowsUpdated()
-                .flatMap(rows -> rows == 0
-                        ? Mono.empty()
-                        : findById(new ConcertRepertoireId(
-                                item.getConcertId(), item.getRepertoireItemId())));
+                .flatMap(rows -> {
+                    if (rows == 0) {
+                        return Mono.error(new IllegalArgumentException(
+                                "Concert does not exist: " + item.getConcertId()));
+                    }
+
+                    return findById(new ConcertRepertoireId(
+                            item.getConcertId(), item.getRepertoireItemId()));
+                });
     }
 
     public Mono<Long> updateOrderIndex(ConcertRepertoireId id, int orderIndex) {
