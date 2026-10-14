@@ -16,6 +16,12 @@ public class FormationPosition {
     @Column("formation_version_id")
     private Long formationVersionId;
 
+    @Column("choir_id")
+    private Long choirId;
+
+    @Column("singer_choir_id")
+    private Long singerChoirId;
+
     @Column("singer_id")
     private Long singerId;
 
@@ -46,6 +52,22 @@ public class FormationPosition {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getChoirId() {
+        return choirId;
+    }
+
+    public void setChoirId(Long choirId) {
+        this.choirId = choirId;
+    }
+
+    public Long getSingerChoirId() {
+        return singerChoirId;
+    }
+
+    public void setSingerChoirId(Long singerChoirId) {
+        this.singerChoirId = singerChoirId;
     }
 
     public Long getFormationVersionId() {

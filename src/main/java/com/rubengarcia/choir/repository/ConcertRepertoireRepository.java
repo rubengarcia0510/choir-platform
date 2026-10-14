@@ -21,46 +21,59 @@ public class ConcertRepertoireRepository {
 
     public Flux<ConcertRepertoire> findByConcertId(Long concertId) {
         return databaseClient.sql("""
-                SELECT concert_id, repertoire_item_id, order_index
+                SELECT concert_id, repertoire_item_id, order_index, choir_id
                 FROM concert_repertoire
                 WHERE concert_id = :concertId
                 ORDER BY order_index, repertoire_item_id
                 """)
                 .bind("concertId", concertId)
-                .map((row, metadata) -> new ConcertRepertoire(
-                        row.get("concert_id", Long.class),
-                        row.get("repertoire_item_id", Long.class),
-                        row.get("order_index", Integer.class)))
+                .map((row, metadata) -> {
+                    ConcertRepertoire item = new ConcertRepertoire(
+                            row.get("concert_id", Long.class),
+                            row.get("repertoire_item_id", Long.class),
+                            row.get("order_index", Integer.class));
+                    item.setChoirId(row.get("choir_id", Long.class));
+                    return item;
+                })
                 .all();
     }
 
     public Mono<ConcertRepertoire> findById(ConcertRepertoireId id) {
         return databaseClient.sql("""
-                SELECT concert_id, repertoire_item_id, order_index
+                SELECT concert_id, repertoire_item_id, order_index, choir_id
                 FROM concert_repertoire
                 WHERE concert_id = :concertId
                   AND repertoire_item_id = :repertoireItemId
                 """)
                 .bind("concertId", id.getConcertId())
                 .bind("repertoireItemId", id.getRepertoireItemId())
-                .map((row, metadata) -> new ConcertRepertoire(
-                        row.get("concert_id", Long.class),
-                        row.get("repertoire_item_id", Long.class),
-                        row.get("order_index", Integer.class)))
+                .map((row, metadata) -> {
+                    ConcertRepertoire item = new ConcertRepertoire(
+                            row.get("concert_id", Long.class),
+                            row.get("repertoire_item_id", Long.class),
+                            row.get("order_index", Integer.class));
+                    item.setChoirId(row.get("choir_id", Long.class));
+                    return item;
+                })
                 .one();
     }
 
     public Mono<ConcertRepertoire> insert(ConcertRepertoire item) {
         return databaseClient.sql("""
-                INSERT INTO concert_repertoire (concert_id, repertoire_item_id, order_index)
-                VALUES (:concertId, :repertoireItemId, :orderIndex)
+                INSERT INTO concert_repertoire (concert_id, repertoire_item_id, order_index, choir_id)
+                SELECT :concertId, :repertoireItemId, :orderIndex, c.choir_id
+                FROM concerts c
+                WHERE c.id = :concertId
                 """)
                 .bind("concertId", item.getConcertId())
                 .bind("repertoireItemId", item.getRepertoireItemId())
                 .bind("orderIndex", item.getOrderIndex())
                 .fetch()
                 .rowsUpdated()
-                .thenReturn(item);
+                .flatMap(rows -> rows == 0
+                        ? Mono.empty()
+                        : findById(new ConcertRepertoireId(
+                                item.getConcertId(), item.getRepertoireItemId())));
     }
 
     public Mono<Long> updateOrderIndex(ConcertRepertoireId id, int orderIndex) {

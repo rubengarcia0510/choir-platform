@@ -15,6 +15,9 @@ public class FormationVersion {
     @Column("formation_id")
     private Long formationId;
 
+    @Column("choir_id")
+    private Long choirId;
+
     @Column("version_number")
     private int versionNumber;
 
@@ -37,6 +40,14 @@ public class FormationVersion {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getChoirId() {
+        return choirId;
+    }
+
+    public void setChoirId(Long choirId) {
+        this.choirId = choirId;
     }
 
     public Long getFormationId() {

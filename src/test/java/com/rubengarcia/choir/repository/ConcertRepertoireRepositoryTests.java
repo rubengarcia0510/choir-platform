@@ -86,8 +86,20 @@ class ConcertRepertoireRepositoryTests {
             ConcertRepertoire second =
                     new ConcertRepertoire(concertId, secondItemId, 20);
 
-            assertThat(repository.insert(first).block()).isSameAs(first);
-            assertThat(repository.insert(second).block()).isSameAs(second);
+            ConcertRepertoire insertedFirst = repository.insert(first).block();
+            ConcertRepertoire insertedSecond = repository.insert(second).block();
+
+            assertThat(insertedFirst).isNotNull();
+            assertThat(insertedFirst.getConcertId()).isEqualTo(concertId);
+            assertThat(insertedFirst.getRepertoireItemId()).isEqualTo(firstItemId);
+            assertThat(insertedFirst.getOrderIndex()).isEqualTo(10);
+            assertThat(insertedFirst.getChoirId()).isEqualTo(choirId);
+
+            assertThat(insertedSecond).isNotNull();
+            assertThat(insertedSecond.getConcertId()).isEqualTo(concertId);
+            assertThat(insertedSecond.getRepertoireItemId()).isEqualTo(secondItemId);
+            assertThat(insertedSecond.getOrderIndex()).isEqualTo(20);
+            assertThat(insertedSecond.getChoirId()).isEqualTo(choirId);
 
             ConcertRepertoireId firstKey =
                     new ConcertRepertoireId(concertId, firstItemId);

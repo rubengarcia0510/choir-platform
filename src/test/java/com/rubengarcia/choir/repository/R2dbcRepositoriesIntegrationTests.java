@@ -126,18 +126,19 @@ class R2dbcRepositoriesIntegrationTests {
 
             jdbc.update("""
                     INSERT INTO concert_cast_snapshots
-                        (concert_id, source_singer_id,
+                        (concert_id, source_singer_id, choir_id, source_singer_choir_id,
                          singer_name_snapshot, voice_part_snapshot)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    concertId, activeSingerId, "Snapshot " + suffix, "SOPRANO");
+                    concertId, activeSingerId, choirId, choirId,
+                    "Snapshot " + suffix, "SOPRANO");
 
             jdbc.update("""
                     INSERT INTO absences
-                        (singer_id, concert_id, start_date, end_date, reason, status)
-                    VALUES (?, ?, ?, ?, ?, 'CONFIRMED')
+                        (singer_id, choir_id, concert_id, start_date, end_date, reason, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED')
                     """,
-                    activeSingerId, concertId,
+                    activeSingerId, choirId, concertId,
                     LocalDate.now(), LocalDate.now(), "Test " + suffix);
 
             jdbc.update("""
@@ -157,9 +158,9 @@ class R2dbcRepositoriesIntegrationTests {
 
             jdbc.update("""
                     INSERT INTO formation_versions
-                        (formation_id, version_number, status)
-                    VALUES (?, 1, 'DRAFT')
-                    """, formationId);
+                        (formation_id, choir_id, version_number, status)
+                    VALUES (?, ?, 1, 'DRAFT')
+                    """, formationId, choirId);
             versionOneId = id("""
                     SELECT id FROM formation_versions
                     WHERE formation_id = ? AND version_number = 1
@@ -167,9 +168,9 @@ class R2dbcRepositoriesIntegrationTests {
 
             jdbc.update("""
                     INSERT INTO formation_versions
-                        (formation_id, version_number, status)
-                    VALUES (?, 2, 'DRAFT')
-                    """, formationId);
+                        (formation_id, choir_id, version_number, status)
+                    VALUES (?, ?, 2, 'DRAFT')
+                    """, formationId, choirId);
             versionTwoId = id("""
                     SELECT id FROM formation_versions
                     WHERE formation_id = ? AND version_number = 2
@@ -177,12 +178,13 @@ class R2dbcRepositoriesIntegrationTests {
 
             jdbc.update("""
                     INSERT INTO formation_positions
-                        (formation_version_id, singer_id, singer_name_snapshot,
-                         voice_part_snapshot, position_label, x_coordinate, y_coordinate)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (formation_version_id, singer_id, choir_id, singer_choir_id,
+                         singer_name_snapshot, voice_part_snapshot, position_label,
+                         x_coordinate, y_coordinate)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    versionOneId, activeSingerId, "Position " + suffix,
-                    "SOPRANO", "Center", 1.25, 2.50);
+                    versionOneId, activeSingerId, choirId, choirId,
+                    "Position " + suffix, "SOPRANO", "Center", 1.25, 2.50);
 
             jdbc.update("""
                     INSERT INTO transitions (choir_id, name)
@@ -195,11 +197,11 @@ class R2dbcRepositoriesIntegrationTests {
 
             jdbc.update("""
                     INSERT INTO transition_versions
-                        (transition_id, version_number,
+                        (transition_id, choir_id, version_number,
                          from_formation_version_id, to_formation_version_id, status)
-                    VALUES (?, 1, ?, ?, 'DRAFT')
+                    VALUES (?, ?, 1, ?, ?, 'DRAFT')
                     """,
-                    transitionId, versionOneId, versionTwoId);
+                    transitionId, choirId, versionOneId, versionTwoId);
 
             String tokenHash = UUID.randomUUID().toString().replace("-", "");
             jdbc.update("""

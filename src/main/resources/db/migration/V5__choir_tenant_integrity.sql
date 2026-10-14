@@ -79,6 +79,13 @@ ALTER TABLE formation_positions
         REFERENCES formation_versions (id, choir_id);
 
 ALTER TABLE formation_positions
+    ADD CONSTRAINT ck_fp_singer_same_choir
+        CHECK (
+            (singer_id IS NULL AND singer_choir_id IS NULL)
+            OR (singer_id IS NOT NULL AND singer_choir_id = choir_id)
+        );
+
+ALTER TABLE formation_positions
     ADD CONSTRAINT fk_fp_singer_choir
         FOREIGN KEY (singer_id, singer_choir_id)
         REFERENCES singers (id, choir_id)
@@ -141,6 +148,13 @@ ALTER TABLE concert_cast_snapshots
     ADD CONSTRAINT fk_ccs_concert_choir
         FOREIGN KEY (concert_id, choir_id)
         REFERENCES concerts (id, choir_id);
+
+ALTER TABLE concert_cast_snapshots
+    ADD CONSTRAINT ck_ccs_singer_same_choir
+        CHECK (
+            (source_singer_id IS NULL AND source_singer_choir_id IS NULL)
+            OR (source_singer_id IS NOT NULL AND source_singer_choir_id = choir_id)
+        );
 
 ALTER TABLE concert_cast_snapshots
     ADD CONSTRAINT fk_ccs_singer_choir

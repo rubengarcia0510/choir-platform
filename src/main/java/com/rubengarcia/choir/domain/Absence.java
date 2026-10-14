@@ -16,6 +16,9 @@ public class Absence {
     @Column("singer_id")
     private Long singerId;
 
+    @Column("choir_id")
+    private Long choirId;
+
     @Column("concert_id")
     private Long concertId;
 
@@ -37,6 +40,14 @@ public class Absence {
 
     public Long getId() {
         return id;
+    }
+
+    public Long getChoirId() {
+        return choirId;
+    }
+
+    public void setChoirId(Long choirId) {
+        this.choirId = choirId;
     }
 
     public Long getSingerId() {

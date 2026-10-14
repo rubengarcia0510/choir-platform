@@ -9,6 +9,9 @@ public class ConcertRepertoire {
     @Column("concert_id")
     private Long concertId;
 
+    @Column("choir_id")
+    private Long choirId;
+
     @Column("repertoire_item_id")
     private Long repertoireItemId;
 
@@ -22,6 +25,14 @@ public class ConcertRepertoire {
         this.concertId = concertId;
         this.repertoireItemId = repertoireItemId;
         this.orderIndex = orderIndex;
+    }
+
+    public Long getChoirId() {
+        return choirId;
+    }
+
+    public void setChoirId(Long choirId) {
+        this.choirId = choirId;
     }
 
     public Long getConcertId() {

@@ -75,9 +75,10 @@ class DomainPersistenceTests {
 
         jdbcTemplate.update(
                 "INSERT INTO concert_cast_snapshots "
-                        + "(concert_id, source_singer_id, singer_name_snapshot, voice_part_snapshot) "
-                        + "VALUES (?, ?, ?, ?)",
-                concertId, singerId, "Nombre original", "SOPRANO");
+                        + "(concert_id, source_singer_id, choir_id, source_singer_choir_id, "
+                        + "singer_name_snapshot, voice_part_snapshot) "
+                        + "VALUES (?, ?, ?, ?, ?, ?)",
+                concertId, singerId, choirId, choirId, "Nombre original", "SOPRANO");
 
         jdbcTemplate.update(
                 "UPDATE singers SET display_name = ?, voice_part = ? WHERE id = ?",
@@ -126,13 +127,13 @@ class DomainPersistenceTests {
                 Long.class, choirId, formationName);
 
         jdbcTemplate.update(
-                "INSERT INTO formation_versions (formation_id, version_number, status) "
-                        + "VALUES (?, ?, ?)",
-                formationId, 1, "PUBLISHED");
+                "INSERT INTO formation_versions (formation_id, choir_id, version_number, status) "
+                        + "VALUES (?, ?, ?, ?)",
+                formationId, choirId, 1, "PUBLISHED");
         jdbcTemplate.update(
-                "INSERT INTO formation_versions (formation_id, version_number, status) "
-                        + "VALUES (?, ?, ?)",
-                formationId, 2, "DRAFT");
+                "INSERT INTO formation_versions (formation_id, choir_id, version_number, status) "
+                        + "VALUES (?, ?, ?, ?)",
+                formationId, choirId, 2, "DRAFT");
 
         List<Integer> versions = jdbcTemplate.queryForList(
                 "SELECT version_number FROM formation_versions "
