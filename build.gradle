@@ -28,8 +28,12 @@ dependencies {
     implementation 'org.flywaydb:flyway-database-postgresql'
 
     runtimeOnly 'io.r2dbc:r2dbc-h2'
-    runtimeOnly 'io.r2dbc:r2dbc-postgresql'
-    runtimeOnly 'com.h2database:h2'
+    runtimeOnly 'org.postgresql:r2dbc-postgresql'
+    runtimeOnly('com.h2database:h2') {
+        version {
+            strictly '2.4.240'
+        }
+    }
     runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
