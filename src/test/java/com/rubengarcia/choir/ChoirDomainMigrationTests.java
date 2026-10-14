@@ -133,6 +133,22 @@ void formationVersionNumberMustBePositive() {
 
 
     @Test
+    void concertRepertoireAcceptsReferencesFromSameChoir() {
+        long choirId = createTestChoir();
+        long concertId = insertConcert(choirId);
+        long itemId = insertRepertoireItem(choirId);
+
+        int inserted = jdbcTemplate.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index, choir_id)
+                VALUES (?, ?, 0, ?)
+                """, concertId, itemId, choirId);
+
+        assertThat(inserted).isEqualTo(1);
+    }
+
+    @Test
+
     void concertRepertoireRejectsCrossChoirReference() {
         long choirA = createTestChoir();
         long choirB = createTestChoir();
@@ -179,6 +195,32 @@ void formationVersionNumberMustBePositive() {
     }
 
     @Test
+    void transitionVersionAcceptsFormationVersionsFromSameChoir() {
+        long choirId = createTestChoir();
+        long fromVersion = insertFormationVersion(choirId);
+        long toVersion = insertFormationVersion(choirId);
+        String transitionName = "Transición " + UUID.randomUUID();
+
+        jdbcTemplate.update(
+                "INSERT INTO transitions (choir_id, name) VALUES (?, ?)",
+                choirId, transitionName);
+
+        long transitionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM transitions WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, transitionName);
+
+        int inserted = jdbcTemplate.update("""
+                INSERT INTO transition_versions
+                    (transition_id, version_number, from_formation_version_id,
+                     to_formation_version_id, choir_id)
+                VALUES (?, 1, ?, ?, ?)
+                """, transitionId, fromVersion, toVersion, choirId);
+
+        assertThat(inserted).isEqualTo(1);
+    }
+
+    @Test
+
     void transitionVersionRejectsFormationVersionFromAnotherChoir() {
         long choirA = createTestChoir();
         long choirB = createTestChoir();
@@ -188,7 +230,7 @@ void formationVersionNumberMustBePositive() {
                 "INSERT INTO transitions (choir_id, name) VALUES (?, ?)",
                 choirA, "Transición " + UUID.randomUUID());
         long transitionId = jdbcTemplate.queryForObject(
-                "SELECT id FROM transitions WHERE choir_id = ? ORDER BY id DESC",
+                "SELECT id FROM transitions WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
                 Long.class, choirA);
 
         assertThatThrownBy(() -> jdbcTemplate.update("""
@@ -295,7 +337,7 @@ void formationVersionNumberMustBePositive() {
                 VALUES (?, ?, 'SOPRANO')
                 """, choirId, "Cantante " + UUID.randomUUID());
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM singers WHERE choir_id = ? ORDER BY id DESC",
+                "SELECT id FROM singers WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
                 Long.class, choirId);
     }
 
@@ -304,7 +346,7 @@ void formationVersionNumberMustBePositive() {
                 "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
                 choirId, "Concierto " + UUID.randomUUID());
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ? ORDER BY id DESC",
+                "SELECT id FROM concerts WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
                 Long.class, choirId);
     }
 
@@ -313,7 +355,7 @@ void formationVersionNumberMustBePositive() {
                 "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
                 choirId, "Obra " + UUID.randomUUID());
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM repertoire_items WHERE choir_id = ? ORDER BY id DESC",
+                "SELECT id FROM repertoire_items WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
                 Long.class, choirId);
     }
 
@@ -322,7 +364,7 @@ void formationVersionNumberMustBePositive() {
                 "INSERT INTO formations (choir_id, name) VALUES (?, ?)",
                 choirId, "Formación " + UUID.randomUUID());
         long formationId = jdbcTemplate.queryForObject(
-                "SELECT id FROM formations WHERE choir_id = ? ORDER BY id DESC",
+                "SELECT id FROM formations WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
                 Long.class, choirId);
         jdbcTemplate.update("""
                 INSERT INTO formation_versions
