@@ -23,7 +23,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests with local profile
+      - name: Run CHOIR-43 concurrent registration test (H2)
+        run: ./gradlew test --tests 'com.rubengarcia.choir.auth.DirectorRegistrationConcurrentTests'
+
+      - name: Run full test suite with local profile
         run: ./gradlew test
 
   test-prod:
@@ -61,5 +64,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests with production profile and PostgreSQL
+      - name: Run CHOIR-43 concurrent registration test (PostgreSQL)
+        run: ./gradlew test --tests 'com.rubengarcia.choir.auth.DirectorRegistrationConcurrentTests'
+
+      - name: Run full test suite with production profile and PostgreSQL
         run: ./gradlew test
