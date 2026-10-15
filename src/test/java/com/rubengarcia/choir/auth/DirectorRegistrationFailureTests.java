@@ -8,11 +8,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
@@ -57,5 +60,29 @@ class DirectorRegistrationFailureTests {
         assertFalse(
                 directorRepository.findByEmailIgnoreCase(email).block(DB_TIMEOUT) != null,
                 "No debe persistir una cuenta si falla el envío del correo");
+    }
+
+    @Test
+    void emailDeliveryRunsOnBoundedElasticScheduler() {
+        String email = "mail-scheduler-" + UUID.randomUUID() + "@example.test";
+        AtomicReference<String> senderThread = new AtomicReference<>();
+
+        doAnswer(invocation -> {
+            senderThread.set(Thread.currentThread().getName());
+            return null;
+        }).when(emailSender)
+                .sendVerificationEmail(anyString(), anyString(), anyString(), any());
+
+        registrationService.register(
+                "Scheduler Test",
+                email,
+                "Choir-Test-Password-2026!",
+                "https://example.test/verify").block(DB_TIMEOUT);
+
+        assertTrue(
+                senderThread.get() != null
+                        && senderThread.get().startsWith("boundedElastic-"),
+                () -> "El envío debe ejecutarse en boundedElastic; hilo observado: "
+                        + senderThread.get());
     }
 }

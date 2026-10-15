@@ -7,6 +7,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -61,12 +62,14 @@ public class DirectorRegistrationService {
                                     .flatMap(issued -> {
                                         String verificationUrl = buildVerificationUrl(
                                                 verificationUrlBase, issued.token());
+
                                         return Mono.fromRunnable(() ->
-                                                sender.sendVerificationEmail(
-                                                        normalizedEmail,
-                                                        saved.getDisplayName(),
-                                                        verificationUrl,
-                                                        issued.expiresAt()));
+                                                        sender.sendVerificationEmail(
+                                                                normalizedEmail,
+                                                                saved.getDisplayName(),
+                                                                verificationUrl,
+                                                                issued.expiresAt()))
+                                                .subscribeOn(Schedulers.boundedElastic());
                                     }));
                 })
                 .then();
