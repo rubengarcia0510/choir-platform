@@ -91,28 +91,25 @@ class DirectorRegistrationConcurrentTests {
         doAnswer(invocation -> {
             String queriedEmail = invocation.getArgument(0);
 
-            @SuppressWarnings("unchecked")
-            Mono<Director> actualQuery =
-                    (Mono<Director>) invocation.callRealMethod();
-
             if (!email.equalsIgnoreCase(queriedEmail)) {
-                return actualQuery;
+                return invocation.callRealMethod();
             }
 
+            /*
+             * El email UUID es exclusivo de esta prueba. Sincronizamos las
+             * dos consultas antes de permitir que ambas registraciones
+             * intenten guardar la cuenta.
+             */
             return Mono.defer(() -> {
                 int started = startedLookups.incrementAndGet();
 
-                if (started <= 2) {
-                    if (started == 2) {
-                        bothLookupsStarted.tryEmitEmpty();
-                    }
-
-                    return bothLookupsStarted.asMono()
-                            .timeout(TIMEOUT)
-                            .then(actualQuery);
+                if (started == 2) {
+                    bothLookupsStarted.tryEmitEmpty();
                 }
 
-                return actualQuery;
+                return bothLookupsStarted.asMono()
+                        .timeout(TIMEOUT)
+                        .then(Mono.<Director>empty());
             });
         }).when(directorRepository).findByEmailIgnoreCase(anyString());
 
@@ -214,7 +211,8 @@ class DirectorRegistrationConcurrentTests {
                     startedLookups.get() >= 2,
                     "Al menos dos consultas de existencia deben comenzar "
                             + "antes de continuar; iniciadas: "
-                            + startedLookups.get());
+                            + startedLookups.get()
+                            + "; respuestas HTTP: " + responses);
 
             assertEquals(
                     REQUEST_COUNT,
