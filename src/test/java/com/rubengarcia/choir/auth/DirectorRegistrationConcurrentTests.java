@@ -76,12 +76,17 @@ class DirectorRegistrationConcurrentTests {
         String email = "concurrent-" + UUID.randomUUID() + "@example.test";
 
         /*
-         * Ejecuta las consultas reales y espera a que al menos dos consultas
-         * vacías hayan terminado antes de permitir que las registraciones
-         * continúen hacia el guardado.
+         * Deterministic race:
+         *
+         * The first two subscriptions to the real repository query for this
+         * exact email are held at the query Mono boundary. The test releases
+         * both only after both subscriptions have reached this point.
+         *
+         * Therefore both registrations have started their existence lookup
+         * before either registration can continue to the save.
          */
-        Sinks.One<Void> bothLookupsCompleted = Sinks.one();
-        AtomicInteger completedLookups = new AtomicInteger();
+        Sinks.One<Void> bothLookupsStarted = Sinks.one();
+        AtomicInteger startedLookups = new AtomicInteger();
 
         doAnswer(invocation -> {
             String queriedEmail = invocation.getArgument(0);
@@ -94,17 +99,21 @@ class DirectorRegistrationConcurrentTests {
                 return actualQuery;
             }
 
-            return actualQuery.switchIfEmpty(Mono.defer(() -> {
-                int completed = completedLookups.incrementAndGet();
+            return Mono.defer(() -> {
+                int started = startedLookups.incrementAndGet();
 
-                if (completed == 2) {
-                    bothLookupsCompleted.tryEmitEmpty();
+                if (started <= 2) {
+                    if (started == 2) {
+                        bothLookupsStarted.tryEmitEmpty();
+                    }
+
+                    return bothLookupsStarted.asMono()
+                            .timeout(TIMEOUT)
+                            .then(actualQuery);
                 }
 
-                return bothLookupsCompleted.asMono()
-                        .timeout(TIMEOUT)
-                        .then(Mono.<Director>empty());
-            }));
+                return actualQuery;
+            });
         }).when(directorRepository).findByEmailIgnoreCase(anyString());
 
         EntityExchangeResult<Map<String, String>> csrfResult =
@@ -202,11 +211,10 @@ class DirectorRegistrationConcurrentTests {
                             .toList();
 
             assertTrue(
-                    completedLookups.get() >= 2,
-                    "Al menos dos consultas reales de existencia deben completar "
-                            + "antes de continuar; completadas: "
-                            + completedLookups.get()
-                            + "; respuestas HTTP: " + responses);
+                    startedLookups.get() >= 2,
+                    "Al menos dos consultas de existencia deben comenzar "
+                            + "antes de continuar; iniciadas: "
+                            + startedLookups.get());
 
             assertEquals(
                     REQUEST_COUNT,
@@ -284,7 +292,7 @@ class DirectorRegistrationConcurrentTests {
 
         } finally {
             start.countDown();
-            bothLookupsCompleted.tryEmitEmpty();
+            bothLookupsStarted.tryEmitEmpty();
             executor.shutdownNow();
         }
     }
