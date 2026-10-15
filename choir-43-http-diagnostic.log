@@ -10,26 +10,10 @@ Daemon will be stopped at the end of the build
 > Task :compileTestJava
 > Task :processTestResources NO-SOURCE
 > Task :testClasses
-2026-10-15T13:23:28.894Z  INFO 28103 --- [choir-platform] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
-2026-10-15T13:23:28.903Z  INFO 28103 --- [choir-platform] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
-
+2026-10-15T14:46:29.602Z  INFO 14426 --- [choir-platform] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-10-15T14:46:29.606Z  INFO 14426 --- [choir-platform] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
 > Task :test
 
-DirectorRegistrationConcurrentTests > concurrentRegistrationsWithSameEmailCreateOneAccountAndReturnGenericResponse() FAILED
-    org.opentest4j.AssertionFailedError at DirectorRegistrationConcurrentTests.java:217
-
-1 test completed, 1 failed
-
-> Task :test FAILED
-
-FAILURE: Build failed with an exception.
-
-* What went wrong:
-Execution failed for task ':test'.
-> There were failing tests. See the report at: file:///data/data/com.termux/files/home/downloads/choir-platform/build/reports/tests/test/index.html
-
-* Try:
-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-
-BUILD FAILED in 36s
+BUILD SUCCESSFUL in 34s
 4 actionable tasks: 2 executed, 2 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.1/userguide/configuration_cache_enabling.html

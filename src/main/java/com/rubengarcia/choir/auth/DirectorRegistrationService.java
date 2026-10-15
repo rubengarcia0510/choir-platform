@@ -12,9 +12,14 @@ import reactor.core.scheduler.Schedulers;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Service
 public class DirectorRegistrationService {
+
+    private static final ConcurrentMap<String, Object> EMAIL_LOCKS =
+            new ConcurrentHashMap<>();
 
     private final DirectorRepository directorRepository;
     private final DirectorEmailVerificationService verificationService;
@@ -38,6 +43,7 @@ public class DirectorRegistrationService {
             String email,
             String password,
             String verificationUrlBase) {
+
         VerificationEmailSender sender = senderProvider.getIfAvailable();
 
         if (sender == null) {
@@ -47,11 +53,37 @@ public class DirectorRegistrationService {
 
         String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 
+        return Mono.fromCallable(() -> EMAIL_LOCKS.computeIfAbsent(
+                        normalizedEmail, ignored -> new Object()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(lock -> Mono.fromCallable(() -> {
+                            synchronized (lock) {
+                                return Boolean.TRUE;
+                            }
+                        })
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .then(registerWithLock(
+                                normalizedEmail,
+                                displayName,
+                                password,
+                                verificationUrlBase,
+                                sender)));
+    }
+
+    private Mono<Void> registerWithLock(
+            String normalizedEmail,
+            String displayName,
+            String password,
+            String verificationUrlBase,
+            VerificationEmailSender sender) {
+
         return directorRepository.findByEmailIgnoreCase(normalizedEmail)
-                .map(existing -> false)
-                .defaultIfEmpty(true)
-                .filter(Boolean::booleanValue)
-                .flatMap(ignored -> {
+                .hasElement()
+                .flatMap(exists -> {
+                    if (exists) {
+                        return Mono.empty();
+                    }
+
                     Director director = Director.create(
                             displayName.trim(), normalizedEmail);
                     director.setPasswordHash(passwordEncoder.encode(password));
@@ -60,8 +92,10 @@ public class DirectorRegistrationService {
                     return directorRepository.save(director)
                             .flatMap(saved -> verificationService.issueToken(saved)
                                     .flatMap(issued -> {
-                                        String verificationUrl = buildVerificationUrl(
-                                                verificationUrlBase, issued.token());
+                                        String verificationUrl =
+                                                buildVerificationUrl(
+                                                        verificationUrlBase,
+                                                        issued.token());
 
                                         return Mono.fromRunnable(() ->
                                                         sender.sendVerificationEmail(
