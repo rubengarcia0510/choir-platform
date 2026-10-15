@@ -31,7 +31,7 @@ public class DirectorRegistrationService {
         this.senderProvider = senderProvider;
     }
 
-    @Transactional
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<Void> register(
             String displayName,
             String email,

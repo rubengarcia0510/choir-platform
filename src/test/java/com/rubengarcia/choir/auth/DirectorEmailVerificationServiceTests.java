@@ -10,6 +10,7 @@ import org.springframework.test.context.TestConstructor;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
@@ -20,15 +21,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 class DirectorEmailVerificationServiceTests {
+
+    private static final Duration DB_TIMEOUT = Duration.ofSeconds(10);
 
     private final DirectorEmailVerificationService verificationService;
     private final DirectorRepository directorRepository;
@@ -48,14 +47,15 @@ class DirectorEmailVerificationServiceTests {
         Director director = createUnverifiedDirector();
 
         DirectorEmailVerificationService.IssuedToken issued =
-                verificationService.issueToken(director);
+                verificationService.issueToken(director).block(DB_TIMEOUT);
+        assertNotNull(issued);
 
-        assertTrue(verificationService.verifyToken(issued.token()));
-        assertFalse(verificationService.verifyToken(issued.token()));
+        assertTrue(verificationService.verifyToken(issued.token()).block(DB_TIMEOUT));
+        assertFalse(verificationService.verifyToken(issued.token()).block(DB_TIMEOUT));
 
-        Director persisted = directorRepository.findById(director.getId())
-                .orElseThrow();
-
+        Director persisted =
+                directorRepository.findById(director.getId()).block(DB_TIMEOUT);
+        assertNotNull(persisted);
         assertTrue(persisted.isEmailVerified());
     }
 
@@ -66,17 +66,17 @@ class DirectorEmailVerificationServiceTests {
 
         DirectorEmailVerificationToken expired =
                 new DirectorEmailVerificationToken(
-                        director,
+                        director.getId(),
                         hashToken(rawToken),
                         LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1));
 
-        tokenRepository.saveAndFlush(expired);
+        tokenRepository.save(expired).block(DB_TIMEOUT);
 
-        assertFalse(verificationService.verifyToken(rawToken));
+        assertFalse(verificationService.verifyToken(rawToken).block(DB_TIMEOUT));
 
-        Director persisted = directorRepository.findById(director.getId())
-                .orElseThrow();
-
+        Director persisted =
+                directorRepository.findById(director.getId()).block(DB_TIMEOUT);
+        assertNotNull(persisted);
         assertFalse(persisted.isEmailVerified());
     }
 
@@ -85,31 +85,33 @@ class DirectorEmailVerificationServiceTests {
         Director director = createUnverifiedDirector();
 
         DirectorEmailVerificationService.IssuedToken first =
-                verificationService.issueToken(director);
+                verificationService.issueToken(director).block(DB_TIMEOUT);
         DirectorEmailVerificationService.IssuedToken second =
-                verificationService.issueToken(director);
+                verificationService.issueToken(director).block(DB_TIMEOUT);
 
+        assertNotNull(first);
+        assertNotNull(second);
         assertNotEquals(first.token(), second.token());
-        assertFalse(verificationService.verifyToken(first.token()));
-        assertTrue(verificationService.verifyToken(second.token()));
+        assertFalse(verificationService.verifyToken(first.token()).block(DB_TIMEOUT));
+        assertTrue(verificationService.verifyToken(second.token()).block(DB_TIMEOUT));
     }
 
     @Test
     void malformedTokensAreRejected() {
-        assertFalse(verificationService.verifyToken(null));
-        assertFalse(verificationService.verifyToken(""));
-        assertFalse(verificationService.verifyToken("   "));
-        assertFalse(verificationService.verifyToken("x".repeat(129)));
+        assertFalse(verificationService.verifyToken(null).block(DB_TIMEOUT));
+        assertFalse(verificationService.verifyToken("").block(DB_TIMEOUT));
+        assertFalse(verificationService.verifyToken("   ").block(DB_TIMEOUT));
+        assertFalse(verificationService.verifyToken("x".repeat(129)).block(DB_TIMEOUT));
         assertFalse(verificationService.verifyToken(
-                "unknown-" + UUID.randomUUID()));
+                "unknown-" + UUID.randomUUID()).block(DB_TIMEOUT));
     }
 
     @Test
     void concurrentVerificationCanSucceedOnlyOnce() throws Exception {
         Director director = createUnverifiedDirector();
-
         DirectorEmailVerificationService.IssuedToken issued =
-                verificationService.issueToken(director);
+                verificationService.issueToken(director).block(DB_TIMEOUT);
+        assertNotNull(issued);
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -117,24 +119,24 @@ class DirectorEmailVerificationServiceTests {
         try {
             Future<Boolean> first = executor.submit(() -> {
                 start.await();
-                return verificationService.verifyToken(issued.token());
+                return verificationService.verifyToken(issued.token()).block(DB_TIMEOUT);
             });
 
             Future<Boolean> second = executor.submit(() -> {
                 start.await();
-                return verificationService.verifyToken(issued.token());
+                return verificationService.verifyToken(issued.token()).block(DB_TIMEOUT);
             });
 
             start.countDown();
 
-            boolean firstResult = first.get(10, TimeUnit.SECONDS);
-            boolean secondResult = second.get(10, TimeUnit.SECONDS);
+            boolean firstResult = first.get(15, TimeUnit.SECONDS);
+            boolean secondResult = second.get(15, TimeUnit.SECONDS);
 
             assertEquals(1, (firstResult ? 1 : 0) + (secondResult ? 1 : 0));
 
-            Director persisted = directorRepository.findById(director.getId())
-                    .orElseThrow();
-
+            Director persisted =
+                    directorRepository.findById(director.getId()).block(DB_TIMEOUT);
+            assertNotNull(persisted);
             assertTrue(persisted.isEmailVerified());
         } finally {
             executor.shutdownNow();
@@ -145,12 +147,11 @@ class DirectorEmailVerificationServiceTests {
         Director director = Director.create(
                 "Verification Test",
                 "verification-" + UUID.randomUUID() + "@example.test");
-
         director.setEmailVerified(false);
 
-        Director saved = directorRepository.saveAndFlush(director);
+        Director saved = directorRepository.save(director).block(DB_TIMEOUT);
+        assertNotNull(saved);
         assertNotNull(saved.getId());
-
         return saved;
     }
 
@@ -158,7 +159,6 @@ class DirectorEmailVerificationServiceTests {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256")
                     .digest(rawToken.getBytes(StandardCharsets.UTF_8));
-
             return HexFormat.of().formatHex(hash);
         } catch (java.security.NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);

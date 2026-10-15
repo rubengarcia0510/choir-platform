@@ -1,34 +1,42 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "concert_repertoire")
+@Table("concert_repertoire")
 public class ConcertRepertoire {
-@EmbeddedId
-private ConcertRepertoireId id;
 
-@MapsId("concertId")
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "concert_id", nullable = false)
-private Concert concert;
+    @Column("concert_id")
+    private Long concertId;
 
-@MapsId("repertoireItemId")
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "repertoire_item_id", nullable = false)
-private RepertoireItem repertoireItem;
+    @Column("repertoire_item_id")
+    private Long repertoireItemId;
 
-@Column(name = "order_index", nullable = false)
-private int orderIndex;
+    @Column("order_index")
+    private int orderIndex;
 
-protected ConcertRepertoire() {}
+    protected ConcertRepertoire() {
+    }
 
-public ConcertRepertoireId getId() { return id; }
-public Concert getConcert() { return concert; }
-public void setConcert(Concert concert) { this.concert = concert; }
-public RepertoireItem getRepertoireItem() { return repertoireItem; }
-public void setRepertoireItem(RepertoireItem item) { this.repertoireItem = item; }
-public int getOrderIndex() { return orderIndex; }
-public void setOrderIndex(int orderIndex) { this.orderIndex = orderIndex; }
+    public ConcertRepertoire(Long concertId, Long repertoireItemId, int orderIndex) {
+        this.concertId = concertId;
+        this.repertoireItemId = repertoireItemId;
+        this.orderIndex = orderIndex;
+    }
 
+    public Long getConcertId() {
+        return concertId;
+    }
+
+    public Long getRepertoireItemId() {
+        return repertoireItemId;
+    }
+
+    public int getOrderIndex() {
+        return orderIndex;
+    }
+
+    public void setOrderIndex(int orderIndex) {
+        this.orderIndex = orderIndex;
+    }
 }

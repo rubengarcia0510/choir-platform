@@ -34,7 +34,7 @@ public class DirectorEmailVerificationService {
         this.directorRepository = directorRepository;
     }
 
-    @Transactional
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<IssuedToken> issueToken(Director director) {
         if (director.getId() == null) {
             return Mono.error(new IllegalArgumentException(
@@ -67,7 +67,7 @@ public class DirectorEmailVerificationService {
                 .thenReturn(new IssuedToken(rawToken, expiresAt));
     }
 
-    @Transactional
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<Boolean> verifyToken(String rawToken) {
         if (rawToken == null || rawToken.isBlank() || rawToken.length() > 128) {
             return Mono.just(false);
