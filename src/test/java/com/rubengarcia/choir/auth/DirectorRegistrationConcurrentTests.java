@@ -210,12 +210,6 @@ class DirectorRegistrationConcurrentTests {
                             .map(CompletableFuture::join)
                             .toList();
 
-            assertTrue(
-                    startedLookups.get() >= 2,
-                    "Al menos dos consultas de existencia deben comenzar "
-                            + "antes de continuar; iniciadas: "
-                            + startedLookups.get());
-
             assertEquals(
                     REQUEST_COUNT,
                     responses.size());
@@ -225,6 +219,12 @@ class DirectorRegistrationConcurrentTests {
                             .allMatch(response -> response.status() == 202),
                     () -> "Todas las respuestas deben ser 202 y ninguna 500: "
                             + responses);
+
+            assertTrue(
+                    startedLookups.get() >= 2,
+                    "Al menos dos consultas de existencia deben comenzar "
+                            + "antes de continuar; iniciadas: "
+                            + startedLookups.get());
 
             String genericResponse =
                     responses.get(0).body();
