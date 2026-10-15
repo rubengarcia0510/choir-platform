@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
@@ -90,10 +91,16 @@ public class AuthController {
                         request.email(),
                         request.password(),
                         verificationUrlBase)
-                .thenReturn(ResponseEntity
-                        .status(HttpStatus.ACCEPTED)
-                        .body((AuthApiResponse) new MessageResponse(
-                                "If registration is available, a verification email will be sent.")));
+                .thenReturn(registrationAcceptedResponse())
+                .onErrorResume(
+                        DuplicateKeyException.class,
+                        exception -> Mono.just(registrationAcceptedResponse()));
+    }
+
+    private ResponseEntity<AuthApiResponse> registrationAcceptedResponse() {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body((AuthApiResponse) new MessageResponse(
+                        "If registration is available, a verification email will be sent."));
     }
 
     @PostMapping("/verify-email")
