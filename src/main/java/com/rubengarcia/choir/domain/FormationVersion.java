@@ -1,53 +1,89 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(
-name = "formation_versions",
-uniqueConstraints = @UniqueConstraint(
-name = "uq_formation_version",
-columnNames = {"formation_id", "version_number"}
-)
-)
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
+@Table("formation_versions")
 public class FormationVersion {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "formation_id", nullable = false)
-private Formation formation;
+    @Id
+    private Long id;
 
-@Column(name = "version_number", nullable = false)
-private int versionNumber;
+    @Column("formation_id")
+    private Long formationId;
 
-@Column(nullable = false, length = 20)
-private String status = "DRAFT";
+    @Column("version_number")
+    private int versionNumber;
 
-@Column(length = 2000)
-private String notes;
+    private String status = "DRAFT";
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    private String notes;
 
-@Column(name = "published_at")
-private LocalDateTime publishedAt;
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-protected FormationVersion() {}
+    @Column("published_at")
+    private LocalDateTime publishedAt;
 
-public Long getId() { return id; }
-public Formation getFormation() { return formation; }
-public void setFormation(Formation formation) { this.formation = formation; }
-public int getVersionNumber() { return versionNumber; }
-public void setVersionNumber(int versionNumber) { this.versionNumber = versionNumber; }
-public String getStatus() { return status; }
-public void setStatus(String status) { this.status = status; }
-public String getNotes() { return notes; }
-public void setNotes(String notes) { this.notes = notes; }
-public LocalDateTime getCreatedAt() { return createdAt; }
-public LocalDateTime getPublishedAt() { return publishedAt; }
-public void setPublishedAt(LocalDateTime publishedAt) { this.publishedAt = publishedAt; }
+    public FormationVersion() {
+    }
 
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getFormationId() {
+        return formationId;
+    }
+
+    public void setFormationId(Long formationId) {
+        this.formationId = formationId;
+    }
+
+    public int getVersionNumber() {
+        return versionNumber;
+    }
+
+    public void setVersionNumber(int versionNumber) {
+        this.versionNumber = versionNumber;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+    }
 }

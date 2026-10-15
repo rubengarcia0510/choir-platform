@@ -1,142 +1,149 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Transactional
 class DomainPersistenceTests {
 
-@Autowired
-private EntityManager entityManager;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
-@Autowired
-private EntityManagerFactory entityManagerFactory;
+    @Test
+    void allDomainTablesExistInRelationalSchema() {
+        List<String> tables = List.of(
+                "directors", "choirs", "singers", "concerts",
+                "concert_cast_snapshots", "repertoire_items",
+                "concert_repertoire", "formations", "formation_versions",
+                "formation_positions", "transitions", "transition_versions",
+                "absences");
 
-@Test
-void allDomainEntitiesAreRegisteredWithJpa() {
-    Set<String> entityNames = entityManagerFactory.getMetamodel()
-            .getEntities()
-            .stream()
-            .map(entity -> entity.getJavaType().getSimpleName())
-            .collect(Collectors.toSet());
+        for (String table : tables) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                            + "WHERE UPPER(TABLE_SCHEMA) = UPPER(CURRENT_SCHEMA()) "
+                            + "AND UPPER(TABLE_NAME) = UPPER(?)",
+                    Integer.class,
+                    table.toUpperCase());
 
-    assertThat(entityNames).contains(
-            "Director",
-            "Choir",
-            "Singer",
-            "Concert",
-            "ConcertCastSnapshot",
-            "RepertoireItem",
-            "ConcertRepertoire",
-            "Formation",
-            "FormationVersion",
-            "FormationPosition",
-            "Transition",
-            "TransitionVersion",
-            "Absence"
-    );
-}
+            assertThat(count)
+                    .as("Debe existir la tabla relacional %s", table)
+                    .isEqualTo(1);
+        }
+    }
 
-@Test
-void concertCastSnapshotKeepsHistoricalSingerDetails() {
-    Director director = new Director();
-    director.setDisplayName("Director de prueba");
-    director.setEmail("director-domain-test@example.test");
-    entityManager.persist(director);
+    @Test
+    void concertCastSnapshotKeepsHistoricalSingerDetails() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "snapshot-" + suffix + "@example.test";
+        String choirName = "Coro snapshot " + suffix;
+        String concertTitle = "Concierto snapshot " + suffix;
 
-    Choir choir = new Choir();
-    choir.setDirector(director);
-    choir.setName("Coro de prueba");
-    entityManager.persist(choir);
+        jdbcTemplate.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director de prueba", email);
+        Long directorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM directors WHERE email = ?", Long.class, email);
 
-    Singer singer = new Singer();
-    singer.setChoir(choir);
-    singer.setDisplayName("Nombre original");
-    singer.setVoicePart("SOPRANO");
-    entityManager.persist(singer);
+        jdbcTemplate.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId, choirName);
+        Long choirId = jdbcTemplate.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class, directorId, choirName);
 
-    Concert concert = new Concert();
-    concert.setChoir(choir);
-    concert.setTitle("Concierto de prueba");
-    entityManager.persist(concert);
+        jdbcTemplate.update(
+                "INSERT INTO singers (choir_id, display_name, voice_part) VALUES (?, ?, ?)",
+                choirId, "Nombre original", "SOPRANO");
+        Long singerId = jdbcTemplate.queryForObject(
+                "SELECT id FROM singers WHERE choir_id = ? AND display_name = ?",
+                Long.class, choirId, "Nombre original");
 
-    ConcertCastSnapshot snapshot = new ConcertCastSnapshot();
-    snapshot.setConcert(concert);
-    snapshot.setSourceSinger(singer);
-    snapshot.setSingerNameSnapshot("Nombre original");
-    snapshot.setVoicePartSnapshot("SOPRANO");
-    entityManager.persist(snapshot);
-    entityManager.flush();
+        jdbcTemplate.update(
+                "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
+                choirId, concertTitle);
+        Long concertId = jdbcTemplate.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, concertTitle);
 
-    singer.setDisplayName("Nombre actualizado");
-    singer.setVoicePart("ALTO");
-    entityManager.flush();
-    entityManager.clear();
+        jdbcTemplate.update(
+                "INSERT INTO concert_cast_snapshots "
+                        + "(concert_id, source_singer_id, singer_name_snapshot, voice_part_snapshot) "
+                        + "VALUES (?, ?, ?, ?)",
+                concertId, singerId, "Nombre original", "SOPRANO");
 
-    ConcertCastSnapshot storedSnapshot =
-            entityManager.find(ConcertCastSnapshot.class, snapshot.getId());
+        jdbcTemplate.update(
+                "UPDATE singers SET display_name = ?, voice_part = ? WHERE id = ?",
+                "Nombre actualizado", "ALTO", singerId);
 
-    assertThat(storedSnapshot.getSingerNameSnapshot())
-            .isEqualTo("Nombre original");
-    assertThat(storedSnapshot.getVoicePartSnapshot())
-            .isEqualTo("SOPRANO");
-    assertThat(storedSnapshot.getSourceSinger().getDisplayName())
-            .isEqualTo("Nombre actualizado");
-}
+        String storedName = jdbcTemplate.queryForObject(
+                "SELECT singer_name_snapshot FROM concert_cast_snapshots WHERE concert_id = ?",
+                String.class, concertId);
+        String storedVoice = jdbcTemplate.queryForObject(
+                "SELECT voice_part_snapshot FROM concert_cast_snapshots WHERE concert_id = ?",
+                String.class, concertId);
+        String currentSingerName = jdbcTemplate.queryForObject(
+                "SELECT display_name FROM singers WHERE id = ?",
+                String.class, singerId);
 
-@Test
-void publishedFormationVersionCanCoexistWithANewDraftVersion() {
-    Director director = new Director();
-    director.setDisplayName("Director de versiones");
-    director.setEmail("director-versions-test@example.test");
-    entityManager.persist(director);
+        assertThat(storedName).isEqualTo("Nombre original");
+        assertThat(storedVoice).isEqualTo("SOPRANO");
+        assertThat(currentSingerName).isEqualTo("Nombre actualizado");
+    }
 
-    Choir choir = new Choir();
-    choir.setDirector(director);
-    choir.setName("Coro de versiones");
-    entityManager.persist(choir);
+    @Test
+    void publishedFormationVersionCanCoexistWithANewDraftVersion() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "formation-" + suffix + "@example.test";
+        String choirName = "Coro versiones " + suffix;
+        String formationName = "Formación principal " + suffix;
 
-    Formation formation = new Formation();
-    formation.setChoir(choir);
-    formation.setName("Formación principal");
-    entityManager.persist(formation);
+        jdbcTemplate.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director de versiones", email);
+        Long directorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM directors WHERE email = ?", Long.class, email);
 
-    FormationVersion published = new FormationVersion();
-    published.setFormation(formation);
-    published.setVersionNumber(1);
-    published.setStatus("PUBLISHED");
-    entityManager.persist(published);
+        jdbcTemplate.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId, choirName);
+        Long choirId = jdbcTemplate.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class, directorId, choirName);
 
-    FormationVersion draft = new FormationVersion();
-    draft.setFormation(formation);
-    draft.setVersionNumber(2);
-    draft.setStatus("DRAFT");
-    entityManager.persist(draft);
-    entityManager.flush();
+        jdbcTemplate.update(
+                "INSERT INTO formations (choir_id, name) VALUES (?, ?)",
+                choirId, formationName);
+        Long formationId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formations WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, formationName);
 
-    Long publishedId = published.getId();
-    Long draftId = draft.getId();
-    entityManager.clear();
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions (formation_id, version_number, status) "
+                        + "VALUES (?, ?, ?)",
+                formationId, 1, "PUBLISHED");
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions (formation_id, version_number, status) "
+                        + "VALUES (?, ?, ?)",
+                formationId, 2, "DRAFT");
 
-    FormationVersion storedPublished =
-            entityManager.find(FormationVersion.class, publishedId);
-    FormationVersion storedDraft =
-            entityManager.find(FormationVersion.class, draftId);
+        List<Integer> versions = jdbcTemplate.queryForList(
+                "SELECT version_number FROM formation_versions "
+                        + "WHERE formation_id = ? ORDER BY version_number",
+                Integer.class, formationId);
+        List<String> statuses = jdbcTemplate.queryForList(
+                "SELECT status FROM formation_versions "
+                        + "WHERE formation_id = ? ORDER BY version_number",
+                String.class, formationId);
 
-    assertThat(storedPublished.getStatus()).isEqualTo("PUBLISHED");
-    assertThat(storedPublished.getVersionNumber()).isEqualTo(1);
-    assertThat(storedDraft.getStatus()).isEqualTo("DRAFT");
-    assertThat(storedDraft.getVersionNumber()).isEqualTo(2);
-}
-
+        assertThat(versions).containsExactly(1, 2);
+        assertThat(statuses).containsExactly("PUBLISHED", "DRAFT");
+    }
 }
