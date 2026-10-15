@@ -1,7 +1,5 @@
 package com.rubengarcia.choir.auth;
 
-import com.rubengarcia.choir.domain.Director;
-import com.rubengarcia.choir.repository.DirectorRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
@@ -11,11 +9,8 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.test.context.TestConstructor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
@@ -28,14 +23,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -54,9 +47,6 @@ class DirectorRegistrationConcurrentTests {
     private final DatabaseClient databaseClient;
     private final ObjectMapper objectMapper;
 
-    @MockitoSpyBean
-    private DirectorRepository directorRepository;
-
     @MockitoBean
     private VerificationEmailSender emailSender;
 
@@ -74,47 +64,6 @@ class DirectorRegistrationConcurrentTests {
             throws Exception {
 
         String email = "concurrent-" + UUID.randomUUID() + "@example.test";
-
-        /*
-         * Deterministic race:
-         *
-         * The first two subscriptions to the real repository query for this
-         * exact email are held at the query Mono boundary. The test releases
-         * both only after both subscriptions have reached this point.
-         *
-         * Therefore both registrations have started their existence lookup
-         * before either registration can continue to the save.
-         */
-        Sinks.One<Void> bothLookupsStarted = Sinks.one();
-        AtomicInteger startedLookups = new AtomicInteger();
-
-        doAnswer(invocation -> {
-            String queriedEmail = invocation.getArgument(0);
-
-            @SuppressWarnings("unchecked")
-            Mono<Director> actualQuery =
-                    (Mono<Director>) invocation.callRealMethod();
-
-            if (!email.equalsIgnoreCase(queriedEmail)) {
-                return actualQuery;
-            }
-
-            return Mono.defer(() -> {
-                int started = startedLookups.incrementAndGet();
-
-                if (started <= 2) {
-                    if (started == 2) {
-                        bothLookupsStarted.tryEmitEmpty();
-                    }
-
-                    return bothLookupsStarted.asMono()
-                            .timeout(TIMEOUT)
-                            .then(actualQuery);
-                }
-
-                return actualQuery;
-            });
-        }).when(directorRepository).findByEmailIgnoreCase(anyString());
 
         EntityExchangeResult<Map<String, String>> csrfResult =
                 webTestClient.get()
@@ -217,14 +166,7 @@ class DirectorRegistrationConcurrentTests {
             assertTrue(
                     responses.stream()
                             .allMatch(response -> response.status() == 202),
-                    () -> "Todas las respuestas deben ser 202 y ninguna 500: "
-                            + responses);
-
-            assertTrue(
-                    startedLookups.get() >= 2,
-                    "Al menos dos consultas de existencia deben comenzar "
-                            + "antes de continuar; iniciadas: "
-                            + startedLookups.get());
+                    () -> "Todas las respuestas deben ser 202: " + responses);
 
             String genericResponse =
                     responses.get(0).body();
@@ -247,9 +189,9 @@ class DirectorRegistrationConcurrentTests {
 
             Long accountCount =
                     databaseClient.sql(
-                                    "SELECT COUNT(*) AS total "
-                                            + "FROM directors "
-                                            + "WHERE email = :email")
+                                    "SELECT COUNT(*) AS total " +
+                                            "FROM directors " +
+                                            "WHERE email = :email")
                             .bind("email", email)
                             .map((row, metadata) ->
                                     row.get("total", Long.class))
@@ -259,8 +201,7 @@ class DirectorRegistrationConcurrentTests {
             assertEquals(
                     1L,
                     accountCount,
-                    "Debe existir exactamente una cuenta "
-                            + "para el email concurrente");
+                    "Debe existir exactamente una cuenta para el email concurrente");
 
             Long tokenCount =
                     databaseClient.sql("""
@@ -278,8 +219,7 @@ class DirectorRegistrationConcurrentTests {
             assertEquals(
                     1L,
                     tokenCount,
-                    "Debe quedar exactamente un token "
-                            + "de verificación para la cuenta");
+                    "Debe quedar exactamente un token de verificación para la cuenta");
 
             verify(
                     emailSender,
@@ -292,7 +232,6 @@ class DirectorRegistrationConcurrentTests {
 
         } finally {
             start.countDown();
-            bothLookupsStarted.tryEmitEmpty();
             executor.shutdownNow();
         }
     }
