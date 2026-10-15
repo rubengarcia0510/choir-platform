@@ -17,16 +17,19 @@ import java.util.Locale;
 public class DirectorRegistrationService {
 
     private final DirectorRepository directorRepository;
+    private final DirectorRegistrationLookup registrationLookup;
     private final DirectorEmailVerificationService verificationService;
     private final PasswordEncoder passwordEncoder;
     private final ObjectProvider<VerificationEmailSender> senderProvider;
 
     public DirectorRegistrationService(
             DirectorRepository directorRepository,
+            DirectorRegistrationLookup registrationLookup,
             DirectorEmailVerificationService verificationService,
             PasswordEncoder passwordEncoder,
             ObjectProvider<VerificationEmailSender> senderProvider) {
         this.directorRepository = directorRepository;
+        this.registrationLookup = registrationLookup;
         this.verificationService = verificationService;
         this.passwordEncoder = passwordEncoder;
         this.senderProvider = senderProvider;
@@ -38,6 +41,7 @@ public class DirectorRegistrationService {
             String email,
             String password,
             String verificationUrlBase) {
+
         VerificationEmailSender sender = senderProvider.getIfAvailable();
 
         if (sender == null) {
@@ -47,11 +51,13 @@ public class DirectorRegistrationService {
 
         String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
 
-        return directorRepository.findByEmailIgnoreCase(normalizedEmail)
-                .map(existing -> false)
-                .defaultIfEmpty(true)
-                .filter(Boolean::booleanValue)
-                .flatMap(ignored -> {
+        return registrationLookup.findByEmailIgnoreCase(normalizedEmail)
+                .hasElement()
+                .flatMap(exists -> {
+                    if (exists) {
+                        return Mono.empty();
+                    }
+
                     Director director = Director.create(
                             displayName.trim(), normalizedEmail);
                     director.setPasswordHash(passwordEncoder.encode(password));
@@ -60,8 +66,10 @@ public class DirectorRegistrationService {
                     return directorRepository.save(director)
                             .flatMap(saved -> verificationService.issueToken(saved)
                                     .flatMap(issued -> {
-                                        String verificationUrl = buildVerificationUrl(
-                                                verificationUrlBase, issued.token());
+                                        String verificationUrl =
+                                                buildVerificationUrl(
+                                                        verificationUrlBase,
+                                                        issued.token());
 
                                         return Mono.fromRunnable(() ->
                                                         sender.sendVerificationEmail(
