@@ -1,7 +1,6 @@
 package com.rubengarcia.choir.auth;
 
 import com.rubengarcia.choir.domain.Director;
-import com.rubengarcia.choir.repository.DirectorRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
@@ -55,7 +54,7 @@ class DirectorRegistrationConcurrentTests {
     private final ObjectMapper objectMapper;
 
     @MockitoSpyBean
-    private DirectorRepository directorRepository;
+    private DirectorRegistrationLookup registrationLookup;
 
     @MockitoBean
     private VerificationEmailSender emailSender;
@@ -75,19 +74,14 @@ class DirectorRegistrationConcurrentTests {
 
         String email = "concurrent-" + UUID.randomUUID() + "@example.test";
 
-        /*
-         * Deterministic race:
-         *
-         * The first two subscriptions to the real repository query for this
-         * exact email are held at the query Mono boundary. The test releases
-         * both only after both subscriptions have reached this point.
-         *
-         * Therefore both registrations have started their existence lookup
-         * before either registration can continue to the save.
-         */
         Sinks.One<Void> bothLookupsStarted = Sinks.one();
         AtomicInteger startedLookups = new AtomicInteger();
 
+        /*
+         * El spy está sobre una clase concreta. La llamada real delega
+         * en DirectorRepository, y las dos primeras consultas quedan
+         * retenidas hasta que ambas hayan comenzado.
+         */
         doAnswer(invocation -> {
             String queriedEmail = invocation.getArgument(0);
 
@@ -114,7 +108,7 @@ class DirectorRegistrationConcurrentTests {
 
                 return actualQuery;
             });
-        }).when(directorRepository).findByEmailIgnoreCase(anyString());
+        }).when(registrationLookup).findByEmailIgnoreCase(anyString());
 
         EntityExchangeResult<Map<String, String>> csrfResult =
                 webTestClient.get()
@@ -128,15 +122,11 @@ class DirectorRegistrationConcurrentTests {
         ResponseCookie sessionCookie =
                 csrfResult.getResponseCookies().getFirst("SESSION");
 
-        assertNotNull(
-                sessionCookie,
-                "Debe crearse una sesión para CSRF");
+        assertNotNull(sessionCookie, "Debe crearse una sesión para CSRF");
 
         String csrfToken = csrfResult.getResponseBody().get("token");
 
-        assertNotNull(
-                csrfToken,
-                "Debe obtenerse el token CSRF");
+        assertNotNull(csrfToken, "Debe obtenerse el token CSRF");
 
         String requestBody = objectMapper.writeValueAsString(Map.of(
                 "displayName", "Concurrent Registration",
@@ -147,11 +137,8 @@ class DirectorRegistrationConcurrentTests {
         ExecutorService executor =
                 Executors.newFixedThreadPool(REQUEST_COUNT);
 
-        CountDownLatch ready =
-                new CountDownLatch(REQUEST_COUNT);
-
-        CountDownLatch start =
-                new CountDownLatch(1);
+        CountDownLatch ready = new CountDownLatch(REQUEST_COUNT);
+        CountDownLatch start = new CountDownLatch(1);
 
         try {
             List<CompletableFuture<ResponseSnapshot>> requests =
@@ -173,11 +160,8 @@ class DirectorRegistrationConcurrentTests {
                                         .cookie(
                                                 "SESSION",
                                                 sessionCookie.getValue())
-                                        .header(
-                                                "X-CSRF-TOKEN",
-                                                csrfToken)
-                                        .contentType(
-                                                MediaType.APPLICATION_JSON)
+                                        .header("X-CSRF-TOKEN", csrfToken)
+                                        .contentType(MediaType.APPLICATION_JSON)
                                         .bodyValue(requestBody)
                                         .exchange()
                                         .expectBody(String.class)
@@ -201,38 +185,26 @@ class DirectorRegistrationConcurrentTests {
 
             CompletableFuture.allOf(
                     requests.toArray(new CompletableFuture[0]))
-                    .get(
-                            TIMEOUT.toSeconds(),
-                            TimeUnit.SECONDS);
+                    .get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
 
             List<ResponseSnapshot> responses =
                     requests.stream()
                             .map(CompletableFuture::join)
                             .toList();
 
-            assertEquals(
-                    REQUEST_COUNT,
-                    responses.size());
-
-            assertTrue(
-                    responses.stream().allMatch(response -> response.status() == 202),
-                    () -> "Respuestas HTTP inesperadas antes de verificar la barrera: "
-                            + responses);
+            assertEquals(REQUEST_COUNT, responses.size());
 
             assertTrue(
                     startedLookups.get() >= 2,
-                    "Al menos dos consultas de existencia deben comenzar "
-                            + "antes de continuar; iniciadas: "
-                            + startedLookups.get());
+                    "Al menos dos consultas deben comenzar antes de continuar; "
+                            + "iniciadas: " + startedLookups.get());
 
             assertTrue(
                     responses.stream()
                             .allMatch(response -> response.status() == 202),
-                    () -> "Todas las respuestas deben ser 202 y ninguna 500: "
-                            + responses);
+                    () -> "Todas las respuestas deben ser HTTP 202: " + responses);
 
-            String genericResponse =
-                    responses.get(0).body();
+            String genericResponse = responses.get(0).body();
 
             assertNotNull(genericResponse);
 
@@ -250,45 +222,36 @@ class DirectorRegistrationConcurrentTests {
                     !genericResponse.contains("token="),
                     "La respuesta no debe revelar el token de verificación");
 
-            Long accountCount =
-                    databaseClient.sql(
-                                    "SELECT COUNT(*) AS total "
-                                            + "FROM directors "
-                                            + "WHERE email = :email")
-                            .bind("email", email)
-                            .map((row, metadata) ->
-                                    row.get("total", Long.class))
-                            .one()
-                            .block(TIMEOUT);
+            Long accountCount = databaseClient.sql(
+                            "SELECT COUNT(*) AS total FROM directors "
+                                    + "WHERE email = :email")
+                    .bind("email", email)
+                    .map((row, metadata) -> row.get("total", Long.class))
+                    .one()
+                    .block(TIMEOUT);
 
             assertEquals(
                     1L,
                     accountCount,
-                    "Debe existir exactamente una cuenta "
-                            + "para el email concurrente");
+                    "Debe existir exactamente una cuenta para el email concurrente");
 
-            Long tokenCount =
-                    databaseClient.sql("""
+            Long tokenCount = databaseClient.sql("""
                             SELECT COUNT(*) AS total
                             FROM director_email_verification_tokens t
                             JOIN directors d ON d.id = t.director_id
                             WHERE d.email = :email
                             """)
-                            .bind("email", email)
-                            .map((row, metadata) ->
-                                    row.get("total", Long.class))
-                            .one()
-                            .block(TIMEOUT);
+                    .bind("email", email)
+                    .map((row, metadata) -> row.get("total", Long.class))
+                    .one()
+                    .block(TIMEOUT);
 
             assertEquals(
                     1L,
                     tokenCount,
-                    "Debe quedar exactamente un token "
-                            + "de verificación para la cuenta");
+                    "Debe quedar exactamente un token de verificación");
 
-            verify(
-                    emailSender,
-                    times(1))
+            verify(emailSender, times(1))
                     .sendVerificationEmail(
                             anyString(),
                             anyString(),
@@ -302,8 +265,6 @@ class DirectorRegistrationConcurrentTests {
         }
     }
 
-    private record ResponseSnapshot(
-            int status,
-            String body) {
+    private record ResponseSnapshot(int status, String body) {
     }
 }
