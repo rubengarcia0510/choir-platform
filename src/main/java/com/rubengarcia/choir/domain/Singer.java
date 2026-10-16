@@ -23,7 +23,7 @@ public class Singer {
     @Column("voice_part")
     private String voicePart;
 
-    private boolean active;
+    private boolean active = true;
 
     @Column("created_at")
     private LocalDateTime createdAt;
@@ -77,5 +77,9 @@ public class Singer {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 }
