@@ -10,6 +10,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.server.csrf.CsrfToken;
@@ -149,7 +150,9 @@ public class AuthController {
     public Mono<ResponseEntity<AuthApiResponse>> me(
             Authentication authentication) {
 
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null
+                || authentication instanceof AnonymousAuthenticationToken
+                || !authentication.isAuthenticated()) {
             return Mono.just(unauthorizedResponse());
         }
 
