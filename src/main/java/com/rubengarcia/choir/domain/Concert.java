@@ -23,7 +23,7 @@ public class Concert {
 
     private String venue;
 
-    private String status;
+    private String status = "PLANNED";
 
     @Column("published_at")
     private LocalDateTime publishedAt;
