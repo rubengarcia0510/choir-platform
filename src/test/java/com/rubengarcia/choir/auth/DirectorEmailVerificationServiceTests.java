@@ -4,8 +4,10 @@ import com.rubengarcia.choir.domain.Director;
 import com.rubengarcia.choir.domain.DirectorEmailVerificationToken;
 import com.rubengarcia.choir.repository.DirectorEmailVerificationTokenRepository;
 import com.rubengarcia.choir.repository.DirectorRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestConstructor;
 
 import java.nio.charset.StandardCharsets;
@@ -13,6 +15,8 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.HexFormat;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -32,14 +36,31 @@ class DirectorEmailVerificationServiceTests {
     private final DirectorEmailVerificationService verificationService;
     private final DirectorRepository directorRepository;
     private final DirectorEmailVerificationTokenRepository tokenRepository;
+    private final JdbcTemplate jdbcTemplate;
+    private final List<Long> createdDirectorIds = new ArrayList<>();
 
     DirectorEmailVerificationServiceTests(
             DirectorEmailVerificationService verificationService,
             DirectorRepository directorRepository,
-            DirectorEmailVerificationTokenRepository tokenRepository) {
+            DirectorEmailVerificationTokenRepository tokenRepository,
+            JdbcTemplate jdbcTemplate) {
         this.verificationService = verificationService;
         this.directorRepository = directorRepository;
         this.tokenRepository = tokenRepository;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @AfterEach
+    void cleanup() {
+        for (Long directorId : createdDirectorIds) {
+            jdbcTemplate.update(
+                    "DELETE FROM director_email_verification_tokens WHERE director_id = ?",
+                    directorId);
+            jdbcTemplate.update(
+                    "DELETE FROM directors WHERE id = ?",
+                    directorId);
+        }
+        createdDirectorIds.clear();
     }
 
     @Test
@@ -152,6 +173,8 @@ class DirectorEmailVerificationServiceTests {
         Director saved = directorRepository.save(director).block(DB_TIMEOUT);
         assertNotNull(saved);
         assertNotNull(saved.getId());
+
+        createdDirectorIds.add(saved.getId());
         return saved;
     }
 

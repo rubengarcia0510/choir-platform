@@ -1,10 +1,12 @@
 package com.rubengarcia.choir.domain;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -15,6 +17,16 @@ class DomainPersistenceTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    private final List<Long> createdDirectorIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        for (Long directorId : createdDirectorIds) {
+            deleteDirectorData(directorId);
+        }
+        createdDirectorIds.clear();
+    }
 
     @Test
     void allDomainTablesExistInRelationalSchema() {
@@ -51,6 +63,7 @@ class DomainPersistenceTests {
                 "Director de prueba", email);
         Long directorId = jdbcTemplate.queryForObject(
                 "SELECT id FROM directors WHERE email = ?", Long.class, email);
+        createdDirectorIds.add(directorId);
 
         jdbcTemplate.update(
                 "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
@@ -110,6 +123,7 @@ class DomainPersistenceTests {
                 "Director de versiones", email);
         Long directorId = jdbcTemplate.queryForObject(
                 "SELECT id FROM directors WHERE email = ?", Long.class, email);
+        createdDirectorIds.add(directorId);
 
         jdbcTemplate.update(
                 "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
@@ -145,5 +159,93 @@ class DomainPersistenceTests {
 
         assertThat(versions).containsExactly(1, 2);
         assertThat(statuses).containsExactly("PUBLISHED", "DRAFT");
+    }
+
+    private void deleteDirectorData(Long directorId) {
+        List<Long> choirIds = jdbcTemplate.queryForList(
+                "SELECT id FROM choirs WHERE director_id = ?",
+                Long.class, directorId);
+
+        for (Long choirId : choirIds) {
+            deleteChoirData(choirId);
+        }
+
+        jdbcTemplate.update(
+                "DELETE FROM directors WHERE id = ?",
+                directorId);
+    }
+
+    private void deleteChoirData(Long choirId) {
+        jdbcTemplate.update("""
+                DELETE FROM formation_positions
+                WHERE formation_version_id IN (
+                    SELECT fv.id
+                    FROM formation_versions fv
+                    JOIN formations f ON f.id = fv.formation_id
+                    WHERE f.choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM transition_versions
+                WHERE transition_id IN (
+                    SELECT id FROM transitions WHERE choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM formation_versions
+                WHERE formation_id IN (
+                    SELECT id FROM formations WHERE choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM formations WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM concert_repertoire
+                WHERE concert_id IN (
+                    SELECT id FROM concerts WHERE choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM concert_cast_snapshots
+                WHERE concert_id IN (
+                    SELECT id FROM concerts WHERE choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM absences
+                WHERE singer_id IN (
+                    SELECT id FROM singers WHERE choir_id = ?
+                )
+                OR concert_id IN (
+                    SELECT id FROM concerts WHERE choir_id = ?
+                )
+                """, choirId, choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM concerts WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM repertoire_items WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM singers WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM transitions WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM choirs WHERE id = ?",
+                choirId);
     }
 }
