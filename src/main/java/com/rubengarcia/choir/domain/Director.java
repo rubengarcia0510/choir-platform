@@ -1,56 +1,78 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "directors")
+@Table("directors")
 public class Director {
 
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    private Long id;
 
-@Column(name = "display_name", nullable = false, length = 160)
-private String displayName;
+    @Column("display_name")
+    private String displayName;
 
-@Column(nullable = false, unique = true, length = 254)
-private String email;
+    private String email;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    @Column("password_hash")
+    private String passwordHash;
 
-protected Director() {
-}
+    @Column("email_verified")
+    private boolean emailVerified;
 
-public Long getId() {
-    return id;
-}
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-public String getDisplayName() {
-    return displayName;
-}
+    protected Director() {
+    }
 
-public void setDisplayName(String displayName) {
-    this.displayName = displayName;
-}
+    public static Director create(String displayName, String email) {
+        Director director = new Director();
+        director.setDisplayName(displayName);
+        director.setEmail(email);
+        return director;
+    }
 
-public String getEmail() {
-    return email;
-}
+    public Long getId() {
+        return id;
+    }
 
-public void setEmail(String email) {
-    this.email = email;
-}
+    public String getDisplayName() {
+        return displayName;
+    }
 
-public LocalDateTime getCreatedAt() {
-    return createdAt;
-}
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }

@@ -1,78 +1,59 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(
-name = "choirs",
-uniqueConstraints = @UniqueConstraint(
-name = "uq_choir_director_name",
-columnNames = {"director_id", "name"}
-)
-)
+@Table("choirs")
 public class Choir {
 
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "director_id", nullable = false)
-private Director director;
+    @Column("director_id")
+    private Long directorId;
 
-@Column(nullable = false, length = 160)
-private String name;
+    private String name;
 
-@Column(length = 1000)
-private String description;
+    private String description;
 
-@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime createdAt;
+    @Column("created_at")
+    private LocalDateTime createdAt;
 
-protected Choir() {
-}
+    protected Choir() {
+    }
 
-public Long getId() {
-    return id;
-}
+    public Long getId() {
+        return id;
+    }
 
-public Director getDirector() {
-    return director;
-}
+    public Long getDirectorId() {
+        return directorId;
+    }
 
-public void setDirector(Director director) {
-    this.director = director;
-}
+    public void setDirectorId(Long directorId) {
+        this.directorId = directorId;
+    }
 
-public String getName() {
-    return name;
-}
+    public String getName() {
+        return name;
+    }
 
-public void setName(String name) {
-    this.name = name;
-}
+    public void setName(String name) {
+        this.name = name;
+    }
 
-public String getDescription() {
-    return description;
-}
+    public String getDescription() {
+        return description;
+    }
 
-public void setDescription(String description) {
-    this.description = description;
-}
+    public void setDescription(String description) {
+        this.description = description;
+    }
 
-public LocalDateTime getCreatedAt() {
-    return createdAt;
-}
-
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }
