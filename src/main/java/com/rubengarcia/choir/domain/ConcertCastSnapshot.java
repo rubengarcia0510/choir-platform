@@ -1,43 +1,41 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.*;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "concert_cast_snapshots")
+@Table("concert_cast_snapshots")
 public class ConcertCastSnapshot {
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+    @Id
+    private Long id;
 
-@ManyToOne(fetch = FetchType.LAZY, optional = false)
-@JoinColumn(name = "concert_id", nullable = false)
-private Concert concert;
+    @Column("concert_id")
+    private Long concertId;
 
-@ManyToOne(fetch = FetchType.LAZY)
-@JoinColumn(name = "source_singer_id")
-private Singer sourceSinger;
+    @Column("source_singer_id")
+    private Long sourceSingerId;
 
-@Column(name = "singer_name_snapshot", nullable = false, length = 160)
-private String singerNameSnapshot;
+    @Column("singer_name_snapshot")
+    private String singerNameSnapshot;
 
-@Column(name = "voice_part_snapshot", length = 40)
-private String voicePartSnapshot;
+    @Column("voice_part_snapshot")
+    private String voicePartSnapshot;
 
-@Column(name = "captured_at", nullable = false, insertable = false, updatable = false)
-private LocalDateTime capturedAt;
+    @Column("captured_at")
+    private LocalDateTime capturedAt;
 
-protected ConcertCastSnapshot() {}
+    protected ConcertCastSnapshot() {}
 
-public Long getId() { return id; }
-public Concert getConcert() { return concert; }
-public void setConcert(Concert concert) { this.concert = concert; }
-public Singer getSourceSinger() { return sourceSinger; }
-public void setSourceSinger(Singer sourceSinger) { this.sourceSinger = sourceSinger; }
-public String getSingerNameSnapshot() { return singerNameSnapshot; }
-public void setSingerNameSnapshot(String value) { this.singerNameSnapshot = value; }
-public String getVoicePartSnapshot() { return voicePartSnapshot; }
-public void setVoicePartSnapshot(String value) { this.voicePartSnapshot = value; }
-public LocalDateTime getCapturedAt() { return capturedAt; }
-
+    public Long getId() { return id; }
+    public Long getConcertId() { return concertId; }
+    public void setConcertId(Long concertId) { this.concertId = concertId; }
+    public Long getSourceSingerId() { return sourceSingerId; }
+    public void setSourceSingerId(Long sourceSingerId) { this.sourceSingerId = sourceSingerId; }
+    public String getSingerNameSnapshot() { return singerNameSnapshot; }
+    public void setSingerNameSnapshot(String singerNameSnapshot) { this.singerNameSnapshot = singerNameSnapshot; }
+    public String getVoicePartSnapshot() { return voicePartSnapshot; }
+    public void setVoicePartSnapshot(String voicePartSnapshot) { this.voicePartSnapshot = voicePartSnapshot; }
+    public LocalDateTime getCapturedAt() { return capturedAt; }
 }

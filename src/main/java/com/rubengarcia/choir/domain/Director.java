@@ -1,36 +1,29 @@
 package com.rubengarcia.choir.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "directors")
+@Table("directors")
 public class Director {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "display_name", nullable = false, length = 160)
+    @Column("display_name")
     private String displayName;
 
-    @Column(nullable = false, unique = true, length = 254)
     private String email;
 
-    @Column(name = "password_hash", length = 100)
+    @Column("password_hash")
     private String passwordHash;
 
-    @Column(name = "email_verified", nullable = false)
+    @Column("email_verified")
     private boolean emailVerified;
 
-    @Column(name = "created_at", nullable = false,
-            insertable = false, updatable = false)
+    @Column("created_at")
     private LocalDateTime createdAt;
 
     protected Director() {
