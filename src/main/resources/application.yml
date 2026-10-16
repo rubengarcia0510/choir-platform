@@ -11,8 +11,6 @@ spring:
     default: local
   flyway:
     enabled: true
-  jpa:
-    open-in-view: false
 
 management:
   endpoints:
@@ -35,10 +33,12 @@ spring:
     username: sa
     password:
     driver-class-name: org.h2.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    database-platform: org.hibernate.dialect.H2Dialect
+    hikari:
+      maximum-pool-size: 5
+  r2dbc:
+    url: r2dbc:h2:mem:///choir?options=DB_CLOSE_DELAY=-1
+    username: sa
+    password:
   flyway:
     locations: classpath:db/migration
 
@@ -61,10 +61,10 @@ spring:
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  r2dbc:
+    url: ${R2DBC_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
   flyway:
     locations: classpath:db/migration
 

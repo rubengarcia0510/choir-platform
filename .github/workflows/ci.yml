@@ -23,7 +23,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests with local profile
+      - name: Repeat deterministic CHOIR-43 test (H2)
+        run: |
+          for attempt in 1 2 3; do
+            echo "CHOIR-43 H2 attempt ${attempt}/3"
+            ./gradlew test --tests 'com.rubengarcia.choir.auth.DirectorRegistrationCompletedLookupConcurrentTests'
+          done
+
+      - name: Run full test suite with local profile
         run: ./gradlew test
 
   test-prod:
@@ -45,6 +52,7 @@ jobs:
     env:
       SPRING_PROFILES_ACTIVE: prod
       DATABASE_URL: jdbc:postgresql://localhost:5432/choir
+      R2DBC_URL: r2dbc:postgresql://localhost:5432/choir
       DATABASE_USERNAME: choir
       DATABASE_PASSWORD: choir
     steps:
@@ -60,5 +68,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests with production profile and PostgreSQL
+      - name: Repeat deterministic CHOIR-43 test (PostgreSQL)
+        run: |
+          for attempt in 1 2 3; do
+            echo "CHOIR-43 PostgreSQL attempt ${attempt}/3"
+            ./gradlew test --tests 'com.rubengarcia.choir.auth.DirectorRegistrationCompletedLookupConcurrentTests'
+          done
+
+      - name: Run full test suite with production profile and PostgreSQL
         run: ./gradlew test

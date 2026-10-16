@@ -1,5 +1,7 @@
 package com.rubengarcia.choir.domain;
 
+import java.time.Duration;
+
 import com.rubengarcia.choir.repository.DirectorRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,7 +56,7 @@ class DirectorAuthenticationTests {
         director.setPasswordHash(passwordEncoder.encode(password));
         director.setEmailVerified(true);
 
-        directorRepository.saveAndFlush(director);
+        directorRepository.save(director).block(Duration.ofSeconds(10));
     }
 
     @Test
@@ -74,7 +76,7 @@ class DirectorAuthenticationTests {
         director.setDisplayName("Director Without Password");
         director.setEmail(unconfiguredEmail);
         director.setPasswordHash(null);
-        directorRepository.saveAndFlush(director);
+        directorRepository.save(director).block(Duration.ofSeconds(10));
 
         CsrfSession csrf = obtainCsrf();
 
@@ -101,7 +103,7 @@ class DirectorAuthenticationTests {
         director.setDisplayName("Unverified Director");
         director.setEmail(unverifiedEmail);
         director.setPasswordHash(passwordEncoder.encode(password));
-        directorRepository.saveAndFlush(director);
+        directorRepository.save(director).block(Duration.ofSeconds(10));
 
         CsrfSession csrf = obtainCsrf();
 
