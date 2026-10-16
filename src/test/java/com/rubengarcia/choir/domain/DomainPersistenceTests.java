@@ -1,11 +1,14 @@
 package com.rubengarcia.choir.domain;
 
+import com.rubengarcia.choir.repository.SingerRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -17,6 +20,9 @@ class DomainPersistenceTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SingerRepository singerRepository;
 
     private final List<Long> createdDirectorIds = new ArrayList<>();
 
@@ -49,6 +55,87 @@ class DomainPersistenceTests {
                     .as("Debe existir la tabla relacional %s", table)
                     .isEqualTo(1);
         }
+    }
+
+    @Test
+    void singerSavedWithoutActiveSettingIsPersistedAsActive() {
+        String suffix = UUID.randomUUID().toString();
+        Long choirId = createChoirForSingerTest(suffix);
+
+        Singer singer = new Singer();
+        singer.setChoirId(choirId);
+        singer.setDisplayName("Cantante activo " + suffix);
+        singer.setEmail("active-" + suffix + "@example.test");
+        singer.setVoicePart("SOPRANO");
+        singer.setCreatedAt(LocalDateTime.now());
+
+        Singer saved = singerRepository.save(singer)
+                .block(Duration.ofSeconds(10));
+
+        assertThat(saved).isNotNull();
+        assertThat(saved.isActive()).isTrue();
+
+        Boolean persistedActive = jdbcTemplate.queryForObject(
+                "SELECT active FROM singers WHERE id = ?",
+                Boolean.class,
+                saved.getId());
+
+        assertThat(persistedActive).isTrue();
+    }
+
+    @Test
+    void singerCanBeSavedExplicitlyInactive() {
+        String suffix = UUID.randomUUID().toString();
+        Long choirId = createChoirForSingerTest(suffix);
+
+        Singer singer = new Singer();
+        singer.setChoirId(choirId);
+        singer.setDisplayName("Cantante inactivo " + suffix);
+        singer.setEmail("inactive-" + suffix + "@example.test");
+        singer.setVoicePart("ALTO");
+        singer.setCreatedAt(LocalDateTime.now());
+        singer.setActive(false);
+
+        Singer saved = singerRepository.save(singer)
+                .block(Duration.ofSeconds(10));
+
+        assertThat(saved).isNotNull();
+        assertThat(saved.isActive()).isFalse();
+
+        Boolean persistedActive = jdbcTemplate.queryForObject(
+                "SELECT active FROM singers WHERE id = ?",
+                Boolean.class,
+                saved.getId());
+
+        assertThat(persistedActive).isFalse();
+    }
+
+    private Long createChoirForSingerTest(String suffix) {
+        String email = "singer-test-" + suffix + "@example.test";
+        String choirName = "Coro cantante " + suffix;
+
+        jdbcTemplate.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director de prueba",
+                email);
+
+        Long directorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM directors WHERE email = ?",
+                Long.class,
+                email);
+
+        createdDirectorIds.add(directorId);
+
+        jdbcTemplate.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId,
+                choirName);
+
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class,
+                directorId,
+                choirName);
     }
 
     @Test
