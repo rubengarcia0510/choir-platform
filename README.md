@@ -11,75 +11,55 @@ Backend de CHOIR para organizar coreutas, conciertos y formaciones.
 
 ## Ejecutar localmente
 
-Desde la raíz del repositorio:
+Desde la raíz del repositorio, ejecutá `./gradlew bootRun`.
 
-```bash
-./gradlew bootRun
+El perfil `local` se usa por defecto. La aplicación utiliza R2DBC con H2; Flyway usa JDBC para aplicar las migraciones al iniciar.
 
-El perfil "local" se usa por defecto. La aplicación utiliza R2DBC con H2; Flyway usa JDBC para aplicar las migraciones al iniciar.
+Health check: `http://localhost:8080/actuator/health`
 
-Health check: http://localhost:8080/actuator/health
+Para ejecutar todas las pruebas: `./gradlew test`.
 
-Para ejecutar las pruebas:
+## Conexión a PostgreSQL
 
-./gradlew test
+El perfil `prod` requiere estas variables:
 
-Conexión a PostgreSQL
+| Variable | Uso |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | Activa el perfil `prod`. |
+| `DATABASE_URL` | URL JDBC para Flyway. |
+| `R2DBC_URL` | URL R2DBC para persistencia reactiva. |
+| `DATABASE_USERNAME` | Usuario de PostgreSQL. |
+| `DATABASE_PASSWORD` | Contraseña de PostgreSQL. |
 
-El perfil "prod" requiere estas variables de entorno:
+Ejemplo de valores para una instancia local de PostgreSQL:
 
-Variable| Uso
-"SPRING_PROFILES_ACTIVE"| Activar el perfil "prod".
-"DATABASE_URL"| URL JDBC para Flyway.
-"R2DBC_URL"| URL R2DBC para la persistencia reactiva.
-"DATABASE_USERNAME"| Usuario de PostgreSQL.
-"DATABASE_PASSWORD"| Contraseña de PostgreSQL.
+- `SPRING_PROFILES_ACTIVE=prod`
+- `DATABASE_URL=jdbc:postgresql://localhost:5432/choir`
+- `R2DBC_URL=r2dbc:postgresql://localhost:5432/choir`
+- `DATABASE_USERNAME=choir`
+- `DATABASE_PASSWORD=change_me`
 
-Ejemplo para una instancia local de PostgreSQL:
+`.env.example` es una plantilla: Spring Boot no carga automáticamente un archivo `.env`. Exportá las variables en la shell o configurálas en el entorno de ejecución. No guardes credenciales reales en Git.
 
-export SPRING_PROFILES_ACTIVE=prod
-export DATABASE_URL='jdbc:postgresql://localhost:5432/choir'
-export R2DBC_URL='r2dbc:postgresql://localhost:5432/choir'
-export DATABASE_USERNAME='choir'
-export DATABASE_PASSWORD='change_me'
-./gradlew bootRun
+## Migraciones
 
-".env.example" es una plantilla: Spring Boot no carga automáticamente un archivo ".env". Exportá las variables en la shell o configurálas en el entorno de ejecución. No guardes credenciales reales en Git.
+Las migraciones Flyway están en `src/main/resources/db/migration` y se aplican al iniciar. Flyway usa JDBC; la persistencia de runtime utiliza Spring Data R2DBC.
 
-Migraciones
+## CI
 
-Las migraciones Flyway están en "src/main/resources/db/migration" y se aplican al iniciar. Flyway usa JDBC; la persistencia de runtime utiliza Spring Data R2DBC.
+GitHub Actions ejecuta dos validaciones en `.github/workflows/ci.yml`:
 
-CI
-
-GitHub Actions ejecuta dos validaciones en ".github/workflows/ci.yml":
-
-- "test": suite completa con el perfil local/H2.
-- "test-prod": PostgreSQL 16, perfil "prod", migraciones Flyway y suite completa.
+- `test`: suite completa con el perfil local/H2.
+- `test-prod`: PostgreSQL 16, perfil `prod`, migraciones Flyway y suite completa.
 
 Ambos jobs repiten una prueba de registro concurrente para detectar regresiones.
 
-Límites entre JDBC y R2DBC
+## Límites entre JDBC y R2DBC
 
-- R2DBC: persistencia reactiva de runtime.
-- JDBC: Flyway y pruebas o utilidades que lo requieran explícitamente.
+- **R2DBC:** persistencia reactiva de runtime.
+- **JDBC:** Flyway y pruebas o utilidades que lo requieran explícitamente.
 - No agregar JDBC/JPA como alternativa para la persistencia de runtime.
 
-Documentación adicional
+## Documentación adicional
 
-- "Modelo de dominio" (docs/domain-model.md)
-  EOF
-
-cat > .env.example <<'EOF'
-
-Example PostgreSQL settings for the prod profile.
-
-Placeholders only; never commit real credentials.
-
-Spring Boot does not automatically load a generic .env file.
-
-SPRING_PROFILES_ACTIVE=prod
-DATABASE_URL=jdbc:postgresql://localhost:5432/choir
-R2DBC_URL=r2dbc:postgresql://localhost:5432/choir
-DATABASE_USERNAME=change_me
-DATABASE_PASSWORD=change_me
+- [Modelo de dominio](docs/domain-model.md)
