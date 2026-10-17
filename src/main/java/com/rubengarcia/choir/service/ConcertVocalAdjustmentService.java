@@ -72,17 +72,17 @@ public class ConcertVocalAdjustmentService {
                                         "No hay ajustes para esta obra en el concierto"))));
     }
 
-    @Transactional
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<Adjustment> saveAdjustment(
             String email, long choirId, long concertId,
             long workId, String notes) {
         return ownedOccurrence(email, choirId, concertId, workId)
                 .then(database.sql("""
-                        INSERT INTO concert_vocal_adjustments
-                            (concert_id, repertoire_item_id, choir_id, notes)
-                        VALUES (:concertId, :workId, :choirId, :notes)
-                        ON CONFLICT (concert_id, repertoire_item_id)
-                        DO UPDATE SET notes = EXCLUDED.notes
+                        UPDATE concert_vocal_adjustments
+                        SET notes = :notes
+                        WHERE concert_id = :concertId
+                          AND repertoire_item_id = :workId
+                          AND choir_id = :choirId
                         """)
                         .bind("concertId", concertId)
                         .bind("workId", workId)
@@ -90,6 +90,19 @@ public class ConcertVocalAdjustmentService {
                         .bind("notes", notes == null ? "" : notes)
                         .fetch()
                         .rowsUpdated())
+                .flatMap(updated -> updated > 0
+                        ? Mono.just(updated)
+                        : database.sql("""
+                                INSERT INTO concert_vocal_adjustments
+                                    (concert_id, repertoire_item_id, choir_id, notes)
+                                VALUES (:concertId, :workId, :choirId, :notes)
+                                """)
+                                .bind("concertId", concertId)
+                                .bind("workId", workId)
+                                .bind("choirId", choirId)
+                                .bind("notes", notes == null ? "" : notes)
+                                .fetch()
+                                .rowsUpdated())
                 .then(database.sql("""
                         SELECT id, concert_id, repertoire_item_id, choir_id,
                                notes, created_at
@@ -111,7 +124,7 @@ public class ConcertVocalAdjustmentService {
                         .one());
     }
 
-    @Transactional
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<Assignment> assignSinger(
             String email, long choirId, long concertId, long workId,
             long singerId, long divisionId) {
@@ -140,13 +153,12 @@ public class ConcertVocalAdjustmentService {
                                 HttpStatus.UNPROCESSABLE_ENTITY,
                                 "La división no pertenece al plan vocal de esta obra"))))
                 .then(database.sql("""
-                        INSERT INTO concert_vocal_assignments
-                            (concert_id, repertoire_item_id, singer_id,
-                             vocal_plan_division_id, choir_id)
-                        VALUES (:concertId, :workId, :singerId, :divisionId, :choirId)
-                        ON CONFLICT (concert_id, repertoire_item_id, singer_id)
-                        DO UPDATE SET
-                            vocal_plan_division_id = EXCLUDED.vocal_plan_division_id
+                        UPDATE concert_vocal_assignments
+                        SET vocal_plan_division_id = :divisionId
+                        WHERE concert_id = :concertId
+                          AND repertoire_item_id = :workId
+                          AND singer_id = :singerId
+                          AND choir_id = :choirId
                         """)
                         .bind("concertId", concertId)
                         .bind("workId", workId)
@@ -155,6 +167,21 @@ public class ConcertVocalAdjustmentService {
                         .bind("choirId", choirId)
                         .fetch()
                         .rowsUpdated())
+                .flatMap(updated -> updated > 0
+                        ? Mono.just(updated)
+                        : database.sql("""
+                                INSERT INTO concert_vocal_assignments
+                                    (concert_id, repertoire_item_id, singer_id,
+                                     vocal_plan_division_id, choir_id)
+                                VALUES (:concertId, :workId, :singerId, :divisionId, :choirId)
+                                """)
+                                .bind("concertId", concertId)
+                                .bind("workId", workId)
+                                .bind("singerId", singerId)
+                                .bind("divisionId", divisionId)
+                                .bind("choirId", choirId)
+                                .fetch()
+                                .rowsUpdated())
                 .then(database.sql("""
                         SELECT id, concert_id, repertoire_item_id, singer_id,
                                vocal_plan_division_id, choir_id, created_at
