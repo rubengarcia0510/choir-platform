@@ -22,7 +22,6 @@ import reactor.test.StepVerifier;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -293,7 +292,7 @@ class VoicePartMigrationServiceTests {
                     assertEquals(1L, value.singerCount());
                     assertEquals(SECTION_ID, value.suggestedSectionId());
                     assertEquals(false, value.ambiguous());
-                    assertEquals(false, value.requiresConfirmation());
+                    assertEquals(true, value.requiresConfirmation());
                 })
                 .verifyComplete();
 

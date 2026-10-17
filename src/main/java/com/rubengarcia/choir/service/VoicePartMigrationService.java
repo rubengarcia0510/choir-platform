@@ -15,9 +15,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -62,6 +63,7 @@ public class VoicePartMigrationService {
                     HttpStatus.BAD_REQUEST,
                     "La confirmación explícita es obligatoria."));
         }
+
         if (mappings == null || mappings.isEmpty()) {
             return Mono.error(new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -69,12 +71,17 @@ public class VoicePartMigrationService {
         }
 
         Set<String> legacyValues = new HashSet<>();
+
         for (MappingConfirmation mapping : mappings) {
-            if (mapping == null || mapping.legacyValue() == null
-                    || mapping.legacyValue().isBlank() || mapping.sectionId() == null) {
+            if (mapping == null
+                    || mapping.legacyValue() == null
+                    || mapping.legacyValue().isBlank()
+                    || mapping.sectionId() == null) {
                 return Mono.error(new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST, "Cada correspondencia debe tener valor legado y cuerda."));
+                        HttpStatus.BAD_REQUEST,
+                        "Cada correspondencia debe tener valor legado y cuerda."));
             }
+
             if (!legacyValues.add(mapping.legacyValue())) {
                 return Mono.error(new ResponseStatusException(
                         HttpStatus.BAD_REQUEST,
@@ -96,7 +103,10 @@ public class VoicePartMigrationService {
                         )));
     }
 
-    private Mono<Void> validateSection(Choir choir, MappingConfirmation mapping) {
+    private Mono<Void> validateSection(
+            Choir choir,
+            MappingConfirmation mapping) {
+
         return vocalSectionRepository.findById(mapping.sectionId())
                 .filter(section -> choir.getId().equals(section.getChoirId()))
                 .filter(VocalSection::isActive)
@@ -107,9 +117,13 @@ public class VoicePartMigrationService {
                 .then();
     }
 
-    private Mono<Long> migrateValue(Choir choir, MappingConfirmation mapping) {
+    private Mono<Long> migrateValue(
+            Choir choir,
+            MappingConfirmation mapping) {
+
         return singerRepository.findByChoirId(choir.getId())
-                .filter(singer -> Objects.equals(singer.getVoicePart(), mapping.legacyValue()))
+                .filter(singer -> Objects.equals(
+                        singer.getVoicePart(), mapping.legacyValue()))
                 .filter(singer -> singer.getVoiceSectionId() == null)
                 .concatMap(singer -> {
                     singer.setVoiceSectionId(mapping.sectionId());
@@ -126,6 +140,7 @@ public class VoicePartMigrationService {
 
         for (Singer singer : singers) {
             String value = singer.getVoicePart();
+
             LegacyValueCount existing = values.stream()
                     .filter(item -> Objects.equals(item.legacyValue(), value))
                     .findFirst()
@@ -136,7 +151,8 @@ public class VoicePartMigrationService {
             } else {
                 int index = values.indexOf(existing);
                 values.set(index, new LegacyValueCount(
-                        existing.legacyValue(), existing.singerCount() + 1));
+                        existing.legacyValue(),
+                        existing.singerCount() + 1));
             }
         }
 
@@ -157,7 +173,9 @@ public class VoicePartMigrationService {
                             .filter(SectionCandidate::nameMatch)
                             .toList();
 
-                    Long suggestedId = matches.size() == 1 ? matches.get(0).id() : null;
+                    Long suggestedId = matches.size() == 1
+                            ? matches.get(0).id()
+                            : null;
 
                     return new LegacyValueProfile(
                             item.legacyValue(),
@@ -165,7 +183,7 @@ public class VoicePartMigrationService {
                             candidates,
                             suggestedId,
                             matches.size() > 1,
-                            suggestedId == null
+                            true
                     );
                 })
                 .toList();
@@ -179,18 +197,20 @@ public class VoicePartMigrationService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private Mono<Choir> ownedChoir(String email, Long choirId) {
         if (email == null || email.isBlank()) {
-            return Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED));
         }
 
         return directorRepository.findByEmailIgnoreCase(email)
                 .switchIfEmpty(Mono.error(notFound()))
                 .flatMap(director -> choirRepository.findById(choirId)
-                        .filter(choir -> director.getId().equals(choir.getDirectorId()))
+                        .filter(choir ->
+                                director.getId().equals(choir.getDirectorId()))
                         .switchIfEmpty(Mono.error(notFound())));
     }
 
@@ -198,22 +218,24 @@ public class VoicePartMigrationService {
         return new ResponseStatusException(HttpStatus.NOT_FOUND);
     }
 
-    private record LegacyValueCount(String legacyValue, long singerCount) {}
+    private record LegacyValueCount(
+            String legacyValue,
+            long singerCount) {}
 
-    public record MappingConfirmation(String legacyValue, Long sectionId) {}
+    public record MappingConfirmation(
+            String legacyValue,
+            Long sectionId) {}
 
     public record MigrationResult(
             Long choirId,
             long migratedSingerCount,
             int confirmedMappingCount,
-            String notice
-    ) {}
+            String notice) {}
 
     public record MigrationProfile(
             int totalSingers,
             List<LegacyValueProfile> values,
-            String notice
-    ) {}
+            String notice) {}
 
     public record LegacyValueProfile(
             String legacyValue,
@@ -221,13 +243,11 @@ public class VoicePartMigrationService {
             List<SectionCandidate> availableSections,
             Long suggestedSectionId,
             boolean ambiguous,
-            boolean requiresConfirmation
-    ) {}
+            boolean requiresConfirmation) {}
 
     public record SectionCandidate(
             Long id,
             String name,
             boolean active,
-            boolean nameMatch
-    ) {}
+            boolean nameMatch) {}
 }
