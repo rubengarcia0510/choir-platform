@@ -41,7 +41,7 @@ class DomainPersistenceTests {
                 "concert_cast_snapshots", "repertoire_items",
                 "concert_repertoire", "formations", "formation_versions",
                 "formation_positions", "transitions", "transition_versions",
-                "absences");
+                "absences", "vocal_sections", "vocal_plans", "vocal_plan_divisions");
 
         for (String table : tables) {
             Integer count = jdbcTemplate.queryForObject(
@@ -160,8 +160,15 @@ class DomainPersistenceTests {
                 Long.class, directorId, choirName);
 
         jdbcTemplate.update(
-                "INSERT INTO singers (choir_id, display_name, voice_part) VALUES (?, ?, ?)",
-                choirId, "Nombre original", "SOPRANO");
+                "INSERT INTO vocal_sections (choir_id, name) VALUES (?, ?)",
+                choirId, "Sopranos");
+        Long sectionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, "Sopranos");
+
+        jdbcTemplate.update(
+                "INSERT INTO singers (choir_id, display_name, voice_part, voice_section_id) VALUES (?, ?, ?, ?)",
+                choirId, "Nombre original", "SOPRANO", sectionId);
         Long singerId = jdbcTemplate.queryForObject(
                 "SELECT id FROM singers WHERE choir_id = ? AND display_name = ?",
                 Long.class, choirId, "Nombre original");
@@ -175,10 +182,13 @@ class DomainPersistenceTests {
 
         jdbcTemplate.update(
                 "INSERT INTO concert_cast_snapshots "
-                        + "(concert_id, source_singer_id, singer_name_snapshot, voice_part_snapshot) "
-                        + "VALUES (?, ?, ?, ?)",
-                concertId, singerId, "Nombre original", "SOPRANO");
+                        + "(concert_id, source_singer_id, singer_name_snapshot, voice_part_snapshot, "
+                        + "voice_section_id_snapshot, voice_section_name_snapshot, division_number_snapshot) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                concertId, singerId, "Nombre original", "SOPRANO", sectionId, "Sopranos", 1);
 
+        jdbcTemplate.update("UPDATE vocal_sections SET name = ? WHERE id = ?",
+                "Voces agudas", sectionId);
         jdbcTemplate.update(
                 "UPDATE singers SET display_name = ?, voice_part = ? WHERE id = ?",
                 "Nombre actualizado", "ALTO", singerId);
@@ -192,10 +202,25 @@ class DomainPersistenceTests {
         String currentSingerName = jdbcTemplate.queryForObject(
                 "SELECT display_name FROM singers WHERE id = ?",
                 String.class, singerId);
+        String storedSectionName = jdbcTemplate.queryForObject(
+                "SELECT voice_section_name_snapshot FROM concert_cast_snapshots WHERE concert_id = ?",
+                String.class, concertId);
+        Long storedSectionId = jdbcTemplate.queryForObject(
+                "SELECT voice_section_id_snapshot FROM concert_cast_snapshots WHERE concert_id = ?",
+                Long.class, concertId);
+        Integer storedDivision = jdbcTemplate.queryForObject(
+                "SELECT division_number_snapshot FROM concert_cast_snapshots WHERE concert_id = ?",
+                Integer.class, concertId);
+        String currentSectionName = jdbcTemplate.queryForObject(
+                "SELECT name FROM vocal_sections WHERE id = ?", String.class, sectionId);
 
         assertThat(storedName).isEqualTo("Nombre original");
         assertThat(storedVoice).isEqualTo("SOPRANO");
         assertThat(currentSingerName).isEqualTo("Nombre actualizado");
+        assertThat(storedSectionName).isEqualTo("Sopranos");
+        assertThat(storedSectionId).isEqualTo(sectionId);
+        assertThat(storedDivision).isEqualTo(1);
+        assertThat(currentSectionName).isEqualTo("Voces agudas");
     }
 
     @Test
@@ -323,8 +348,23 @@ class DomainPersistenceTests {
                 "DELETE FROM repertoire_items WHERE choir_id = ?",
                 choirId);
 
+        jdbcTemplate.update("""
+                DELETE FROM vocal_plan_divisions
+                WHERE vocal_plan_id IN (
+                    SELECT id FROM vocal_plans WHERE choir_id = ?
+                )
+                """, choirId);
+
         jdbcTemplate.update(
                 "DELETE FROM singers WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM vocal_plans WHERE choir_id = ?",
+                choirId);
+
+        jdbcTemplate.update(
+                "DELETE FROM vocal_sections WHERE choir_id = ?",
                 choirId);
 
         jdbcTemplate.update(
