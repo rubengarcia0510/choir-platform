@@ -36,6 +36,14 @@ Los snapshots son registros históricos: no deben reconstruirse ni actualizarse 
 7. Las reglas que relacionan coro, concierto, coreuta, repertorio, asignación vocal y formación deben validarse en la capa de servicio además de las claves foráneas.
 8. La información histórica de sección/división está disponible en las tablas de snapshots y posiciones para que los servicios de planificación puedan consultarla. `positionsForFormationVersion` consulta una versión de formación y `positionsForTransitionVersion` devuelve las posiciones de origen (`FROM`) y destino (`TO`) de una versión de transición. Los cambios posteriores en las fichas de coreutas o secciones no deben alterar esos datos históricos. La integración de las divisiones como restricciones del algoritmo puede desarrollarse en una fase posterior.
 
-## Alcance pendiente
+## Migración y reversión
 
-La captura de asignaciones vocales por obra se implementa en CHOIR-61. La gestión y validación completa de las asignaciones por obra y de los planes vocales continúa en CHOIR-62 y CHOIR-63. La documentación de este flujo no implica que esas tareas bloqueantes estén terminadas.
+Las migraciones V5 a V11 agregan el modelo vocal sin modificar V1. No se deben inferir asignaciones históricas cuando los datos de origen son ambiguos.
+
+El procedimiento manual está documentado en `docs/migrations/rollback-CHOIR-56.sql`. Es destructivo: requiere un backup verificado y probarse primero sobre una copia de la base de datos. Elimina los datos y estructuras introducidos por estas migraciones y no modifica el historial de Flyway. No es un mecanismo de rollback automático del despliegue.
+
+## Estado del flujo vocal
+
+La captura histórica de asignaciones vocales por obra, la gestión de asignaciones y la validación de planes vocales están implementadas en CHOIR-61, CHOIR-62 y CHOIR-63, respectivamente.
+
+La integración de las divisiones vocales como restricciones del algoritmo de formación queda para una fase posterior. Los cambios de esta fase no deben alterar las asignaciones ni los snapshots históricos.
