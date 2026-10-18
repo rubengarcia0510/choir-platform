@@ -18,7 +18,7 @@ import static org.mockito.Mockito.*;
 class FormationPlanningAuthorizationServiceTests {
 
     @Mock
-    private FormationPlanningService planningService;
+    private FormationPlanningDataRepository planningService;
 
     @Mock
     private ResourceAuthorizationService authorizationService;

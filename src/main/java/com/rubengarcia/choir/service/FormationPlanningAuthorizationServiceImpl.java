@@ -10,11 +10,11 @@ import java.math.BigDecimal;
 public class FormationPlanningAuthorizationServiceImpl
         implements FormationPlanningAuthorizationService {
 
-    private final FormationPlanningService planningService;
+    private final FormationPlanningDataRepository planningService;
     private final ResourceAuthorizationService authorizationService;
 
     public FormationPlanningAuthorizationServiceImpl(
-            FormationPlanningService planningService,
+            FormationPlanningDataRepository planningService,
             ResourceAuthorizationService authorizationService) {
         this.planningService = planningService;
         this.authorizationService = authorizationService;
