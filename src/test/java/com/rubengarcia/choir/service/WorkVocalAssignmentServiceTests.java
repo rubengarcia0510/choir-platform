@@ -47,6 +47,22 @@ class WorkVocalAssignmentServiceTests {
     }
 
     @Test
+    void changingWorkAssignmentDoesNotChangeSingerHabitualVoicePart() {
+        Fixture f = createFixture();
+
+        assertThat(habitualVoicePart(f.singerId())).isEqualTo("TENOR");
+
+        service.assign(f.email(), f.choirId(), f.workId(),
+                f.singerId(), f.firstDivisionId()).block();
+        service.assign(f.email(), f.choirId(), f.workId(),
+                f.singerId(), f.secondDivisionId()).block();
+
+        assertThat(habitualVoicePart(f.singerId())).isEqualTo("TENOR");
+        assertThat(divisionFor(f.workId(), f.singerId()))
+                .isEqualTo(f.secondDivisionId());
+    }
+
+    @Test
     void assignmentForOneWorkDoesNotChangeAnotherWork() {
         Fixture f = createFixture();
 
@@ -123,9 +139,9 @@ class WorkVocalAssignmentServiceTests {
                 directorId);
 
         jdbc.update("""
-                INSERT INTO singers (choir_id, display_name, active)
-                VALUES (?, ?, TRUE)
-                """, choirId, "Cantante " + suffix);
+                INSERT INTO singers (choir_id, display_name, voice_part, active)
+                VALUES (?, ?, ?, TRUE)
+                """, choirId, "Cantante " + suffix, "TENOR");
 
         long singerId = scalar(
                 "SELECT id FROM singers WHERE choir_id = ? AND display_name = ?",
@@ -191,6 +207,12 @@ class WorkVocalAssignmentServiceTests {
                 SELECT id FROM vocal_plan_divisions
                 WHERE vocal_plan_id = ? AND vocal_section_id = ?
                 """, planId, sectionId);
+    }
+
+    private String habitualVoicePart(long singerId) {
+        return jdbc.queryForObject(
+                "SELECT voice_part FROM singers WHERE id = ?",
+                String.class, singerId);
     }
 
     private long divisionFor(long workId, long singerId) {
