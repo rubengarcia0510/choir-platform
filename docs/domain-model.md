@@ -10,7 +10,7 @@
 - La captura de elenco conserva nombre, cuerda vocal e identidad/nombre de sección vocal tal como eran al capturar el elenco. La referencia al coreuta es opcional para no perder la captura si se elimina esa ficha. La identidad y el nombre de sección son datos históricos sin FK a la sección mutable; renombrar o reasignar un coreuta no modifica la captura.
 - `concert_vocal_assignments` representa la asignación de coreutas a divisiones vocales por obra y concierto. Al publicar el concierto, `concert_vocal_assignment_snapshots` conserva una copia histórica por obra y coreuta: nombre, cuerda, sección y número de división. La referencia al coreuta puede quedar nula si se elimina la ficha; los datos descriptivos capturados se conservan.
 - Formación identifica una formación lógica. Cada versión de formación tiene número propio y estado; sus posiciones pertenecen a esa versión, no a la formación abstracta. Las posiciones conservan nombre, cuerda, identidad/nombre de sección y, cuando se conoce, división vocal. Las capturas no dependen del nombre actual de la sección.
-- Transición identifica una transición lógica. Cada versión de transición conserva sus versiones de formación de origen y destino.
+- Transición identifica una transición lógica. Cada versión de transición conserva sus versiones de formación de origen y destino. La consulta `positionsForTransitionVersion` expone las posiciones históricas de ambos lados, identificadas como `FROM` y `TO`, utilizando los snapshots de las versiones de formación; no reconstruye las divisiones desde las asignaciones actuales de los coreutas.
 - Ausencia pertenece a un coreuta y puede estar asociada a un concierto.
 
 ## Flujo de publicación y captura histórica
@@ -34,7 +34,7 @@ Los snapshots son registros históricos: no deben reconstruirse ni actualizarse 
 5. La división es opcional en capturas antiguas y generales. La migración no inventa divisiones históricas; las asignaciones por obra se representan en las tablas de asignación vocal y su snapshot.
 6. Una versión de formación publicada debe permanecer inmutable; los cambios posteriores se representan con una versión nueva, no sobrescribiendo la publicada. Esta regla debe validarse en los servicios de dominio y sus pruebas.
 7. Las reglas que relacionan coro, concierto, coreuta, repertorio, asignación vocal y formación deben validarse en la capa de servicio además de las claves foráneas.
-8. La información histórica de sección/división está disponible en las tablas de snapshots y posiciones para que los servicios de planificación puedan consultarla. La integración de esas divisiones como restricciones del algoritmo puede desarrollarse en una fase posterior.
+8. La información histórica de sección/división está disponible en las tablas de snapshots y posiciones para que los servicios de planificación puedan consultarla. `positionsForFormationVersion` consulta una versión de formación y `positionsForTransitionVersion` devuelve las posiciones de origen (`FROM`) y destino (`TO`) de una versión de transición. Los cambios posteriores en las fichas de coreutas o secciones no deben alterar esos datos históricos. La integración de las divisiones como restricciones del algoritmo puede desarrollarse en una fase posterior.
 
 ## Alcance pendiente
 
