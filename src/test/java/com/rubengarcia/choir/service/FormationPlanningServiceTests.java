@@ -140,6 +140,91 @@ class FormationPlanningServiceTests {
                 .isEmpty();
     }
 
+    @Test
+    void renamingSectionAndReassigningSingerPreservesFormationSnapshot() {
+        Fixture f = fixture("DRAFT");
+
+        jdbc.update("INSERT INTO vocal_sections (choir_id, name) VALUES (?, ?)",
+                f.choirId(), "Contraltos");
+        long newSectionId = jdbc.queryForObject(
+                "SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?",
+                Long.class, f.choirId(), "Contraltos");
+
+        jdbc.update("UPDATE vocal_sections SET name = ? WHERE id = ?",
+                "Voces antiguas", f.sectionId());
+        jdbc.update("UPDATE singers SET voice_section_id = ? WHERE id = ?",
+                newSectionId, f.singerId());
+
+        var positions = service.positionsForFormationVersion(f.versionId())
+                .collectList()
+                .block(Duration.ofSeconds(10));
+
+        assertThat(positions).hasSize(1);
+        assertThat(positions.get(0).voiceSectionId()).isEqualTo(f.sectionId());
+        assertThat(positions.get(0).voiceSectionName()).isEqualTo("Sopranos");
+        assertThat(positions.get(0).divisionNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void exposesHistoricalVocalDivisionsForBothSidesOfTransition() {
+        Fixture origin = fixture("PUBLISHED");
+
+        jdbc.update("INSERT INTO formations (choir_id, name) VALUES (?, ?)",
+                origin.choirId(), "Formación destino " + UUID.randomUUID());
+        long destinationFormationId = jdbc.queryForObject(
+                "SELECT id FROM formations WHERE choir_id = ? AND name LIKE ? ORDER BY id DESC",
+                Long.class, origin.choirId(), "Formación destino %");
+
+        jdbc.update("""
+                INSERT INTO formation_versions (formation_id, version_number, status)
+                VALUES (?, 1, 'PUBLISHED')
+                """, destinationFormationId);
+        long destinationVersionId = jdbc.queryForObject(
+                "SELECT id FROM formation_versions WHERE formation_id = ? AND version_number = 1",
+                Long.class, destinationFormationId);
+
+        jdbc.update("""
+                INSERT INTO formation_positions
+                    (formation_version_id, singer_id, singer_name_snapshot,
+                     voice_part_snapshot, voice_section_id_snapshot,
+                     voice_section_name_snapshot, division_number_snapshot,
+                     position_label, x_coordinate, y_coordinate)
+                VALUES (?, ?, 'Nombre destino', 'ALTO', ?, 'Altos', 3,
+                        'Destino', 5.000, 6.000)
+                """, destinationVersionId, origin.singerId(), origin.sectionId());
+
+        jdbc.update("INSERT INTO transitions (choir_id, name) VALUES (?, ?)",
+                origin.choirId(), "Transición de prueba " + UUID.randomUUID());
+        long transitionId = jdbc.queryForObject(
+                "SELECT id FROM transitions WHERE choir_id = ? ORDER BY id DESC",
+                Long.class, origin.choirId());
+
+        jdbc.update("""
+                INSERT INTO transition_versions
+                    (transition_id, version_number, from_formation_version_id,
+                     to_formation_version_id, status)
+                VALUES (?, 1, ?, ?, 'PUBLISHED')
+                """, transitionId, origin.versionId(), destinationVersionId);
+        long transitionVersionId = jdbc.queryForObject(
+                "SELECT id FROM transition_versions WHERE transition_id = ? AND version_number = 1",
+                Long.class, transitionId);
+
+        var positions = service.positionsForTransitionVersion(transitionVersionId)
+                .collectList()
+                .block(Duration.ofSeconds(10));
+
+        assertThat(positions).hasSize(2);
+        assertThat(positions).extracting(
+                FormationPlanningService.TransitionPlanningPosition::stage)
+                .containsExactly("FROM", "TO");
+        assertThat(positions).extracting(
+                FormationPlanningService.TransitionPlanningPosition::divisionNumber)
+                .containsExactly(2, 3);
+        assertThat(positions).extracting(
+                FormationPlanningService.TransitionPlanningPosition::voiceSectionName)
+                .containsExactly("Sopranos", "Altos");
+    }
+
     private Fixture fixture(String versionStatus) {
         String suffix = UUID.randomUUID().toString();
         String email = suffix + "@example.test";

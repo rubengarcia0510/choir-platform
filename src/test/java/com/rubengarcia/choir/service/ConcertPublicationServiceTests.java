@@ -212,6 +212,13 @@ class ConcertPublicationServiceTests {
                 singerId
         );
 
+        Long reassignedSectionId = insertSection(choirId, "Contraltos");
+        jdbcTemplate.update(
+                "UPDATE singers SET voice_section_id = ? WHERE id = ?",
+                reassignedSectionId,
+                singerId
+        );
+
         String castName = jdbcTemplate.queryForObject(
                 """
                 SELECT singer_name_snapshot
