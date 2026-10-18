@@ -1,12 +1,12 @@
 package com.rubengarcia.choir.service;
 
-import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 
-@org.springframework.stereotype.Service
+@Service
 public class FormationPlanningAuthorizationServiceImpl
         implements FormationPlanningAuthorizationService {
 
@@ -14,12 +14,11 @@ public class FormationPlanningAuthorizationServiceImpl
     private final ResourceAuthorizationService authorizationService;
 
     public FormationPlanningAuthorizationServiceImpl(
-            DatabaseClient database,
+            FormationPlanningService planningService,
             ResourceAuthorizationService authorizationService) {
-        this.planningService = new FormationPlanningServiceImpl(database);
+        this.planningService = planningService;
         this.authorizationService = authorizationService;
     }
-
 
     @Override
     public Flux<FormationPlanningService.PlanningPosition>
@@ -35,9 +34,7 @@ public class FormationPlanningAuthorizationServiceImpl
     @Override
     public Flux<FormationPlanningService.VocalAssignment>
             vocalAssignmentsForPlanning(
-                    String email,
-                    long choirId,
-                    long concertId,
+                    String email, long choirId, long concertId,
                     long repertoireItemId) {
         return authorizationService
                 .requireOwnedConcertWork(
@@ -61,11 +58,8 @@ public class FormationPlanningAuthorizationServiceImpl
 
     @Override
     public Mono<Void> updateDraftPosition(
-            String email,
-            long choirId,
-            long positionId,
-            String positionLabel,
-            BigDecimal xCoordinate,
+            String email, long choirId, long positionId,
+            String positionLabel, BigDecimal xCoordinate,
             BigDecimal yCoordinate) {
         return authorizationService
                 .requireOwnedPosition(email, choirId, positionId)

@@ -1,7 +1,11 @@
 package com.rubengarcia.choir.service;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -10,19 +14,17 @@ import java.math.BigDecimal;
 
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class FormationPlanningAuthorizationServiceTests {
 
+    @Mock
     private FormationPlanningService planningService;
-    private ResourceAuthorizationService authorizationService;
-    private FormationPlanningAuthorizationService service;
 
-    @BeforeEach
-    void setUp() {
-        planningService = mock(FormationPlanningService.class);
-        authorizationService = mock(ResourceAuthorizationService.class);
-        service = new FormationPlanningAuthorizationServiceImpl(
-                planningService, authorizationService);
-    }
+    @Mock
+    private ResourceAuthorizationService authorizationService;
+
+    @InjectMocks
+    private FormationPlanningAuthorizationServiceImpl service;
 
     @Test
     void authorizesFormationVersionBeforeReadingPositions() {
@@ -35,9 +37,10 @@ class FormationPlanningAuthorizationServiceTests {
                         "director@example.test", 10L, 20L))
                 .verifyComplete();
 
-        verify(authorizationService)
+        InOrder order = inOrder(authorizationService, planningService);
+        order.verify(authorizationService)
                 .requireOwnedFormationVersion("director@example.test", 10L, 20L);
-        verify(planningService).positionsForFormationVersion(20L);
+        order.verify(planningService).positionsForFormationVersion(20L);
     }
 
     @Test
@@ -55,7 +58,7 @@ class FormationPlanningAuthorizationServiceTests {
     }
 
     @Test
-    void authorizesConcertAndRepertoireItemBeforeReadingAssignments() {
+    void authorizesConcertWorkBeforeReadingAssignments() {
         when(authorizationService.requireOwnedConcertWork(
                 "director@example.test", 10L, 30L, 40L))
                 .thenReturn(Mono.empty());
@@ -66,9 +69,10 @@ class FormationPlanningAuthorizationServiceTests {
                         "director@example.test", 10L, 30L, 40L))
                 .verifyComplete();
 
-        verify(authorizationService).requireOwnedConcertWork(
+        InOrder order = inOrder(authorizationService, planningService);
+        order.verify(authorizationService).requireOwnedConcertWork(
                 "director@example.test", 10L, 30L, 40L);
-        verify(planningService).vocalAssignmentsForPlanning(30L, 40L);
+        order.verify(planningService).vocalAssignmentsForPlanning(30L, 40L);
     }
 
     @Test
@@ -82,9 +86,10 @@ class FormationPlanningAuthorizationServiceTests {
                         "director@example.test", 10L, 50L))
                 .verifyComplete();
 
-        verify(authorizationService).requireOwnedTransitionVersion(
-                "director@example.test", 10L, 50L);
-        verify(planningService).positionsForTransitionVersion(50L);
+        InOrder order = inOrder(authorizationService, planningService);
+        order.verify(authorizationService)
+                .requireOwnedTransitionVersion("director@example.test", 10L, 50L);
+        order.verify(planningService).positionsForTransitionVersion(50L);
     }
 
     @Test
@@ -100,9 +105,10 @@ class FormationPlanningAuthorizationServiceTests {
                         BigDecimal.ONE, BigDecimal.ZERO))
                 .verifyComplete();
 
-        verify(authorizationService)
+        InOrder order = inOrder(authorizationService, planningService);
+        order.verify(authorizationService)
                 .requireOwnedPosition("director@example.test", 10L, 60L);
-        verify(planningService).updateDraftPosition(
+        order.verify(planningService).updateDraftPosition(
                 60L, "A1", BigDecimal.ONE, BigDecimal.ZERO);
     }
 
