@@ -47,3 +47,13 @@ El procedimiento manual está documentado en `docs/migrations/rollback-CHOIR-56.
 La captura histórica de asignaciones vocales por obra, la gestión de asignaciones y la validación de planes vocales están implementadas en CHOIR-61, CHOIR-62 y CHOIR-63, respectivamente.
 
 La integración de las divisiones vocales como restricciones del algoritmo de formación queda para una fase posterior. Los cambios de esta fase no deben alterar las asignaciones ni los snapshots históricos.
+
+## Reglas de negocio del plan vocal (CHOIR-57)
+
+1. **Población N:** se cuentan los coreutas activos del coro cuya cuerda habitual corresponde a cada cuerda del plan. Las ausencias de un concierto no alteran N.
+2. **Cantidad de divisiones:** k es la cantidad de divisiones persistidas para esa cuerda. Si N < k, el plan requiere revisión; no se borran, fusionan ni renumeran divisiones o asignaciones automáticamente.
+3. **Asignación por obra:** el director puede asignar explícitamente un coreuta a una división del plan de una obra, incluso si esa cuerda difiere de su cuerda habitual. La asignación no modifica la cuerda habitual ni las asignaciones de otras obras.
+4. **Ajustes por concierto:** las asignaciones de `concert_vocal_assignments` son específicas de una aparición de obra en un concierto y no modifican el plan base ni las asignaciones reutilizables de la obra. No se heredan automáticamente asignaciones de `work_vocal_assignments`: las advertencias y la captura histórica del concierto se calculan sobre las asignaciones explícitas de esa aparición. Las divisiones sin asignaciones generan advertencias.
+5. **Captura histórica:** al publicar un concierto en estado `PLANNED`, dentro de la misma transacción se cambia su estado a `PUBLISHED` y se capturan el elenco activo y las asignaciones vocales explícitas del concierto. Una publicación repetida se rechaza; los snapshots no se reconstruyen desde datos actuales.
+6. **Migración asistida:** la correspondencia entre `voice_part` y una cuerda configurable requiere confirmación explícita del director. Solo se migran coreutas sin cuerda configurable asignada; se conserva el valor legado y no se infieren correspondencias ambiguas.
+7. **Recuperación:** las migraciones V5–V11 son aditivas y no modifican V1 ni rellenan datos históricos que no existían. El script de rollback elimina estructuras y datos nuevos, por lo que no conserva esos datos. Antes de usarlo hay que verificar un backup y ensayar tanto el rollback como la restauración en una copia de la base. La recuperación de los datos eliminados depende de restaurar el backup; el script no revierte automáticamente el historial de Flyway.
