@@ -2,15 +2,13 @@ package com.rubengarcia.choir.service;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 
-@Service
-public class FormationPlanningServiceImpl implements FormationPlanningService {
+class FormationPlanningServiceImpl implements FormationPlanningService {
 
     private final DatabaseClient database;
 

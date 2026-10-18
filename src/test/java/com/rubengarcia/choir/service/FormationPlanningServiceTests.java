@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -20,7 +21,14 @@ class FormationPlanningServiceTests {
     private JdbcTemplate jdbc;
 
     @Autowired
+    private DatabaseClient database;
+
     private FormationPlanningService service;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUpPlanningService() {
+        service = new FormationPlanningServiceImpl(database);
+    }
 
     @Test
     void readsHistoricalVoiceDivisionFromFormationPosition() {

@@ -1,15 +1,12 @@
-package com.rubengarcia.choir.service.impl;
+package com.rubengarcia.choir.service;
 
-import com.rubengarcia.choir.service.FormationPlanningAuthorizationService;
-import com.rubengarcia.choir.service.FormationPlanningService;
-import com.rubengarcia.choir.service.ResourceAuthorizationService;
-import org.springframework.stereotype.Service;
+import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 
-@Service
+@org.springframework.stereotype.Service
 public class FormationPlanningAuthorizationServiceImpl
         implements FormationPlanningAuthorizationService {
 
@@ -17,6 +14,12 @@ public class FormationPlanningAuthorizationServiceImpl
     private final ResourceAuthorizationService authorizationService;
 
     public FormationPlanningAuthorizationServiceImpl(
+            DatabaseClient database,
+            ResourceAuthorizationService authorizationService) {
+        this(new FormationPlanningServiceImpl(database), authorizationService);
+    }
+
+    FormationPlanningAuthorizationServiceImpl(
             FormationPlanningService planningService,
             ResourceAuthorizationService authorizationService) {
         this.planningService = planningService;

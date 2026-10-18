@@ -1,6 +1,5 @@
 package com.rubengarcia.choir.service;
 
-import com.rubengarcia.choir.service.impl.FormationPlanningAuthorizationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
