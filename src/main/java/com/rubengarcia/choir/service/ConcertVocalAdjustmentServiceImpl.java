@@ -8,7 +8,6 @@ import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -301,21 +300,12 @@ public class ConcertVocalAdjustmentServiceImpl implements ConcertVocalAdjustment
 
     private Mono<Boolean> requireExists(
             String sql, long firstKey, long choirId, Long workId) {
-        return requireExists(sql, firstKey, choirId, workId, null);
-    }
-
-    private Mono<Boolean> requireExists(
-            String sql, long firstKey, long choirId,
-            Long workId, String email) {
         DatabaseClient.GenericExecuteSpec spec = database.sql(sql)
                 .bind("firstKey", firstKey)
                 .bind("choirId", choirId);
 
         if (sql.contains(":workId")) {
             spec = spec.bind("workId", workId);
-        }
-        if (sql.contains(":email")) {
-            spec = spec.bind("email", email);
         }
 
         return spec.map((row, meta) -> row.get("n", Long.class) != null
