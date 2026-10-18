@@ -27,11 +27,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation 'org.flywaydb:flyway-database-postgresql'
 
-    runtimeOnly 'io.r2dbc:r2dbc-h2'
+    runtimeOnly 'io.r2dbc:r2dbc-h2:1.0.0.RELEASE'
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
     runtimeOnly('com.h2database:h2') {
         version {
-            strictly '2.4.240'
+            strictly '2.3.232'
         }
     }
     runtimeOnly 'org.postgresql:postgresql'

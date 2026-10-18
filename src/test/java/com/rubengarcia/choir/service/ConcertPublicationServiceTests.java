@@ -34,6 +34,38 @@ class ConcertPublicationServiceTests {
     }
 
     @Test
+    void directorCannotPublishAnotherDirectorsConcert() {
+        String suffix = UUID.randomUUID().toString();
+
+        Long directorId = insertDirector("owner-" + suffix + "@example.test");
+        Long choirId = insertChoir(directorId, "Coro propietario " + suffix);
+        Long concertId = insertConcert(choirId, "Concierto ajeno " + suffix);
+
+        String otherEmail = "other-" + suffix + "@example.test";
+        Long otherDirectorId = insertDirector(otherEmail);
+        Long otherChoirId = insertChoir(otherDirectorId, "Otro coro " + suffix);
+
+        assertThatThrownBy(() ->
+                publicationService.publish(otherEmail, otherChoirId, concertId)
+                        .block(Duration.ofSeconds(10)))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .satisfies(error -> assertThat(
+                        ((org.springframework.web.server.ResponseStatusException) error)
+                                .getStatusCode())
+                        .isEqualTo(org.springframework.http.HttpStatus.NOT_FOUND));
+
+        String status = jdbcTemplate.queryForObject(
+                "SELECT status FROM concerts WHERE id = ?",
+                String.class, concertId);
+        assertThat(status).isEqualTo("PLANNED");
+
+        Integer snapshots = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM concert_cast_snapshots WHERE concert_id = ?",
+                Integer.class, concertId);
+        assertThat(snapshots).isZero();
+    }
+
+    @Test
     void publishingConcertCapturesCastAndVocalAssignmentSnapshots() {
         String suffix = UUID.randomUUID().toString();
         String email = "publication-" + suffix + "@example.test";
