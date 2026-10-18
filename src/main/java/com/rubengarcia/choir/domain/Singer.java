@@ -23,6 +23,9 @@ public class Singer {
     @Column("voice_part")
     private String voicePart;
 
+    @Column("voice_section_id")
+    private Long voiceSectionId;
+
     private boolean active = true;
 
     @Column("created_at")
@@ -65,6 +68,14 @@ public class Singer {
 
     public void setVoicePart(String voicePart) {
         this.voicePart = voicePart;
+    }
+
+    public Long getVoiceSectionId() {
+        return voiceSectionId;
+    }
+
+    public void setVoiceSectionId(Long voiceSectionId) {
+        this.voiceSectionId = voiceSectionId;
     }
 
     public boolean isActive() {
