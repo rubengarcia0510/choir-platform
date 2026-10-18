@@ -16,15 +16,10 @@ public class FormationPlanningAuthorizationServiceImpl
     public FormationPlanningAuthorizationServiceImpl(
             DatabaseClient database,
             ResourceAuthorizationService authorizationService) {
-        this(new FormationPlanningServiceImpl(database), authorizationService);
-    }
-
-    FormationPlanningAuthorizationServiceImpl(
-            FormationPlanningService planningService,
-            ResourceAuthorizationService authorizationService) {
-        this.planningService = planningService;
+        this.planningService = new FormationPlanningServiceImpl(database);
         this.authorizationService = authorizationService;
     }
+
 
     @Override
     public Flux<FormationPlanningService.PlanningPosition>
