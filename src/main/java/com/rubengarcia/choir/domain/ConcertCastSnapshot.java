@@ -23,6 +23,15 @@ public class ConcertCastSnapshot {
     @Column("voice_part_snapshot")
     private String voicePartSnapshot;
 
+    @Column("voice_section_id_snapshot")
+    private Long voiceSectionIdSnapshot;
+
+    @Column("voice_section_name_snapshot")
+    private String voiceSectionNameSnapshot;
+
+    @Column("division_number_snapshot")
+    private Integer divisionNumberSnapshot;
+
     @Column("captured_at")
     private LocalDateTime capturedAt;
 
@@ -37,5 +46,11 @@ public class ConcertCastSnapshot {
     public void setSingerNameSnapshot(String singerNameSnapshot) { this.singerNameSnapshot = singerNameSnapshot; }
     public String getVoicePartSnapshot() { return voicePartSnapshot; }
     public void setVoicePartSnapshot(String voicePartSnapshot) { this.voicePartSnapshot = voicePartSnapshot; }
+    public Long getVoiceSectionIdSnapshot() { return voiceSectionIdSnapshot; }
+    public void setVoiceSectionIdSnapshot(Long value) { this.voiceSectionIdSnapshot = value; }
+    public String getVoiceSectionNameSnapshot() { return voiceSectionNameSnapshot; }
+    public void setVoiceSectionNameSnapshot(String value) { this.voiceSectionNameSnapshot = value; }
+    public Integer getDivisionNumberSnapshot() { return divisionNumberSnapshot; }
+    public void setDivisionNumberSnapshot(Integer value) { this.divisionNumberSnapshot = value; }
     public LocalDateTime getCapturedAt() { return capturedAt; }
 }
