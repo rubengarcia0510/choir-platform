@@ -182,7 +182,7 @@ public class VocalPlanValidationService {
                         final boolean storedReviewRequired = reviewRequired;
                         final String storedReason = reason;
 
-                        return database.sql("""
+                        DatabaseClient.GenericExecuteSpec update = database.sql("""
                                 UPDATE vocal_plans
                                 SET review_required = :reviewRequired,
                                     review_reason = :reviewReason,
@@ -192,10 +192,21 @@ public class VocalPlanValidationService {
                                   AND choir_id = :choirId
                                   AND repertoire_item_id = :workId
                                 """)
-                                .bind("reviewRequired", storedReviewRequired)
-                                .bind("reviewReason", storedReason)
-                                .bind("signature", storedSignature)
-                                .bind("validatedAt", storedValidatedAt)
+                                .bind("reviewRequired", storedReviewRequired);
+
+                        update = storedReason == null
+                                ? update.bindNull("reviewReason", String.class)
+                                : update.bind("reviewReason", storedReason);
+
+                        update = storedSignature == null
+                                ? update.bindNull("signature", String.class)
+                                : update.bind("signature", storedSignature);
+
+                        update = storedValidatedAt == null
+                                ? update.bindNull("validatedAt", LocalDateTime.class)
+                                : update.bind("validatedAt", storedValidatedAt);
+
+                        return update
                                 .bind("planId", state.id())
                                 .bind("choirId", choirId)
                                 .bind("workId", workId)

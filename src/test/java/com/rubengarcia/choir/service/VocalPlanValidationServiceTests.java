@@ -56,7 +56,7 @@ class VocalPlanValidationServiceTests {
 
     @Test
     void numberingGapRequiresReviewAndDoesNotRenumberDivisions() {
-        Fixture f = fixtureWithNumbers(1, 3, 2);
+        Fixture f = fixtureWithNumbers(1, 1, 3);
 
         var report = service.inspect(f.email(), f.choirId(), f.workId()).block();
 
