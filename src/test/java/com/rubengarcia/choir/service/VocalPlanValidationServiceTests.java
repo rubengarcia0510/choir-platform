@@ -42,6 +42,52 @@ class VocalPlanValidationServiceTests {
     }
 
     @Test
+    void concertAbsenceDoesNotChangeValidatedVocalPopulation() {
+        Fixture f = fixture(1, 1);
+
+        var initial = service.validate(f.email(), f.choirId(), f.workId()).block();
+
+        assertThat(initial).isNotNull();
+        assertThat(initial.reviewRequired()).isFalse();
+        assertThat(initial.sections()).singleElement()
+                .satisfies(section ->
+                        assertThat(section.activeSingerCount()).isEqualTo(1));
+
+        String validatedSignature = initial.populationSignature();
+        String concertTitle = "Concierto ausencia " + UUID.randomUUID();
+
+        jdbc.update("""
+                INSERT INTO concerts (choir_id, title, concert_date)
+                VALUES (?, ?, CURRENT_DATE)
+                """, f.choirId(), concertTitle);
+
+        Long concertId = jdbc.queryForObject("""
+                SELECT id FROM concerts
+                WHERE choir_id = ? AND title = ?
+                """, Long.class, f.choirId(), concertTitle);
+
+        assertThat(concertId).isNotNull();
+
+        jdbc.update("""
+                INSERT INTO absences
+                    (singer_id, concert_id, start_date, end_date, reason, status)
+                VALUES (?, ?, CURRENT_DATE, CURRENT_DATE, ?, 'CONFIRMED')
+                """, f.singerId(), concertId, "Ausencia para probar CHOIR-63");
+
+        var afterAbsence = service.inspect(
+                f.email(), f.choirId(), f.workId()).block();
+
+        assertThat(afterAbsence).isNotNull();
+        assertThat(afterAbsence.reviewRequired()).isFalse();
+        assertThat(afterAbsence.populationSignature())
+                .isEqualTo(validatedSignature);
+        assertThat(afterAbsence.sections()).singleElement().satisfies(section -> {
+            assertThat(section.activeSingerCount()).isEqualTo(1);
+            assertThat(section.enoughSingers()).isTrue();
+        });
+    }
+
+    @Test
     void populationBelowDivisionCountRequiresReviewWithoutDeletingDivisions() {
         Fixture f = fixture(2, 1);
 
@@ -63,7 +109,8 @@ class VocalPlanValidationServiceTests {
         assertThat(report).isNotNull();
         assertThat(report.reviewRequired()).isTrue();
         assertThat(report.reviewReason()).contains("N=1").contains("k=2");
-        assertThat(count("SELECT COUNT(*) FROM vocal_plan_divisions WHERE vocal_plan_id = ?",
+        assertThat(count(
+                "SELECT COUNT(*) FROM vocal_plan_divisions WHERE vocal_plan_id = ?",
                 f.planId())).isEqualTo(2);
         assertThat(count("""
                 SELECT COUNT(*) FROM work_vocal_assignments
@@ -80,7 +127,8 @@ class VocalPlanValidationServiceTests {
         assertThat(report).isNotNull();
         assertThat(report.reviewRequired()).isTrue();
         assertThat(report.sections()).singleElement()
-                .satisfies(section -> assertThat(section.contiguousNumbering()).isFalse());
+                .satisfies(section ->
+                        assertThat(section.contiguousNumbering()).isFalse());
 
         assertThat(jdbc.queryForList("""
                 SELECT division_number FROM vocal_plan_divisions
@@ -93,16 +141,20 @@ class VocalPlanValidationServiceTests {
         Fixture f = fixture(1, 1);
 
         var initial = service.validate(f.email(), f.choirId(), f.workId()).block();
+
         assertThat(initial).isNotNull();
         assertThat(initial.reviewRequired()).isFalse();
 
-        jdbc.update("UPDATE singers SET active = FALSE WHERE id = ?", f.singerId());
+        jdbc.update(
+                "UPDATE singers SET active = FALSE WHERE id = ?",
+                f.singerId());
 
         var changed = service.inspect(f.email(), f.choirId(), f.workId()).block();
 
         assertThat(changed).isNotNull();
         assertThat(changed.reviewRequired()).isTrue();
-        assertThat(changed.reviewReason()).contains("Cambió la población activa");
+        assertThat(changed.reviewReason())
+                .contains("Cambió la población activa");
         assertThat(jdbc.queryForObject("""
                 SELECT division_number FROM vocal_plan_divisions
                 WHERE vocal_plan_id = ?
@@ -121,9 +173,11 @@ class VocalPlanValidationServiceTests {
 
     private Fixture fixture(int divisionCount, int singerCount) {
         int[] numbers = new int[divisionCount];
+
         for (int i = 0; i < divisionCount; i++) {
             numbers[i] = i + 1;
         }
+
         return fixtureWithNumbers(singerCount, numbers);
     }
 
@@ -131,16 +185,24 @@ class VocalPlanValidationServiceTests {
         String suffix = UUID.randomUUID().toString();
         String email = suffix + "@example.test";
 
-        jdbc.update("INSERT INTO directors (display_name, email) VALUES (?, ?)",
+        jdbc.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
                 "Director " + suffix, email);
-        long directorId = scalar("SELECT id FROM directors WHERE email = ?", email);
 
-        jdbc.update("INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+        long directorId = scalar(
+                "SELECT id FROM directors WHERE email = ?", email);
+
+        jdbc.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
                 directorId, "Coro " + suffix);
-        long choirId = scalar("SELECT id FROM choirs WHERE director_id = ?", directorId);
 
-        jdbc.update("INSERT INTO vocal_sections (choir_id, name) VALUES (?, ?)",
+        long choirId = scalar(
+                "SELECT id FROM choirs WHERE director_id = ?", directorId);
+
+        jdbc.update(
+                "INSERT INTO vocal_sections (choir_id, name) VALUES (?, ?)",
                 choirId, "Cuerda " + suffix);
+
         long sectionId = scalar("""
                 SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?
                 """, choirId, "Cuerda " + suffix);
@@ -150,11 +212,14 @@ class VocalPlanValidationServiceTests {
                     INSERT INTO singers
                         (choir_id, display_name, voice_part, active, voice_section_id)
                     VALUES (?, ?, ?, TRUE, ?)
-                    """, choirId, "Cantante " + i + " " + suffix, "TENOR", sectionId);
+                    """, choirId, "Cantante " + i + " " + suffix,
+                    "TENOR", sectionId);
         }
 
-        jdbc.update("INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+        jdbc.update(
+                "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
                 choirId, "Obra " + suffix);
+
         long workId = scalar("""
                 SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?
                 """, choirId, "Obra " + suffix);
@@ -163,6 +228,7 @@ class VocalPlanValidationServiceTests {
                 INSERT INTO vocal_plans (repertoire_item_id, choir_id)
                 VALUES (?, ?)
                 """, workId, choirId);
+
         long planId = scalar("""
                 SELECT id FROM vocal_plans
                 WHERE repertoire_item_id = ? AND choir_id = ?
@@ -177,7 +243,8 @@ class VocalPlanValidationServiceTests {
         }
 
         long singerId = scalar("""
-                SELECT id FROM singers WHERE choir_id = ? ORDER BY id LIMIT 1
+                SELECT id FROM singers
+                WHERE choir_id = ? ORDER BY id LIMIT 1
                 """, choirId);
 
         return new Fixture(email, choirId, workId, planId, singerId);
@@ -190,12 +257,18 @@ class VocalPlanValidationServiceTests {
 
     private long scalar(String sql, Object... args) {
         Long result = jdbc.queryForObject(sql, Long.class, args);
+
         if (result == null) {
             throw new IllegalStateException("No result for SQL: " + sql);
         }
+
         return result;
     }
 
     private record Fixture(
-            String email, long choirId, long workId, long planId, long singerId) {}
+            String email,
+            long choirId,
+            long workId,
+            long planId,
+            long singerId) {}
 }
