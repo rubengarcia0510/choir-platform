@@ -76,6 +76,21 @@ class FormationPlanningAuthorizationServiceTests {
     }
 
     @Test
+    void doesNotReadAssignmentsWhenAuthorizationFails() {
+        RuntimeException denied = new RuntimeException("not authorized");
+        when(authorizationService.requireOwnedConcertWork(
+                "other@example.test", 10L, 30L, 40L))
+                .thenReturn(Mono.error(denied));
+
+        StepVerifier.create(service.vocalAssignmentsForPlanning(
+                        "other@example.test", 10L, 30L, 40L))
+                .expectErrorMatches(error -> error == denied)
+                .verify();
+
+        verify(planningService, never()).vocalAssignmentsForPlanning(30L, 40L);
+    }
+
+    @Test
     void authorizesTransitionVersionBeforeReadingPositions() {
         when(authorizationService.requireOwnedTransitionVersion(
                 "director@example.test", 10L, 50L)).thenReturn(Mono.empty());
@@ -90,6 +105,21 @@ class FormationPlanningAuthorizationServiceTests {
         order.verify(authorizationService)
                 .requireOwnedTransitionVersion("director@example.test", 10L, 50L);
         order.verify(planningService).positionsForTransitionVersion(50L);
+    }
+
+    @Test
+    void doesNotReadTransitionPositionsWhenAuthorizationFails() {
+        RuntimeException denied = new RuntimeException("not authorized");
+        when(authorizationService.requireOwnedTransitionVersion(
+                "other@example.test", 10L, 50L))
+                .thenReturn(Mono.error(denied));
+
+        StepVerifier.create(service.positionsForTransitionVersion(
+                        "other@example.test", 10L, 50L))
+                .expectErrorMatches(error -> error == denied)
+                .verify();
+
+        verify(planningService, never()).positionsForTransitionVersion(50L);
     }
 
     @Test
