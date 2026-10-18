@@ -45,6 +45,19 @@ class VocalPlanValidationServiceTests {
     void populationBelowDivisionCountRequiresReviewWithoutDeletingDivisions() {
         Fixture f = fixture(2, 1);
 
+        Long divisionId = jdbc.queryForObject("""
+                SELECT id FROM vocal_plan_divisions
+                WHERE vocal_plan_id = ? AND division_number = 1
+                """, Long.class, f.planId());
+
+        jdbc.update("""
+                INSERT INTO work_vocal_assignments
+                    (repertoire_item_id, singer_id, vocal_plan_id,
+                     vocal_plan_division_id, choir_id)
+                VALUES (?, ?, ?, ?, ?)
+                """, f.workId(), f.singerId(), f.planId(),
+                divisionId, f.choirId());
+
         var report = service.inspect(f.email(), f.choirId(), f.workId()).block();
 
         assertThat(report).isNotNull();
@@ -52,6 +65,10 @@ class VocalPlanValidationServiceTests {
         assertThat(report.reviewReason()).contains("N=1").contains("k=2");
         assertThat(count("SELECT COUNT(*) FROM vocal_plan_divisions WHERE vocal_plan_id = ?",
                 f.planId())).isEqualTo(2);
+        assertThat(count("""
+                SELECT COUNT(*) FROM work_vocal_assignments
+                WHERE repertoire_item_id = ? AND singer_id = ?
+                """, f.workId(), f.singerId())).isEqualTo(1);
     }
 
     @Test
