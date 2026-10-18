@@ -77,3 +77,49 @@ jobs:
 
       - name: Run full test suite with production profile and PostgreSQL
         run: ./gradlew test
+
+      - name: Validate CHOIR-56 rollback script on PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 -f docs/migrations/rollback-CHOIR-56.sql
+          psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass('public.vocal_sections') IS NOT NULL
+               OR to_regclass('public.vocal_plans') IS NOT NULL
+               OR to_regclass('public.vocal_plan_divisions') IS NOT NULL
+               OR to_regclass('public.concert_vocal_adjustments') IS NOT NULL
+               OR to_regclass('public.concert_vocal_assignments') IS NOT NULL
+               OR to_regclass('public.concert_vocal_assignment_snapshots') IS NOT NULL
+               OR to_regclass('public.work_vocal_assignments') IS NOT NULL
+               OR EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'singers'
+                   AND column_name = 'voice_section_id'
+               )
+               OR EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'concert_cast_snapshots'
+                   AND column_name = 'division_number_snapshot'
+               )
+               OR EXISTS (
+                 SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'formation_positions'
+                   AND column_name = 'division_number_snapshot'
+               )
+            THEN
+              RAISE EXCEPTION 'CHOIR-56 rollback dejó estructuras vocales instaladas';
+            END IF;
+
+            IF to_regclass('public.choirs') IS NULL
+               OR to_regclass('public.singers') IS NULL
+            THEN
+              RAISE EXCEPTION 'CHOIR-56 rollback eliminó tablas preexistentes';
+            END IF;
+          END
+          $$;
+          SQL
