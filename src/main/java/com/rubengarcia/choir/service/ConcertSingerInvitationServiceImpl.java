@@ -53,8 +53,14 @@ public class ConcertSingerInvitationServiceImpl
                             }
 
                             return repository.findActiveSinger(choirId, singerId)
-                                    .flatMap(ignored -> createAndPersist(
-                                            choirId, concertId, singerId, expiresAt))
+                                    .flatMap(ignored -> repository.findInvitedSingerSnapshotName(
+                                                    concertId, singerId)
+                                            .switchIfEmpty(Mono.error(
+                                                    new ResponseStatusException(
+                                                            HttpStatus.NOT_FOUND,
+                                                            "Coreuta no forma parte del snapshot del concierto")))
+                                            .flatMap(snapshotName -> createAndPersist(
+                                                    choirId, concertId, singerId, expiresAt)))
                                     .switchIfEmpty(Mono.error(
                                             new ResponseStatusException(
                                                     HttpStatus.NOT_FOUND,

@@ -40,6 +40,8 @@ class ConcertSingerInvitationServiceImplTests {
                 .thenReturn(Mono.just("PUBLISHED"));
         when(repository.findActiveSinger(1L, 3L))
                 .thenReturn(Mono.just(3L));
+        when(repository.findInvitedSingerSnapshotName(2L, 3L))
+                .thenReturn(Mono.just("Coreuta histórico"));
         when(repository.insertInvitation(eq(1L), eq(2L), eq(3L), anyString(), isNull()))
                 .thenReturn(Mono.just(42L));
 
@@ -88,6 +90,29 @@ class ConcertSingerInvitationServiceImplTests {
         when(repository.findConcertStatus(1L, 2L))
                 .thenReturn(Mono.just("PUBLISHED"));
         when(repository.findActiveSinger(1L, 3L)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.create("director@test.com", 1L, 2L, 3L, null))
+                .expectErrorSatisfies(error -> {
+                    assertThat(error).isInstanceOf(ResponseStatusException.class);
+                    assertThat(((ResponseStatusException) error).getStatusCode())
+                            .isEqualTo(HttpStatus.NOT_FOUND);
+                })
+                .verify();
+
+        verify(repository, never()).insertInvitation(
+                anyLong(), anyLong(), anyLong(), anyString(), any());
+    }
+
+    @Test
+    void refusesInvitationForSingerNotInConcertSnapshot() {
+        when(authorizationService.requireOwnedConcert("director@test.com", 1L, 2L))
+                .thenReturn(Mono.empty());
+        when(repository.findConcertStatus(1L, 2L))
+                .thenReturn(Mono.just("PUBLISHED"));
+        when(repository.findActiveSinger(1L, 3L))
+                .thenReturn(Mono.just(3L));
+        when(repository.findInvitedSingerSnapshotName(2L, 3L))
+                .thenReturn(Mono.empty());
 
         StepVerifier.create(service.create("director@test.com", 1L, 2L, 3L, null))
                 .expectErrorSatisfies(error -> {
