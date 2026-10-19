@@ -28,6 +28,8 @@ class R2dbcRepositoriesIntegrationTests {
     private final FormationRepository formations;
     private final FormationVersionRepository formationVersions;
     private final RepertoireItemRepository repertoire;
+    private final SceneRuleRepository sceneRules;
+    private final SceneRuleGroupRepository sceneRuleGroups;
     private final SingerRepository singers;
     private final TransitionRepository transitions;
     private final TransitionVersionRepository transitionVersions;
@@ -44,6 +46,8 @@ class R2dbcRepositoriesIntegrationTests {
             FormationRepository formations,
             FormationVersionRepository formationVersions,
             RepertoireItemRepository repertoire,
+            SceneRuleRepository sceneRules,
+            SceneRuleGroupRepository sceneRuleGroups,
             SingerRepository singers,
             TransitionRepository transitions,
             TransitionVersionRepository transitionVersions) {
@@ -58,6 +62,8 @@ class R2dbcRepositoriesIntegrationTests {
         this.formations = formations;
         this.formationVersions = formationVersions;
         this.repertoire = repertoire;
+        this.sceneRules = sceneRules;
+        this.sceneRuleGroups = sceneRuleGroups;
         this.singers = singers;
         this.transitions = transitions;
         this.transitionVersions = transitionVersions;
@@ -78,6 +84,9 @@ class R2dbcRepositoriesIntegrationTests {
         Long versionTwoId = null;
         Long transitionId = null;
         Long tokenId = null;
+        Long repertoireItemId = null;
+        Long activeRuleId = null;
+        Long inactiveRuleId = null;
 
         try {
             jdbc.update(
@@ -145,6 +154,43 @@ class R2dbcRepositoriesIntegrationTests {
                     VALUES (?, ?)
                     """,
                     choirId, "Repertoire " + suffix);
+            repertoireItemId = id("""
+                    SELECT id FROM repertoire_items
+                    WHERE choir_id = ? AND title = ?
+                    """, choirId, "Repertoire " + suffix);
+
+            jdbc.update("""
+                    INSERT INTO scene_rules
+                        (repertoire_item_id, rule_order, rule_type,
+                         description, active)
+                    VALUES (?, 0, 'CAST_DIVISION', ?, TRUE)
+                    """, repertoireItemId, "División activa " + suffix);
+            activeRuleId = id("""
+                    SELECT id FROM scene_rules
+                    WHERE repertoire_item_id = ? AND rule_order = 0
+                    """, repertoireItemId);
+
+            jdbc.update("""
+                    INSERT INTO scene_rules
+                        (repertoire_item_id, rule_order, rule_type,
+                         description, active)
+                    VALUES (?, 1, 'EXIT', ?, FALSE)
+                    """, repertoireItemId, "Salida inactiva " + suffix);
+            inactiveRuleId = id("""
+                    SELECT id FROM scene_rules
+                    WHERE repertoire_item_id = ? AND rule_order = 1
+                    """, repertoireItemId);
+
+            jdbc.update("""
+                    INSERT INTO scene_rule_groups
+                        (scene_rule_id, group_order, group_label, member_count)
+                    VALUES (?, 1, 'Segundo grupo', 4)
+                    """, activeRuleId);
+            jdbc.update("""
+                    INSERT INTO scene_rule_groups
+                        (scene_rule_id, group_order, group_label, member_count)
+                    VALUES (?, 0, 'Primer grupo', 4)
+                    """, activeRuleId);
 
             jdbc.update("""
                     INSERT INTO formations (choir_id, name)
@@ -290,6 +336,27 @@ class R2dbcRepositoriesIntegrationTests {
             // RepertoireItemRepository
             assertThat(repertoire.findByChoirId(choirId).collectList().block())
                     .hasSize(1);
+
+            // SceneRuleRepository: orden y filtro de reglas activas
+            assertThat(sceneRules
+                    .findByRepertoireItemIdOrderByRuleOrderAsc(repertoireItemId)
+                    .collectList().block())
+                    .extracting(SceneRule::getRuleOrder)
+                    .containsExactly(0, 1);
+
+            assertThat(sceneRules
+                    .findByRepertoireItemIdAndActiveTrueOrderByRuleOrderAsc(
+                            repertoireItemId)
+                    .collectList().block())
+                    .extracting(SceneRule::getId)
+                    .containsExactly(activeRuleId);
+
+            // SceneRuleGroupRepository: orden de grupos
+            assertThat(sceneRuleGroups
+                    .findBySceneRuleIdOrderByGroupOrderAsc(activeRuleId)
+                    .collectList().block())
+                    .extracting(SceneRuleGroup::getGroupLabel)
+                    .containsExactly("Primer grupo", "Segundo grupo");
 
             // FormationRepository
             assertThat(formations.findByChoirId(choirId).collectList().block())
