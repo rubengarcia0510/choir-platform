@@ -1,170 +1,68 @@
 package com.rubengarcia.choir.service;
 
+import com.rubengarcia.choir.repository.ConcertCastSelectionRepository;
+import com.rubengarcia.choir.repository.ConcertPublicationRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
-
 @Service
 public class ConcertPublicationServiceImpl implements ConcertPublicationService {
 
-    private final DatabaseClient database;
     private final ResourceAuthorizationService authorizationService;
-    private final com.rubengarcia.choir.repository.ConcertCastSelectionRepository castSelectionRepository;
+    private final ConcertPublicationRepository publicationRepository;
+    private final ConcertCastSelectionRepository castSelectionRepository;
 
     public ConcertPublicationServiceImpl(
-            DatabaseClient database,
             ResourceAuthorizationService authorizationService,
-            com.rubengarcia.choir.repository.ConcertCastSelectionRepository castSelectionRepository) {
-        this.database = database;
+            ConcertPublicationRepository publicationRepository,
+            ConcertCastSelectionRepository castSelectionRepository) {
         this.authorizationService = authorizationService;
+        this.publicationRepository = publicationRepository;
         this.castSelectionRepository = castSelectionRepository;
     }
-
-    public record Publication(
-            long concertId,
-            String status,
-            LocalDateTime publishedAt,
-            long castSnapshots,
-            long vocalAssignmentSnapshots) {}
 
     @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<ConcertPublicationService.Publication> publish(String email, long choirId, long concertId) {
         return authorizationService.requireOwnedConcert(email, choirId, concertId)
-                .then(database.sql("""
-                        SELECT status
-                        FROM concerts
-                        WHERE id = :concertId
-                          AND choir_id = :choirId
-                        """)
-                        .bind("concertId", concertId)
-                        .bind("choirId", choirId)
-                        .map((row, metadata) -> row.get("status", String.class))
-                        .one()
+                .then(publicationRepository.findStatus(choirId, concertId)
                         .switchIfEmpty(Mono.error(new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,
                                 "Concierto inexistente o fuera del coro del director")))
                         .flatMap(status -> {
-                            if (!"PLANNED".equals(status)) {
+                            if (!"PLANNED".equals(status)
+                                    && !"REHEARSAL".equals(status)) {
                                 return Mono.error(new ResponseStatusException(
                                         HttpStatus.CONFLICT,
-                                        "Solo se pueden publicar conciertos en estado PLANNED"));
+                                        "Solo se pueden publicar conciertos en estado "
+                                                + "PLANNED o REHEARSAL"));
                             }
-                            return capture(concertId, choirId);
+                            return capture(choirId, concertId);
                         }));
     }
 
-    private Mono<ConcertPublicationService.Publication> capture(long concertId, long choirId) {
-        return database.sql("""
-                UPDATE concerts
-                SET status = 'PUBLISHED',
-                    published_at = CURRENT_TIMESTAMP
-                WHERE id = :concertId
-                  AND choir_id = :choirId
-                  AND status = 'PLANNED'
-                """)
-                .bind("concertId", concertId)
-                .bind("choirId", choirId)
-                .fetch()
-                .rowsUpdated()
+    private Mono<ConcertPublicationService.Publication> capture(
+            long choirId, long concertId) {
+        return publicationRepository.markPublished(choirId, concertId)
                 .flatMap(updated -> {
-                    if (updated == 0) {
+                    if (!updated) {
                         return Mono.error(new ResponseStatusException(
                                 HttpStatus.CONFLICT,
                                 "El concierto ya fue publicado o cambió de estado"));
                     }
-                    return captureCast(concertId)
-                            .then(captureVocalAssignments(concertId, choirId))
-                            .then(readPublication(concertId));
+                    return castSelectionRepository.captureCast(concertId)
+                            .then(publicationRepository.captureVocalAssignments(
+                                    choirId, concertId))
+                            .then(publicationRepository.findPublication(
+                                    choirId, concertId))
+                            .map(publication -> new ConcertPublicationService.Publication(
+                                    concertId,
+                                    publication.status(),
+                                    publication.publishedAt(),
+                                    publication.castSnapshots(),
+                                    publication.vocalAssignmentSnapshots()));
                 });
-    }
-
-    private Mono<Long> captureCast(long concertId) {
-        return castSelectionRepository.captureCast(concertId);
-    }
-
-    private Mono<Long> captureVocalAssignments(long concertId, long choirId) {
-        return database.sql("""
-                INSERT INTO concert_vocal_assignment_snapshots (
-                    concert_id,
-                    repertoire_item_id,
-                    source_singer_id,
-                    singer_name_snapshot,
-                    voice_part_snapshot,
-                    voice_section_id_snapshot,
-                    voice_section_name_snapshot,
-                    division_number_snapshot
-                )
-                SELECT
-                    a.concert_id,
-                    a.repertoire_item_id,
-                    s.id,
-                    s.display_name,
-                    s.voice_part,
-                    vs.id,
-                    vs.name,
-                    d.division_number
-                FROM concert_vocal_assignments a
-                JOIN singers s
-                  ON s.id = a.singer_id
-                 AND s.choir_id = a.choir_id
-                JOIN vocal_plan_divisions d
-                  ON d.id = a.vocal_plan_division_id
-                 AND d.choir_id = a.choir_id
-                JOIN vocal_sections vs
-                  ON vs.id = d.vocal_section_id
-                 AND vs.choir_id = a.choir_id
-                WHERE a.concert_id = :concertId
-                  AND a.choir_id = :choirId
-                """)
-                .bind("concertId", concertId)
-                .bind("choirId", choirId)
-                .fetch()
-                .rowsUpdated()
-                .map(Long::valueOf);
-    }
-
-    private Mono<ConcertPublicationService.Publication> readPublication(long concertId) {
-        return Mono.zip(
-                database.sql("""
-                        SELECT status, published_at
-                        FROM concerts
-                        WHERE id = :concertId
-                        """)
-                        .bind("concertId", concertId)
-                        .map((row, metadata) -> new Object[] {
-                                row.get("status", String.class),
-                                row.get("published_at", LocalDateTime.class)
-                        })
-                        .one(),
-                database.sql("""
-                        SELECT COUNT(*) AS total
-                        FROM concert_cast_snapshots
-                        WHERE concert_id = :concertId
-                        """)
-                        .bind("concertId", concertId)
-                        .map((row, metadata) -> row.get("total", Long.class))
-                        .one(),
-                database.sql("""
-                        SELECT COUNT(*) AS total
-                        FROM concert_vocal_assignment_snapshots
-                        WHERE concert_id = :concertId
-                        """)
-                        .bind("concertId", concertId)
-                        .map((row, metadata) -> row.get("total", Long.class))
-                        .one()
-        ).map(result -> {
-            Object[] concert = result.getT1();
-            return new ConcertPublicationService.Publication(
-                    concertId,
-                    (String) concert[0],
-                    (LocalDateTime) concert[1],
-                    result.getT2(),
-                    result.getT3());
-        });
     }
 }

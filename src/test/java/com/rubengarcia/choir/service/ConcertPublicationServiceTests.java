@@ -329,6 +329,32 @@ class ConcertPublicationServiceTests {
     }
 
     @Test
+    void publishingConcertFromRehearsalCapturesCastAndChangesStatus() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "rehearsal-" + suffix + "@example.test";
+
+        Long directorId = insertDirector(email);
+        Long choirId = insertChoir(directorId, "Coro ensayo " + suffix);
+        insertSinger(choirId, "Coreuta de ensayo", "SOPRANO", null);
+        Long concertId = insertConcert(choirId, "Concierto ensayo " + suffix);
+        jdbcTemplate.update(
+                "UPDATE concerts SET status = 'REHEARSAL' WHERE id = ?",
+                concertId);
+
+        ConcertPublicationService.Publication publication =
+                publicationService.publish(email, choirId, concertId)
+                        .block(Duration.ofSeconds(10));
+
+        assertThat(publication).isNotNull();
+        assertThat(publication.status()).isEqualTo("PUBLISHED");
+        assertThat(publication.castSnapshots()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM concerts WHERE id = ?",
+                String.class,
+                concertId)).isEqualTo("PUBLISHED");
+    }
+
+    @Test
     void publishedConcertCannotBePublishedAgain() {
         String suffix = UUID.randomUUID().toString();
         String email = "repeat-" + suffix + "@example.test";
@@ -347,7 +373,8 @@ class ConcertPublicationServiceTests {
                 publicationService.publish(email, choirId, concertId)
                         .block(Duration.ofSeconds(10))
         )
-                .hasMessageContaining("Solo se pueden publicar conciertos en estado PLANNED");
+                .hasMessageContaining(
+                        "Solo se pueden publicar conciertos en estado PLANNED o REHEARSAL");
 
         Integer castCount = jdbcTemplate.queryForObject(
                 """

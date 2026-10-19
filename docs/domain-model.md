@@ -15,13 +15,13 @@
 
 ## Flujo de publicación y captura histórica
 
-El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED`.
+El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED` o `REHEARSAL`.
 
 Dentro de una transacción, la publicación cambia el estado a `PUBLISHED`, registra `published_at` y captura:
 - El elenco activo del coro en `concert_cast_snapshots`.
 - Las asignaciones vocales por cada ítem del repertorio en `concert_vocal_assignment_snapshots`, incluyendo el número de división correspondiente.
 
-Si el concierto ya no está en estado `PLANNED`, la operación falla en lugar de volver a publicar y duplicar las capturas. La actualización condicional protege también frente a intentos concurrentes. El cambio de estado y las capturas deben confirmarse o revertirse juntos.
+Si el concierto ya está publicado o en cualquier estado distinto de `PLANNED` y `REHEARSAL`, la operación falla en lugar de volver a publicar y duplicar las capturas. La actualización condicional protege también frente a intentos concurrentes. El cambio de estado y las capturas deben confirmarse o revertirse juntos.
 
 Los snapshots son registros históricos: no deben reconstruirse ni actualizarse desde los datos actuales del coreuta o de la sección. Para datos históricos anteriores a la introducción de una columna, se conserva `NULL` cuando no existe evidencia para determinar el valor; no se inventan divisiones.
 
