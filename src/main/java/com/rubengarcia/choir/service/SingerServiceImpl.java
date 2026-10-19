@@ -47,7 +47,7 @@ public class SingerServiceImpl implements SingerService {
     @Override
     public Mono<Singer> get(
             String email, Long choirId, Long singerId) {
-        return requireEditableChoir(email, choirId)
+        return authorizationService.requireOwnedChoir(email, choirId)
                 .then(findSinger(choirId, singerId));
     }
 

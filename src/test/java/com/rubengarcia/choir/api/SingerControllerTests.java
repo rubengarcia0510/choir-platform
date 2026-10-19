@@ -240,6 +240,40 @@ class SingerControllerTests {
                 String.class, singerId)).isEqualTo("Coreuta privado");
     }
 
+
+    @Test
+    void invalidSingerDataAndForeignVocalSectionAreRejected() throws Exception {
+        Director director = createDirector("Validation");
+        Session session = login(director.email());
+        Long firstChoirId = createChoir(session, "Coro principal");
+        Long secondChoirId = createChoir(session, "Coro secundario");
+        Long foreignSectionId = createSection(session, secondChoirId, "Tenores");
+
+        webTestClient.post()
+                .uri("/api/choirs/{choirId}/singers", firstChoirId)
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("displayName", "   "))
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        webTestClient.post()
+                .uri("/api/choirs/{choirId}/singers", firstChoirId)
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "displayName", "Coreuta con sección ajena",
+                        "voiceSectionId", foreignSectionId))
+                .exchange()
+                .expectStatus().isBadRequest();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM singers WHERE choir_id = ?",
+                Integer.class, firstChoirId)).isZero();
+    }
+
     private Long createChoir(Session session, String name) throws Exception {
         String response = webTestClient.post()
                 .uri("/api/choirs")
