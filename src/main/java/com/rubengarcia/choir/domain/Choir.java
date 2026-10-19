@@ -19,10 +19,19 @@ public class Choir {
 
     private String description;
 
+    private boolean archived;
+
     @Column("created_at")
     private LocalDateTime createdAt;
 
     protected Choir() {
+    }
+
+    public Choir(Long directorId, String name, String description) {
+        this.directorId = directorId;
+        this.name = name;
+        this.description = description;
+        this.archived = false;
     }
 
     public Long getId() {
@@ -51,6 +60,14 @@ public class Choir {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 
     public LocalDateTime getCreatedAt() {
