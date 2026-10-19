@@ -80,8 +80,9 @@ jobs:
 
       - name: Validate CHOIR-56 rollback script on PostgreSQL
         run: |
-          # CHOIR-56 rollback covers V5-V11. Remove the later CHOIR-14
-          # table from this disposable CI database before validating it.
+          # CHOIR-56 rollback covers V5-V11. Remove later tables that depend
+          # on those constraints from this disposable database before validating it.
+          PGPASSWORD=choir psql -h localhost -U choir -d choir -v ON_ERROR_STOP=1 -c "DROP TABLE IF EXISTS concert_cast_selections"
           psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 -c "DROP TABLE IF EXISTS concert_singer_invitations"
           sudo apt-get update
           sudo apt-get install -y postgresql-client
