@@ -167,8 +167,7 @@ public class ConcertSingerInvitationRepository {
                         .bind("concertId", concertId)
                         .bind("singerId", singerId)
                         .map((row, meta) -> row.get("singer_name_snapshot", String.class))
-                        .one())
-                .defaultIfEmpty("");
+                        .one());
     }
 
     public Mono<List<RepertoireEntry>> findRepertoire(long choirId, long concertId) {
@@ -201,9 +200,11 @@ public class ConcertSingerInvitationRepository {
                        division_number_snapshot
                 FROM concert_cast_snapshots
                 WHERE concert_id = :concertId
+                  AND source_singer_id = :invitedSingerId
                 ORDER BY singer_name_snapshot
                 """)
                 .bind("concertId", concertId)
+                .bind("invitedSingerId", invitedSingerId)
                 .map((row, meta) -> {
                     Long singerId = row.get("source_singer_id", Long.class);
                     return new CastMember(
@@ -233,10 +234,12 @@ public class ConcertSingerInvitationRepository {
                 JOIN repertoire_items ri
                   ON ri.id = a.repertoire_item_id AND ri.choir_id = c.choir_id
                 WHERE a.concert_id = :concertId
+                  AND a.source_singer_id = :invitedSingerId
                 ORDER BY cr.order_index, a.voice_section_name_snapshot,
                          a.division_number_snapshot, a.singer_name_snapshot
                 """)
                 .bind("concertId", concertId)
+                .bind("invitedSingerId", invitedSingerId)
                 .map((row, meta) -> {
                     Long singerId = row.get("source_singer_id", Long.class);
                     return new VocalAssignment(

@@ -110,7 +110,10 @@ public class ConcertSingerInvitationServiceImpl
                                 .switchIfEmpty(Mono.error(
                                         new ResponseStatusException(HttpStatus.NOT_FOUND))),
                         repository.findInvitedSingerSnapshotName(
-                                invitation.concertId(), invitation.singerId()),
+                                invitation.concertId(), invitation.singerId())
+                                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                                        HttpStatus.NOT_FOUND,
+                                        "No existe el snapshot del coreuta invitado"))),
                         repository.findRepertoire(
                                 invitation.choirId(), invitation.concertId()),
                         repository.findCast(

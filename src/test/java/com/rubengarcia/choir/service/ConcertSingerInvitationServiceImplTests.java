@@ -199,4 +199,28 @@ class ConcertSingerInvitationServiceImplTests {
         verify(repository).findCast(2L, 3L);
         verify(repository).findVocalAssignments(2L, 3L);
     }
+
+    @Test
+    void rejectsInvitationViewWhenInvitedSingerHasNoSnapshot() {
+        when(repository.findUsableInvitation(anyString()))
+                .thenReturn(Mono.just(new ConcertSingerInvitationRepository.InvitationMeta(
+                        42L, 2L, 3L, 1L)));
+        when(repository.findConcertDetails(1L, 2L))
+                .thenReturn(Mono.just(new ConcertSingerInvitationRepository.ConcertDetails(
+                        "Concierto", LocalDate.of(2026, 12, 1), "Sala")));
+        when(repository.findInvitedSingerSnapshotName(2L, 3L))
+                .thenReturn(Mono.empty());
+        when(repository.findRepertoire(1L, 2L)).thenReturn(Mono.just(List.of()));
+        when(repository.findCast(2L, 3L)).thenReturn(Mono.just(List.of()));
+        when(repository.findVocalAssignments(2L, 3L))
+                .thenReturn(Mono.just(List.of()));
+
+        StepVerifier.create(service.viewByToken("valid-token"))
+                .expectErrorSatisfies(error -> {
+                    assertThat(error).isInstanceOf(ResponseStatusException.class);
+                    assertThat(((ResponseStatusException) error).getStatusCode())
+                            .isEqualTo(HttpStatus.NOT_FOUND);
+                })
+                .verify();
+    }
 }
