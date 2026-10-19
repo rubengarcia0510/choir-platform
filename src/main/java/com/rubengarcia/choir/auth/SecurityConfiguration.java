@@ -2,6 +2,7 @@ package com.rubengarcia.choir.auth;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UserDetailsRepositoryReactiveAuthenticationManager;
@@ -71,6 +72,10 @@ public class SecurityConfiguration {
                                 "/api/auth/me",
                                 "/actuator/health",
                                 "/actuator/health/**")
+                        .permitAll()
+                        .pathMatchers(
+                                HttpMethod.GET,
+                                "/api/public/concert-invitations/**")
                         .permitAll()
                         .anyExchange().authenticated())
                 .exceptionHandling(exceptions -> exceptions
