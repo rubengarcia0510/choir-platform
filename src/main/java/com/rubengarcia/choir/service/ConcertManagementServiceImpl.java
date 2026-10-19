@@ -59,8 +59,9 @@ public class ConcertManagementServiceImpl implements ConcertManagementService {
             String status) {
         return get(email, choirId, concertId)
                 .flatMap(concert -> {
-                    if (!"PLANNED".equals(concert.getStatus())
-                            && !"REHEARSAL".equals(concert.getStatus())) {
+                    String currentStatus = concert.getStatus();
+                    if (!"PLANNED".equals(currentStatus)
+                            && !"REHEARSAL".equals(currentStatus)) {
                         return Mono.error(new ResponseStatusException(
                                 HttpStatus.CONFLICT,
                                 "Solo se pueden editar conciertos en configuración o ensayo"));
@@ -72,11 +73,28 @@ public class ConcertManagementServiceImpl implements ConcertManagementService {
                                 "El estado debe ser PLANNED o REHEARSAL"));
                     }
 
-                    concert.setTitle(title.trim());
-                    concert.setConcertDate(concertDate);
-                    concert.setVenue(normalizeVenue(venue));
-                    concert.setStatus(status);
-                    return concertRepository.save(concert);
+                    String normalizedTitle = title.trim();
+                    String normalizedVenue = normalizeVenue(venue);
+                    return concertRepository.updateIfStatus(
+                                    choirId,
+                                    concertId,
+                                    currentStatus,
+                                    normalizedTitle,
+                                    concertDate,
+                                    normalizedVenue,
+                                    status)
+                            .flatMap(updated -> {
+                                if (updated == 0) {
+                                    return Mono.error(new ResponseStatusException(
+                                            HttpStatus.CONFLICT,
+                                            "El concierto cambió de estado; volvé a cargarlo antes de editar"));
+                                }
+                                concert.setTitle(normalizedTitle);
+                                concert.setConcertDate(concertDate);
+                                concert.setVenue(normalizedVenue);
+                                concert.setStatus(status);
+                                return Mono.just(concert);
+                            });
                 });
     }
 
@@ -87,8 +105,13 @@ public class ConcertManagementServiceImpl implements ConcertManagementService {
                     if ("ARCHIVED".equals(concert.getStatus())) {
                         return Mono.empty();
                     }
-                    concert.setStatus("ARCHIVED");
-                    return concertRepository.save(concert).then();
+                    return concertRepository.archiveIfStatus(
+                                    choirId, concertId, concert.getStatus())
+                            .flatMap(updated -> updated == 0
+                                    ? Mono.error(new ResponseStatusException(
+                                            HttpStatus.CONFLICT,
+                                            "El concierto cambió de estado antes de archivarse"))
+                                    : Mono.empty());
                 });
     }
 

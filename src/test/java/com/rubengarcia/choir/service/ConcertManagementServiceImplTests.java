@@ -87,8 +87,10 @@ class ConcertManagementServiceImplTests {
         when(authorizationService.requireOwnedConcert(
                 "director@test.com", 10L, 20L)).thenReturn(Mono.empty());
         when(concertRepository.findById(20L)).thenReturn(Mono.just(existing));
-        when(concertRepository.save(any(Concert.class)))
-                .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(concertRepository.updateIfStatus(
+                10L, 20L, "PLANNED", "Nuevo título",
+                LocalDate.of(2027, 11, 20), "Auditorio", "REHEARSAL"))
+                .thenReturn(Mono.just(1));
 
         StepVerifier.create(service.update(
                         "director@test.com", 10L, 20L,
@@ -102,6 +104,37 @@ class ConcertManagementServiceImplTests {
                     assertThat(concert.getStatus()).isEqualTo("REHEARSAL");
                 })
                 .verifyComplete();
+
+        verify(concertRepository, never()).save(any(Concert.class));
+    }
+
+    @Test
+    void updateRejectsWhenConcertStatusChangesAfterItWasRead() {
+        Concert existing = new Concert();
+        existing.setChoirId(10L);
+        existing.setTitle("Título anterior");
+        existing.setStatus("PLANNED");
+
+        when(authorizationService.requireOwnedConcert(
+                "director@test.com", 10L, 20L)).thenReturn(Mono.empty());
+        when(concertRepository.findById(20L)).thenReturn(Mono.just(existing));
+        when(concertRepository.updateIfStatus(
+                10L, 20L, "PLANNED", "Título nuevo",
+                LocalDate.of(2027, 11, 20), null, "PLANNED"))
+                .thenReturn(Mono.just(0));
+
+        StepVerifier.create(service.update(
+                        "director@test.com", 10L, 20L,
+                        "Título nuevo", LocalDate.of(2027, 11, 20),
+                        null, "PLANNED"))
+                .expectErrorSatisfies(error -> {
+                    assertThat(error).isInstanceOf(ResponseStatusException.class);
+                    assertThat(((ResponseStatusException) error).getStatusCode())
+                            .isEqualTo(HttpStatus.CONFLICT);
+                })
+                .verify();
+
+        verify(concertRepository, never()).save(any(Concert.class));
     }
 
     @Test
@@ -139,13 +172,13 @@ class ConcertManagementServiceImplTests {
         when(authorizationService.requireOwnedConcert(
                 "director@test.com", 10L, 20L)).thenReturn(Mono.empty());
         when(concertRepository.findById(20L)).thenReturn(Mono.just(existing));
-        when(concertRepository.save(any(Concert.class)))
-                .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+        when(concertRepository.archiveIfStatus(10L, 20L, "PLANNED"))
+                .thenReturn(Mono.just(1));
 
         StepVerifier.create(service.archive("director@test.com", 10L, 20L))
                 .verifyComplete();
 
-        assertThat(existing.getStatus()).isEqualTo("ARCHIVED");
-        verify(concertRepository).save(existing);
+        verify(concertRepository).archiveIfStatus(10L, 20L, "PLANNED");
+        verify(concertRepository, never()).save(any(Concert.class));
     }
 }
