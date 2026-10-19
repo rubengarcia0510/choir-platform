@@ -14,12 +14,15 @@ public class ConcertPublicationServiceImpl implements ConcertPublicationService 
 
     private final DatabaseClient database;
     private final ResourceAuthorizationService authorizationService;
+    private final com.rubengarcia.choir.repository.ConcertCastSelectionRepository castSelectionRepository;
 
     public ConcertPublicationServiceImpl(
             DatabaseClient database,
-            ResourceAuthorizationService authorizationService) {
+            ResourceAuthorizationService authorizationService,
+            com.rubengarcia.choir.repository.ConcertCastSelectionRepository castSelectionRepository) {
         this.database = database;
         this.authorizationService = authorizationService;
+        this.castSelectionRepository = castSelectionRepository;
     }
 
     public record Publication(
@@ -81,35 +84,7 @@ public class ConcertPublicationServiceImpl implements ConcertPublicationService 
     }
 
     private Mono<Long> captureCast(long concertId) {
-        return database.sql("""
-                INSERT INTO concert_cast_snapshots (
-                    concert_id,
-                    source_singer_id,
-                    singer_name_snapshot,
-                    voice_part_snapshot,
-                    voice_section_id_snapshot,
-                    voice_section_name_snapshot
-                )
-                SELECT
-                    :concertId,
-                    s.id,
-                    s.display_name,
-                    s.voice_part,
-                    s.voice_section_id,
-                    vs.name
-                FROM concerts c
-                JOIN singers s
-                  ON s.choir_id = c.choir_id
-                 AND s.active = TRUE
-                LEFT JOIN vocal_sections vs
-                  ON vs.id = s.voice_section_id
-                 AND vs.choir_id = c.choir_id
-                WHERE c.id = :concertId
-                """)
-                .bind("concertId", concertId)
-                .fetch()
-                .rowsUpdated()
-                .map(Long::valueOf);
+        return castSelectionRepository.captureCast(concertId);
     }
 
     private Mono<Long> captureVocalAssignments(long concertId, long choirId) {
