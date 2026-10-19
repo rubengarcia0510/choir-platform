@@ -5,8 +5,8 @@
 - Director administra uno o varios coros.
 - Coro pertenece a un director y contiene coreutas, repertorio, conciertos, formaciones y transiciones.
 - Coreuta pertenece a un coro.
-- Concierto pertenece a un coro y tiene repertorio ordenado.
-- Ítem de repertorio pertenece a un coro; `concert_repertoire` asocia obras a conciertos y conserva su orden.
+- Concierto pertenece a un coro y tiene repertorio ordenado; cada aparición conserva su duración estimada y necesidades escénicas.
+- Ítem de repertorio pertenece a un coro; `concert_repertoire` asocia obras a conciertos, conserva su orden y sus datos escénicos específicos.
 - La captura de elenco conserva nombre, cuerda vocal e identidad/nombre de sección vocal tal como eran al capturar el elenco. La referencia al coreuta es opcional para no perder la captura si se elimina esa ficha. La identidad y el nombre de sección son datos históricos sin FK a la sección mutable; renombrar o reasignar un coreuta no modifica la captura.
 - `concert_vocal_assignments` representa la asignación de coreutas a divisiones vocales por obra y concierto. Al publicar el concierto, `concert_vocal_assignment_snapshots` conserva una copia histórica por obra y coreuta: nombre, cuerda, sección y número de división. La referencia al coreuta puede quedar nula si se elimina la ficha; los datos descriptivos capturados se conservan.
 - Formación identifica una formación lógica. Cada versión de formación tiene número propio y estado; sus posiciones pertenecen a esa versión, no a la formación abstracta. Las posiciones conservan nombre, cuerda, identidad/nombre de sección y, cuando se conoce, división vocal. Las capturas no dependen del nombre actual de la sección.
@@ -15,10 +15,14 @@
 
 ## Flujo de publicación y captura histórica
 
+El elenco se configura con `PUT /api/choirs/{choirId}/concerts/{concertId}/cast` y se consulta con `GET` sobre la misma ruta. Al guardar una selección se captura inmediatamente nombre, cuerda y sección vocal para que cambios posteriores en las fichas del coro no alteren el concierto. Si no hubo selección explícita, el elenco activo se captura al publicar.
+
+El catálogo de obras del coro se consulta y amplía con `GET` y `POST /api/choirs/{choirId}/repertoire`. El repertorio del concierto se consulta y reemplaza ordenado con `GET` y `PUT /api/choirs/{choirId}/concerts/{concertId}/repertoire`. Cada elemento incluye duración estimada y necesidades escénicas; la lista es reemplazada transaccionalmente y solo admite obras del coro asociado.
+
 El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED` o `REHEARSAL`.
 
 Dentro de una transacción, la publicación cambia el estado a `PUBLISHED`, registra `published_at` y captura:
-- El elenco activo del coro en `concert_cast_snapshots`.
+- El elenco efectivo del concierto en `concert_cast_snapshots` (sin sobrescribir una selección ya capturada).
 - Las asignaciones vocales por cada ítem del repertorio en `concert_vocal_assignment_snapshots`, incluyendo el número de división correspondiente.
 
 Si el concierto ya está publicado o en cualquier estado distinto de `PLANNED` y `REHEARSAL`, la operación falla en lugar de volver a publicar y duplicar las capturas. La actualización condicional protege también frente a intentos concurrentes. El cambio de estado y las capturas deben confirmarse o revertirse juntos.

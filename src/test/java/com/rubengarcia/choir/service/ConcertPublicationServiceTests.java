@@ -23,6 +23,9 @@ class ConcertPublicationServiceTests {
     @Autowired
     private ConcertPublicationService publicationService;
 
+    @Autowired
+    private ConcertCastSelectionService castSelectionService;
+
     private final List<Long> createdDirectorIds = new ArrayList<>();
 
     @AfterEach
@@ -352,6 +355,54 @@ class ConcertPublicationServiceTests {
                 "SELECT status FROM concerts WHERE id = ?",
                 String.class,
                 concertId)).isEqualTo("PUBLISHED");
+    }
+
+    @Test
+    void configuredCastSnapshotSurvivesLaterSingerChanges() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "cast-snapshot-" + suffix + "@example.test";
+        Long directorId = insertDirector(email);
+        Long choirId = insertChoir(directorId, "Coro snapshot " + suffix);
+        Long sectionId = insertSection(choirId, "Tenores");
+        Long singerId = insertSinger(
+                choirId, "Nombre al configurar", "TENOR", sectionId);
+        Long concertId = insertConcert(choirId, "Concierto snapshot " + suffix);
+
+        castSelectionService.replaceSelection(
+                email, choirId, concertId, List.of(singerId))
+                .block(Duration.ofSeconds(10));
+        assertThat(castSelectionService.getCast(email, choirId, concertId)
+                .collectList().block(Duration.ofSeconds(10)))
+                .extracting(member -> member.name())
+                .containsExactly("Nombre al configurar");
+
+        jdbcTemplate.update("""
+                UPDATE singers
+                SET display_name = ?, active = FALSE
+                WHERE id = ?
+                """, "Nombre posterior", singerId);
+        assertThat(castSelectionService.getCast(email, choirId, concertId)
+                .collectList().block(Duration.ofSeconds(10)))
+                .extracting(member -> member.name())
+                .containsExactly("Nombre al configurar");
+
+        ConcertPublicationService.Publication publication =
+                publicationService.publish(email, choirId, concertId)
+                        .block(Duration.ofSeconds(10));
+
+        assertThat(publication.castSnapshots()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT singer_name_snapshot
+                FROM concert_cast_snapshots
+                WHERE concert_id = ?
+                """, String.class, concertId))
+                .isEqualTo("Nombre al configurar");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT voice_section_name_snapshot
+                FROM concert_cast_snapshots
+                WHERE concert_id = ?
+                """, String.class, concertId))
+                .isEqualTo("Tenores");
     }
 
     @Test

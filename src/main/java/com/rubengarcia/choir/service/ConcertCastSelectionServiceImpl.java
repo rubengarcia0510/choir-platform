@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.service;
 
+import com.rubengarcia.choir.domain.ConcertCastMember;
 import com.rubengarcia.choir.domain.Singer;
 import com.rubengarcia.choir.repository.ConcertCastSelectionRepository;
 import com.rubengarcia.choir.repository.SingerRepository;
@@ -7,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.HashSet;
@@ -66,5 +68,12 @@ public class ConcertCastSelectionServiceImpl
                     return selectionRepository.replaceSelection(
                             choirId, concertId, List.copyOf(singerIds));
                 });
+    }
+
+    @Override
+    public Flux<ConcertCastMember> getCast(
+            String email, long choirId, long concertId) {
+        return authorizationService.requireOwnedConcert(email, choirId, concertId)
+                .thenMany(selectionRepository.findCast(concertId));
     }
 }
