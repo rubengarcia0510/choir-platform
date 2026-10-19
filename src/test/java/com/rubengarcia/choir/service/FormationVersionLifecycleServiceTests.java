@@ -44,19 +44,22 @@ class FormationVersionLifecycleServiceTests {
                 """, Integer.class, draft.getId())).isEqualTo(1);
 
         assertThat(jdbc.queryForMap("""
-                SELECT singer_name_snapshot, voice_part_snapshot,
+                SELECT singer_id, singer_name_snapshot, voice_part_snapshot,
                        voice_section_id_snapshot, voice_section_name_snapshot,
                        division_number_snapshot, position_label,
                        x_coordinate, y_coordinate
                 FROM formation_positions
                 WHERE formation_version_id = ?
                 """, draft.getId()))
+                .containsEntry("SINGER_ID", f.singerId())
                 .containsEntry("SINGER_NAME_SNAPSHOT", "Nombre histórico")
                 .containsEntry("VOICE_PART_SNAPSHOT", "SOPRANO")
                 .containsEntry("VOICE_SECTION_ID_SNAPSHOT", f.sectionId())
                 .containsEntry("VOICE_SECTION_NAME_SNAPSHOT", "Sopranos")
                 .containsEntry("DIVISION_NUMBER_SNAPSHOT", 2)
-                .containsEntry("POSITION_LABEL", "Posición original");
+                .containsEntry("POSITION_LABEL", "Posición original")
+                .containsEntry("X_COORDINATE", new java.math.BigDecimal("1.000"))
+                .containsEntry("Y_COORDINATE", new java.math.BigDecimal("2.000"));
     }
 
     @Test
