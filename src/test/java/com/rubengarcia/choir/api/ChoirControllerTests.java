@@ -231,6 +231,81 @@ class ChoirControllerTests {
                 .jsonPath("$[0].archived").isEqualTo(true);
     }
 
+
+    @Test
+    void directorCanManageMultipleIndependentChoirs() throws Exception {
+        DirectorAccount director = createDirector("Multiple");
+        Session session = login(director.email());
+
+        for (String name : new String[] {"Coro A", "Coro B"}) {
+            webTestClient.post()
+                    .uri("/api/choirs")
+                    .cookie("SESSION", session.sessionId())
+                    .header("X-CSRF-TOKEN", session.csrfToken())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(Map.of(
+                            "name", name,
+                            "description", "Descripción de " + name))
+                    .exchange()
+                    .expectStatus().isCreated();
+        }
+
+        webTestClient.get()
+                .uri("/api/choirs")
+                .cookie("SESSION", session.sessionId())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.length()").isEqualTo(2)
+                .jsonPath("$[?(@.name == 'Coro A')].description")
+                    .isEqualTo(java.util.List.of("Descripción de Coro A"))
+                .jsonPath("$[?(@.name == 'Coro B')].description")
+                    .isEqualTo(java.util.List.of("Descripción de Coro B"));
+    }
+
+    @Test
+    void directorCannotUpdateArchivedChoirThroughApi() throws Exception {
+        DirectorAccount director = createDirector("Archived");
+        Session session = login(director.email());
+
+        String response = webTestClient.post()
+                .uri("/api/choirs")
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "name", "Coro archivado",
+                        "description", "Descripción inicial"))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertNotNull(response);
+        Map<String, Object> created = objectMapper.readValue(
+                response, new tools.jackson.core.type.TypeReference<>() {});
+        Long choirId = ((Number) created.get("id")).longValue();
+
+        webTestClient.delete()
+                .uri("/api/choirs/{id}", choirId)
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .exchange()
+                .expectStatus().isNoContent();
+
+        webTestClient.put()
+                .uri("/api/choirs/{id}", choirId)
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "name", "Nombre no permitido",
+                        "description", "Descripción modificada"))
+                .exchange()
+                .expectStatus().isEqualTo(409);
+    }
+
     private DirectorAccount createDirector(String label) {
         String unique = UUID.randomUUID().toString();
         String email = label.toLowerCase() + "-" + unique + "@example.test";
