@@ -50,10 +50,12 @@ class ChoirControllerTests {
     @AfterEach
     void cleanup() {
         if (firstDirectorId != null) {
+            jdbcTemplate.update("DELETE FROM choirs WHERE director_id = ?", firstDirectorId);
             jdbcTemplate.update("DELETE FROM directors WHERE id = ?", firstDirectorId);
             firstDirectorId = null;
         }
         if (secondDirectorId != null) {
+            jdbcTemplate.update("DELETE FROM choirs WHERE director_id = ?", secondDirectorId);
             jdbcTemplate.update("DELETE FROM directors WHERE id = ?", secondDirectorId);
             secondDirectorId = null;
         }
