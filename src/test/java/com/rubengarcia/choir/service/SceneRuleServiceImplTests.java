@@ -1,0 +1,348 @@
+package com.rubengarcia.choir.service;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+@SpringBootTest
+class SceneRuleServiceImplTests {
+
+    @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
+    private SceneRuleService sceneRuleService;
+
+    private final List<Long> createdDirectorIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        for (Long directorId : createdDirectorIds) {
+            List<Long> choirIds = jdbc.queryForList(
+                    "SELECT id FROM choirs WHERE director_id = ?",
+                    Long.class,
+                    directorId);
+            for (Long choirId : choirIds) {
+                jdbc.update("""
+                        DELETE FROM concert_repertoire
+                        WHERE concert_id IN (
+                            SELECT id FROM concerts WHERE choir_id = ?)
+                        """, choirId);
+                jdbc.update("DELETE FROM concerts WHERE choir_id = ?", choirId);
+                jdbc.update("DELETE FROM repertoire_items WHERE choir_id = ?", choirId);
+                jdbc.update("DELETE FROM choirs WHERE id = ?", choirId);
+            }
+            jdbc.update("DELETE FROM directors WHERE id = ?", directorId);
+        }
+        createdDirectorIds.clear();
+    }
+
+    @Test
+    void supportsCreateReadEditReorderAndSoftDeactivation() {
+        Fixture fixture = createFixture("crud");
+
+        SceneRuleService.RuleView first = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Desplazamiento inicial",
+                        List.of(new SceneRuleService.GroupData("Entrada", 4))))
+                .block(Duration.ofSeconds(10));
+        SceneRuleService.RuleView second = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "EXIT",
+                        "Salida en dos grupos",
+                        List.of(
+                                new SceneRuleService.GroupData("Izquierda", 4),
+                                new SceneRuleService.GroupData("Derecha", 4))))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(first).isNotNull();
+        assertThat(first.order()).isZero();
+        assertThat(second.order()).isEqualTo(1);
+        assertThat(second.groups())
+                .extracting(SceneRuleService.GroupView::label)
+                .containsExactly("Izquierda", "Derecha");
+
+        SceneRuleService.RuleView updated = sceneRuleService.update(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                first.id(),
+                new SceneRuleService.RuleData(
+                        "CAST_DIVISION",
+                        "Repartir elenco",
+                        List.of(
+                                new SceneRuleService.GroupData("Grupo A", 5),
+                                new SceneRuleService.GroupData("Grupo B", 3))))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(updated.ruleType()).isEqualTo("CAST_DIVISION");
+        assertThat(updated.description()).isEqualTo("Repartir elenco");
+        assertThat(updated.groups())
+                .extracting(SceneRuleService.GroupView::label)
+                .containsExactly("Grupo A", "Grupo B");
+
+        assertThat(sceneRuleService.get(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                first.id())
+                .block(Duration.ofSeconds(10)))
+                .isEqualTo(updated);
+
+        sceneRuleService.reorder(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                List.of(second.id(), first.id()))
+                .block(Duration.ofSeconds(10));
+
+        List<SceneRuleService.RuleView> reordered = sceneRuleService.list(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId())
+                .collectList()
+                .block(Duration.ofSeconds(10));
+        assertThat(reordered)
+                .extracting(SceneRuleService.RuleView::id)
+                .containsExactly(second.id(), first.id());
+        assertThat(reordered)
+                .extracting(SceneRuleService.RuleView::order)
+                .containsExactly(0, 1);
+
+        sceneRuleService.deactivate(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                first.id())
+                .block(Duration.ofSeconds(10));
+
+        List<SceneRuleService.RuleView> afterDeactivation =
+                sceneRuleService.list(
+                        fixture.email(),
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertThat(afterDeactivation).hasSize(2);
+        assertThat(afterDeactivation.get(1).id()).isEqualTo(first.id());
+        assertThat(afterDeactivation.get(1).active()).isFalse();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scene_rule_groups WHERE scene_rule_id = ?",
+                Integer.class,
+                first.id()))
+                .isEqualTo(2);
+    }
+
+    @Test
+    void rejectsUnauthorizedDirectorAndRuleFromAnotherSong() {
+        Fixture owner = createFixture("owner");
+        Fixture other = createFixture("other");
+        SceneRuleService.RuleView rule = sceneRuleService.create(
+                owner.email(),
+                owner.choirId(),
+                owner.concertId(),
+                owner.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "EXIT", "Salida", List.of()))
+                .block(Duration.ofSeconds(10));
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                other.email(),
+                other.choirId(),
+                owner.concertId(),
+                owner.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "EXIT", "No autorizada", List.of()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThatThrownBy(() -> sceneRuleService.update(
+                owner.email(),
+                owner.choirId(),
+                owner.concertId(),
+                other.repertoireItemId(),
+                rule.id(),
+                new SceneRuleService.RuleData(
+                        "EXIT", "Obra incorrecta", List.of()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scene_rules WHERE repertoire_item_id = ?",
+                Integer.class,
+                owner.repertoireItemId()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void rejectsPartialAndDuplicateReorderWithoutChangingOrder() {
+        Fixture fixture = createFixture("reorder");
+        SceneRuleService.RuleView first = createRule(fixture, "Primera");
+        SceneRuleService.RuleView second = createRule(fixture, "Segunda");
+
+        assertThatThrownBy(() -> sceneRuleService.reorder(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                List.of(first.id(), first.id()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> sceneRuleService.reorder(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                List.of(first.id()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(sceneRuleService.list(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId())
+                .map(SceneRuleService.RuleView::id)
+                .collectList()
+                .block(Duration.ofSeconds(10)))
+                .containsExactly(first.id(), second.id());
+    }
+
+    @Test
+    void rejectsInvalidRuleDataBeforeWriting() {
+        Fixture fixture = createFixture("invalid");
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "UNKNOWN", "Descripción", List.of()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "CAST_DIVISION", "Falta la división", List.of()))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Descripción",
+                        List.of(new SceneRuleService.GroupData("  ", 0))))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scene_rules WHERE repertoire_item_id = ?",
+                Integer.class,
+                fixture.repertoireItemId()))
+                .isZero();
+    }
+
+    private SceneRuleService.RuleView createRule(Fixture fixture, String description) {
+        return sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT", description, List.of()))
+                .block(Duration.ofSeconds(10));
+    }
+
+    private Fixture createFixture(String label) {
+        String suffix = label + "-" + UUID.randomUUID();
+        String email = suffix + "@example.test";
+        jdbc.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director " + suffix,
+                email);
+        Long directorId = jdbc.queryForObject(
+                "SELECT id FROM directors WHERE email = ?",
+                Long.class,
+                email);
+        createdDirectorIds.add(directorId);
+
+        jdbc.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId,
+                "Coro " + suffix);
+        Long choirId = jdbc.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class,
+                directorId,
+                "Coro " + suffix);
+
+        jdbc.update(
+                "INSERT INTO concerts (choir_id, title, status) VALUES (?, ?, 'PLANNED')",
+                choirId,
+                "Concierto " + suffix);
+        Long concertId = jdbc.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class,
+                choirId,
+                "Concierto " + suffix);
+
+        jdbc.update(
+                "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+                choirId,
+                "Obra " + suffix);
+        Long repertoireItemId = jdbc.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class,
+                choirId,
+                "Obra " + suffix);
+        jdbc.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        return new Fixture(email, choirId, concertId, repertoireItemId);
+    }
+
+    private record Fixture(
+            String email,
+            Long choirId,
+            Long concertId,
+            Long repertoireItemId) {
+    }
+}
