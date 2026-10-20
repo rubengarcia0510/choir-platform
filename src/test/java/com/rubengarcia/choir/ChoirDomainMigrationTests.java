@@ -144,6 +144,179 @@ class ChoirDomainMigrationTests {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+
+    @Test
+    void legacyFormationCanRemainWithoutConcertRepertoireAssociation() {
+        Long choirId = createChoir();
+        String name = "Formación legacy " + UUID.randomUUID();
+
+        Long formationId = createFormation(choirId, name, null, null);
+
+        java.util.Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT concert_id, repertoire_item_id FROM formations WHERE id = ?",
+                formationId);
+
+        assertThat(row.get("concert_id")).isNull();
+        assertThat(row.get("repertoire_item_id")).isNull();
+    }
+
+    @Test
+    void formationCanReferenceConcertRepertoireOccurrence() {
+        Long choirId = createChoir();
+        Long concertId = createConcert(choirId);
+        Long repertoireItemId = createRepertoireItem(choirId);
+        jdbcTemplate.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        Long formationId = createFormation(
+                choirId, "Formación " + UUID.randomUUID(), concertId, repertoireItemId);
+
+        java.util.Map<String, Object> row = jdbcTemplate.queryForMap("""
+                SELECT concert_id, repertoire_item_id
+                FROM formations
+                WHERE id = ?
+                """, formationId);
+
+        assertThat(((Number) row.get("concert_id")).longValue()).isEqualTo(concertId);
+        assertThat(((Number) row.get("repertoire_item_id")).longValue())
+                .isEqualTo(repertoireItemId);
+    }
+
+    @Test
+    void formationAssociationMustHaveBothIdentifiersOrNeither() {
+        Long choirId = createChoir();
+        Long concertId = createConcert(choirId);
+
+        assertThatThrownBy(() -> createFormation(
+                choirId, "Formación incompleta " + UUID.randomUUID(), concertId, null))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void formationCannotReferenceWorkNotIncludedInConcert() {
+        Long choirId = createChoir();
+        Long concertId = createConcert(choirId);
+        Long repertoireItemId = createRepertoireItem(choirId);
+
+        assertThatThrownBy(() -> createFormation(
+                choirId, "Formación sin inclusión " + UUID.randomUUID(),
+                concertId, repertoireItemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void formationCannotAssociateConcertAndWorkFromDifferentChoirs() {
+        Long concertChoirId = createChoir();
+        Long repertoireChoirId = createChoir();
+        Long concertId = createConcert(concertChoirId);
+        Long repertoireItemId = createRepertoireItem(repertoireChoirId);
+
+        // La inclusión existe, pero el concierto y la obra pertenecen a coros distintos.
+        jdbcTemplate.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        assertThatThrownBy(() -> createFormation(
+                concertChoirId, "Formación incompatible " + UUID.randomUUID(),
+                concertId, repertoireItemId))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void multipleFormationsCanReferenceTheSameConcertRepertoireOccurrence() {
+        Long choirId = createChoir();
+        Long concertId = createConcert(choirId);
+        Long repertoireItemId = createRepertoireItem(choirId);
+        jdbcTemplate.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        createFormation(choirId, "Alternativa A " + UUID.randomUUID(),
+                concertId, repertoireItemId);
+        createFormation(choirId, "Alternativa B " + UUID.randomUUID(),
+                concertId, repertoireItemId);
+
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM formations
+                WHERE choir_id = ?
+                  AND concert_id = ?
+                  AND repertoire_item_id = ?
+                """, Integer.class, choirId, concertId, repertoireItemId);
+
+        assertThat(count).isEqualTo(2);
+    }
+
+    private Long createChoir() {
+        String email = UUID.randomUUID() + "@example.test";
+        jdbcTemplate.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director de prueba", email);
+
+        Long directorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM directors WHERE email = ?",
+                Long.class, email);
+        createdDirectorIds.add(directorId);
+
+        jdbcTemplate.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId, "Coro " + UUID.randomUUID());
+
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ?",
+                Long.class, directorId);
+    }
+
+    private Long createConcert(Long choirId) {
+        jdbcTemplate.update(
+                "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
+                choirId, "Concierto " + UUID.randomUUID());
+
+        return jdbcTemplate.queryForObject("""
+                SELECT id FROM concerts
+                WHERE choir_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, choirId);
+    }
+
+    private Long createRepertoireItem(Long choirId) {
+        jdbcTemplate.update(
+                "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+                choirId, "Obra " + UUID.randomUUID());
+
+        return jdbcTemplate.queryForObject("""
+                SELECT id FROM repertoire_items
+                WHERE choir_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, choirId);
+    }
+
+    private Long createFormation(
+            Long choirId,
+            String name,
+            Long concertId,
+            Long repertoireItemId) {
+        jdbcTemplate.update("""
+                INSERT INTO formations
+                    (choir_id, name, concert_id, repertoire_item_id)
+                VALUES (?, ?, ?, ?)
+                """, choirId, name, concertId, repertoireItemId);
+
+        return jdbcTemplate.queryForObject("""
+                SELECT id FROM formations
+                WHERE choir_id = ? AND name = ?
+                """, Long.class, choirId, name);
+    }
+
     private void deleteDirectorData(Long directorId) {
         List<Long> choirIds = jdbcTemplate.queryForList(
                 "SELECT id FROM choirs WHERE director_id = ?",
