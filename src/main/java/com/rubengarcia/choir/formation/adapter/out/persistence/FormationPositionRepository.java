@@ -1,6 +1,6 @@
-package com.rubengarcia.choir.repository;
+package com.rubengarcia.choir.formation.adapter.out.persistence;
 
-import com.rubengarcia.choir.domain.FormationPosition;
+import com.rubengarcia.choir.formation.domain.FormationPosition;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
 

@@ -1,4 +1,4 @@
-package com.rubengarcia.choir.domain;
+package com.rubengarcia.choir.formation.domain;
 
 import java.time.LocalDateTime;
 

@@ -1,4 +1,4 @@
-package com.rubengarcia.choir.domain;
+package com.rubengarcia.choir.formation.domain;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;

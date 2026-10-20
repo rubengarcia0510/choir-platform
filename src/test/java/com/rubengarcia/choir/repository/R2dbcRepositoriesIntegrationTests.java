@@ -1,5 +1,11 @@
 package com.rubengarcia.choir.repository;
 
+import com.rubengarcia.choir.formation.domain.Formation;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationPositionRepository;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationRepository;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationVersionRepository;
+
 import com.rubengarcia.choir.domain.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
