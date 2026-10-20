@@ -157,6 +157,39 @@ class SceneRuleServiceImplTests {
                 Integer.class,
                 first.id()))
                 .isEqualTo(2);
+
+        assertThat(jdbc.queryForList("""
+                SELECT revision_kind FROM scene_rule_revisions
+                WHERE scene_rule_id = ? ORDER BY revision_number
+                """, String.class, first.id()))
+                .containsExactly("CREATE", "UPDATE", "REORDER", "DEACTIVATE");
+
+        assertThat(jdbc.queryForList("""
+                SELECT revision_number FROM scene_rule_revisions
+                WHERE scene_rule_id = ? ORDER BY revision_number
+                """, Integer.class, first.id()))
+                .containsExactly(1, 2, 3, 4);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT active FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 3
+                """, Boolean.class, first.id()))
+                .isTrue();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT active FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 4
+                """, Boolean.class, first.id()))
+                .isFalse();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM scene_rule_revision_groups
+                WHERE revision_id IN (
+                    SELECT id FROM scene_rule_revisions
+                    WHERE scene_rule_id = ?
+                )
+                """, Integer.class, first.id()))
+                .isEqualTo(7);
     }
 
     @Test

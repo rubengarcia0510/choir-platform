@@ -2,9 +2,12 @@ package com.rubengarcia.choir.service;
 
 import com.rubengarcia.choir.domain.SceneRule;
 import com.rubengarcia.choir.domain.SceneRuleGroup;
+import com.rubengarcia.choir.domain.SceneRuleRevision;
 import com.rubengarcia.choir.repository.SceneRuleGroupRepository;
 import com.rubengarcia.choir.repository.SceneRuleMutationRepository;
 import com.rubengarcia.choir.repository.SceneRuleRepository;
+import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,16 +33,22 @@ public class SceneRuleServiceImpl implements SceneRuleService {
     private final SceneRuleMutationRepository mutationRepository;
     private final SceneRuleRepository ruleRepository;
     private final SceneRuleGroupRepository groupRepository;
+    private final SceneRuleRevisionRepository revisionRepository;
+    private final DatabaseClient databaseClient;
 
     public SceneRuleServiceImpl(
             ResourceAuthorizationService authorizationService,
             SceneRuleMutationRepository mutationRepository,
             SceneRuleRepository ruleRepository,
-            SceneRuleGroupRepository groupRepository) {
+            SceneRuleGroupRepository groupRepository,
+            SceneRuleRevisionRepository revisionRepository,
+            DatabaseClient databaseClient) {
         this.authorizationService = authorizationService;
         this.mutationRepository = mutationRepository;
         this.ruleRepository = ruleRepository;
         this.groupRepository = groupRepository;
+        this.revisionRepository = revisionRepository;
+        this.databaseClient = databaseClient;
     }
 
     @Override
@@ -82,7 +91,8 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                         .defaultIfEmpty(0))
                 .flatMap(order -> {
                     if (order < 0) {
-                        return Mono.error(conflict("No se puede agregar otra regla por límite de orden"));
+                        return Mono.error(conflict(
+                                "No se puede agregar otra regla por límite de orden"));
                     }
                     SceneRule rule = new SceneRule();
                     rule.setRepertoireItemId(repertoireItemId);
@@ -92,6 +102,7 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                     rule.setActive(true);
                     return ruleRepository.save(rule)
                             .flatMap(saved -> replaceGroups(saved.getId(), data.groups())
+                                    .then(createRevision(saved, "CREATE"))
                                     .then(toView(saved)));
                 });
     }
@@ -115,6 +126,7 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                     rule.setDescription(data.description().trim());
                     return ruleRepository.save(rule)
                             .flatMap(saved -> replaceGroups(ruleId, data.groups())
+                                    .then(createRevision(saved, "UPDATE"))
                                     .then(toView(saved)));
                 });
     }
@@ -129,7 +141,8 @@ public class SceneRuleServiceImpl implements SceneRuleService {
             List<Long> ruleIds) {
         if (ruleIds == null || ruleIds.stream().anyMatch(id -> id == null)
                 || new HashSet<>(ruleIds).size() != ruleIds.size()) {
-            return Mono.error(badRequest("El orden debe incluir IDs de regla únicos y no nulos"));
+            return Mono.error(badRequest(
+                    "El orden debe incluir IDs de regla únicos y no nulos"));
         }
         return authorizeOccurrence(email, choirId, concertId, repertoireItemId)
                 .then(lockRepertoireItem(repertoireItemId))
@@ -155,7 +168,9 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                         return Mono.empty();
                     }
                     rule.setActive(false);
-                    return ruleRepository.save(rule).then();
+                    return ruleRepository.save(rule)
+                            .flatMap(saved -> createRevision(saved, "DEACTIVATE"))
+                            .then();
                 });
     }
 
@@ -198,7 +213,57 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                 })
                 .then();
 
-        return stageCurrentOrders.then(assignRequestedOrders);
+        Mono<Void> snapshotReorderedRules = Flux.fromIterable(requestedIds)
+                .concatMap(id -> createRevision(rulesById.get(id), "REORDER"))
+                .then();
+
+        return stageCurrentOrders
+                .then(assignRequestedOrders)
+                .then(snapshotReorderedRules);
+    }
+
+    private Mono<Void> createRevision(SceneRule rule, String revisionKind) {
+        return revisionRepository
+                .findFirstBySceneRuleIdOrderByRevisionNumberDesc(rule.getId())
+                .map(SceneRuleRevision::getRevisionNumber)
+                .defaultIfEmpty(0)
+                .flatMap(lastRevision -> {
+                    SceneRuleRevision revision = new SceneRuleRevision();
+                    revision.setSceneRuleId(rule.getId());
+                    revision.setRevisionNumber(lastRevision + 1);
+                    revision.setRepertoireItemId(rule.getRepertoireItemId());
+                    revision.setRuleOrder(rule.getRuleOrder());
+                    revision.setRuleType(rule.getRuleType());
+                    revision.setDescription(rule.getDescription());
+                    revision.setActive(rule.isActive());
+                    revision.setRevisionKind(revisionKind);
+
+                    return revisionRepository.save(revision);
+                })
+                .flatMap(savedRevision ->
+                        groupRepository
+                                .findBySceneRuleIdOrderByGroupOrderAsc(rule.getId())
+                                .concatMap(group -> saveRevisionGroup(
+                                        savedRevision.getId(), group))
+                                .then());
+    }
+
+    private Mono<Void> saveRevisionGroup(
+            Long revisionId, SceneRuleGroup group) {
+        return databaseClient.sql("""
+                INSERT INTO scene_rule_revision_groups (
+                    revision_id, group_order, group_label, member_count
+                ) VALUES (
+                    :revisionId, :groupOrder, :groupLabel, :memberCount
+                )
+                """)
+                .bind("revisionId", revisionId)
+                .bind("groupOrder", group.getGroupOrder())
+                .bind("groupLabel", group.getGroupLabel())
+                .bind("memberCount", group.getMemberCount())
+                .fetch()
+                .rowsUpdated()
+                .then();
     }
 
     private Mono<Void> authorizeOccurrence(
