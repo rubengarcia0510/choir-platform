@@ -7,6 +7,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestConstructor;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Assumptions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -158,6 +160,88 @@ class ChoirDomainMigrationTests {
 
         assertThat(row.get("concert_id")).isNull();
         assertThat(row.get("repertoire_item_id")).isNull();
+    }
+
+
+    @Test
+    void preexistingFormationSurvivesV18MigrationWithoutAssociation() {
+        String databaseProduct = jdbcTemplate.execute(
+                (org.springframework.jdbc.core.ConnectionCallback<String>) connection ->
+                        connection.getMetaData().getDatabaseProductName());
+
+        Assumptions.assumeTrue(
+                "PostgreSQL".equalsIgnoreCase(databaseProduct),
+                "Esta prueba de migración aislada requiere PostgreSQL");
+
+        String schema = "choir_v18_legacy_"
+                + UUID.randomUUID().toString().replace("-", "");
+
+        try {
+            jdbcTemplate.execute("CREATE SCHEMA " + schema);
+
+            Flyway.configure()
+                    .dataSource(jdbcTemplate.getDataSource())
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .target("17")
+                    .load()
+                    .migrate();
+
+            String prefix = schema + ".";
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "directors (display_name, email) VALUES (?, ?)",
+                    "Director legacy", UUID.randomUUID() + "@example.test");
+
+            Long directorId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "directors ORDER BY id DESC LIMIT 1",
+                    Long.class);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "choirs (director_id, name) VALUES (?, ?)",
+                    directorId, "Coro legacy " + UUID.randomUUID());
+
+            Long choirId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "choirs WHERE director_id = ?",
+                    Long.class, directorId);
+
+            String formationName = "Formación pre-V18 " + UUID.randomUUID();
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "formations (choir_id, name) VALUES (?, ?)",
+                    choirId, formationName);
+
+            Long formationId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "formations WHERE choir_id = ? AND name = ?",
+                    Long.class, choirId, formationName);
+
+            Flyway.configure()
+                    .dataSource(jdbcTemplate.getDataSource())
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .load()
+                    .migrate();
+
+            java.util.Map<String, Object> row = jdbcTemplate.queryForMap("""
+                    SELECT id, concert_id, repertoire_item_id
+                    FROM %sformations
+                    WHERE id = ?
+                    """.formatted(prefix), formationId);
+
+            assertThat(((Number) row.get("id")).longValue())
+                    .isEqualTo(formationId);
+            assertThat(row.get("concert_id")).isNull();
+            assertThat(row.get("repertoire_item_id")).isNull();
+        } finally {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
     }
 
     @Test
