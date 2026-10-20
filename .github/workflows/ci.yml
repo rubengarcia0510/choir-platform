@@ -80,14 +80,39 @@ jobs:
 
       - name: Validate CHOIR-56 rollback script on PostgreSQL
         run: |
-          # CHOIR-56 rollback covers V5-V11. Remove later tables that depend
-          # on those constraints from this disposable database before validating it.
-          PGPASSWORD=choir psql -h localhost -U choir -d choir -v ON_ERROR_STOP=1 -c "DROP TABLE IF EXISTS concert_cast_selections"
-          psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 -c "DROP TABLE IF EXISTS concert_singer_invitations"
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-          psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 -f docs/migrations/rollback-CHOIR-56.sql
-          psql "postgresql://choir:choir@localhost:5432/choir" -v ON_ERROR_STOP=1 <<'SQL'
+
+          # Preparar una base aislada con el esquema hasta V11.
+          # La base choir conserva todas las migraciones y sus restricciones.
+          psql "postgresql://choir:choir@localhost:5432/choir" \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE choir_rollback"
+
+          ROLLBACK_URL="postgresql://choir:choir@localhost:5432/choir_rollback"
+          export ROLLBACK_URL
+
+          for version in $(seq 1 11); do
+            migration="$(find src/main/resources/db/migration \
+              -maxdepth 1 -type f \
+              -name "V${version}__*.sql" -print -quit)"
+
+            if [ -z "$migration" ]; then
+              echo "ERROR: falta la migración V${version}"
+              exit 1
+            fi
+
+            echo "Aplicando ${migration} a la base de rollback"
+            psql "$ROLLBACK_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+          # Ejecutar el rollback únicamente sobre el esquema V1-V11.
+          psql "$ROLLBACK_URL" -v ON_ERROR_STOP=1 \
+            -f docs/migrations/rollback-CHOIR-56.sql
+
+          # Verificar que se eliminaron las estructuras vocales previstas
+          # y que las tablas preexistentes siguen disponibles.
+          psql "$ROLLBACK_URL" -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
           BEGIN
             IF to_regclass('public.vocal_sections') IS NOT NULL
