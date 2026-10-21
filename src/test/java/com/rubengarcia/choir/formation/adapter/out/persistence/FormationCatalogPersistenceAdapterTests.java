@@ -140,6 +140,30 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void archivedVersionRejectsReplacementAndPreservesExistingPositions() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET status = 'ARCHIVED' WHERE id = ?",
+                fixture.versionId());
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Nueva posición",
+                                new BigDecimal("80"),
+                                new BigDecimal("80"))))
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no es editable");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
     void incorrectConcertRepertoireAssociationDoesNotChangeFormationPositions() {
         Long anotherRepertoireItemId = insertRepertoireItem(
                 fixture.choirId(),
