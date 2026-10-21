@@ -9,6 +9,7 @@ import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -589,20 +590,23 @@ class FormationCatalogPersistenceAdapterTests {
     private void assertOriginalPositionRemains() {
         assertThat(countPositions(fixture.versionId())).isEqualTo(1);
 
-        String label = jdbcTemplate.queryForObject(
-                "SELECT position_label FROM formation_positions "
+        Map<String, Object> position = jdbcTemplate.queryForMap(
+                "SELECT singer_id, position_label, singer_name_snapshot, "
+                        + "x_coordinate, y_coordinate "
+                        + "FROM formation_positions "
                         + "WHERE formation_version_id = ?",
-                String.class,
                 fixture.versionId());
 
-        String snapshotName = jdbcTemplate.queryForObject(
-                "SELECT singer_name_snapshot FROM formation_positions "
-                        + "WHERE formation_version_id = ?",
-                String.class,
-                fixture.versionId());
-
-        assertThat(label).isEqualTo("Posición anterior");
-        assertThat(snapshotName).isEqualTo("Snapshot anterior");
+        assertThat(((Number) position.get("singer_id")).longValue())
+                .isEqualTo(fixture.singerId());
+        assertThat(position.get("position_label"))
+                .isEqualTo("Posición anterior");
+        assertThat(position.get("singer_name_snapshot"))
+                .isEqualTo("Snapshot anterior");
+        assertThat(new BigDecimal(position.get("x_coordinate").toString()))
+                .isEqualByComparingTo("10.000");
+        assertThat(new BigDecimal(position.get("y_coordinate").toString()))
+                .isEqualByComparingTo("20.000");
     }
 
     private int countPositions(Long versionId) {
