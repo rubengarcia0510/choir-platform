@@ -1,6 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.service.ResourceAuthorizationService;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationServiceImpl;
@@ -24,6 +25,9 @@ class FormationPlanningAuthorizationServiceTests {
 
     @Mock
     private FormationPlanningService planningService;
+
+    @Mock
+    private TransitionPlanningService transitionPlanningService;
 
     @Mock
     private ResourceAuthorizationService authorizationService;
@@ -99,17 +103,17 @@ class FormationPlanningAuthorizationServiceTests {
     void authorizesTransitionVersionBeforeReadingPositions() {
         when(authorizationService.requireOwnedTransitionVersion(
                 "director@example.test", 10L, 50L)).thenReturn(Mono.empty());
-        when(planningService.positionsForTransitionVersion(50L))
+        when(transitionPlanningService.positionsForTransitionVersion(50L))
                 .thenReturn(Flux.empty());
 
         StepVerifier.create(service.positionsForTransitionVersion(
                         "director@example.test", 10L, 50L))
                 .verifyComplete();
 
-        InOrder order = inOrder(authorizationService, planningService);
+        InOrder order = inOrder(authorizationService, transitionPlanningService);
         order.verify(authorizationService)
                 .requireOwnedTransitionVersion("director@example.test", 10L, 50L);
-        order.verify(planningService).positionsForTransitionVersion(50L);
+        order.verify(transitionPlanningService).positionsForTransitionVersion(50L);
     }
 
     @Test
@@ -124,7 +128,7 @@ class FormationPlanningAuthorizationServiceTests {
                 .expectErrorMatches(error -> error == denied)
                 .verify();
 
-        verify(planningService, never()).positionsForTransitionVersion(50L);
+        verify(transitionPlanningService, never()).positionsForTransitionVersion(50L);
     }
 
     @Test

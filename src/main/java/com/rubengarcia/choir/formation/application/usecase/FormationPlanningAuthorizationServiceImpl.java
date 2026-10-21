@@ -1,6 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.service.ResourceAuthorizationService;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -13,12 +14,15 @@ public class FormationPlanningAuthorizationServiceImpl
         implements FormationPlanningAuthorizationService {
 
     private final FormationPlanningService planningService;
+    private final TransitionPlanningService transitionPlanningService;
     private final ResourceAuthorizationService authorizationService;
 
     public FormationPlanningAuthorizationServiceImpl(
             FormationPlanningService planningService,
+            TransitionPlanningService transitionPlanningService,
             ResourceAuthorizationService authorizationService) {
         this.planningService = planningService;
+        this.transitionPlanningService = transitionPlanningService;
         this.authorizationService = authorizationService;
     }
 
@@ -47,14 +51,14 @@ public class FormationPlanningAuthorizationServiceImpl
     }
 
     @Override
-    public Flux<FormationPlanningService.TransitionPlanningPosition>
+    public Flux<TransitionPlanningService.TransitionPlanningPosition>
             positionsForTransitionVersion(
                     String email, long choirId, long transitionVersionId) {
         return authorizationService
                 .requireOwnedTransitionVersion(
                         email, choirId, transitionVersionId)
                 .thenMany(Flux.defer(() ->
-                        planningService.positionsForTransitionVersion(
+                        transitionPlanningService.positionsForTransitionVersion(
                                 transitionVersionId)));
     }
 

@@ -2,6 +2,8 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningServiceImpl;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningServiceImpl;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +30,12 @@ class FormationPlanningServiceTests {
 
     private FormationPlanningService service;
 
+    private TransitionPlanningService transitionPlanningService;
+
     @org.junit.jupiter.api.BeforeEach
     void setUpPlanningService() {
         service = new FormationPlanningServiceImpl(database);
+        transitionPlanningService = new TransitionPlanningServiceImpl(database);
     }
 
     @Test
@@ -220,19 +225,19 @@ class FormationPlanningServiceTests {
                 "SELECT id FROM transition_versions WHERE transition_id = ? AND version_number = 1",
                 Long.class, transitionId);
 
-        var positions = service.positionsForTransitionVersion(transitionVersionId)
+        var positions = transitionPlanningService.positionsForTransitionVersion(transitionVersionId)
                 .collectList()
                 .block(Duration.ofSeconds(10));
 
         assertThat(positions).hasSize(2);
         assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::stage)
+                TransitionPlanningService.TransitionPlanningPosition::stage)
                 .containsExactly("FROM", "TO");
         assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::divisionNumber)
+                TransitionPlanningService.TransitionPlanningPosition::divisionNumber)
                 .containsExactly(2, 3);
         assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::voiceSectionName)
+                TransitionPlanningService.TransitionPlanningPosition::voiceSectionName)
                 .containsExactly("Sopranos", "Altos");
     }
 

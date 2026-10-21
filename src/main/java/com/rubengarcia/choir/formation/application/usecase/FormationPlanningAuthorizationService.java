@@ -13,7 +13,7 @@ public interface FormationPlanningAuthorizationService {
     Flux<FormationPlanningService.VocalAssignment> vocalAssignmentsForPlanning(
             String email, long choirId, long concertId, long repertoireItemId);
 
-    Flux<FormationPlanningService.TransitionPlanningPosition>
+    Flux<com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService.TransitionPlanningPosition>
             positionsForTransitionVersion(
                     String email, long choirId, long transitionVersionId);
 
