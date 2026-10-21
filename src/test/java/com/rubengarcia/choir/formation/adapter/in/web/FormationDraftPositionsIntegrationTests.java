@@ -379,6 +379,10 @@ class FormationDraftPositionsIntegrationTests {
                 ((Number) position.get("singerId")).longValue());
         assertEquals(singerName, position.get("singerNameSnapshot"));
         assertEquals("Soprano", position.get("voicePartSnapshot"));
+        assertEquals(vocalSectionId.longValue(),
+                ((Number) position.get("voiceSectionIdSnapshot")).longValue());
+        assertEquals(sectionName, position.get("voiceSectionNameSnapshot"));
+        assertEquals(1, ((Number) position.get("divisionNumberSnapshot")).intValue());
         assertEquals(label, position.get("positionLabel"));
         assertEquals(0, x.compareTo(new BigDecimal(position.get("x").toString())));
         assertEquals(0, y.compareTo(new BigDecimal(position.get("y").toString())));
@@ -386,7 +390,9 @@ class FormationDraftPositionsIntegrationTests {
         Map<String, Object> stored = jdbcTemplate.queryForMap(
                 """
                 SELECT formation_version_id, singer_id, singer_name_snapshot,
-                       voice_part_snapshot, position_label, x_coordinate, y_coordinate
+                       voice_part_snapshot, voice_section_id_snapshot,\
+                       voice_section_name_snapshot, division_number_snapshot,\
+                       position_label, x_coordinate, y_coordinate
                 FROM formation_positions
                 WHERE formation_version_id = ?
                 """,
@@ -398,6 +404,10 @@ class FormationDraftPositionsIntegrationTests {
                 ((Number) stored.get("singer_id")).longValue());
         assertEquals(singerName, stored.get("singer_name_snapshot"));
         assertEquals("Soprano", stored.get("voice_part_snapshot"));
+        assertEquals(vocalSectionId.longValue(),
+                ((Number) stored.get("voice_section_id_snapshot")).longValue());
+        assertEquals(sectionName, stored.get("voice_section_name_snapshot"));
+        assertEquals(1, ((Number) stored.get("division_number_snapshot")).intValue());
         assertEquals(label, stored.get("position_label"));
         assertEquals(0, x.compareTo(new BigDecimal(
                 stored.get("x_coordinate").toString())));
