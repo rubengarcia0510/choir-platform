@@ -107,4 +107,47 @@ class FormationDraftManagementServiceTests {
         verify(formationCatalog, never()).createWithInitialDraft(
                 10L, 20L, 30L, "Ensayo", "Descripción");
     }
+
+    @Test
+    void authorizesOccurrenceBeforeReadingDraft() {
+        when(occurrenceAuthorization.requireOwnedOccurrence(
+                "director@example.test", 10L, 20L, 30L))
+                .thenReturn(Mono.empty());
+        when(formationCatalog.findDraftForOccurrence(
+                10L, 20L, 30L, 40L))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(service.getDraft(
+                        "director@example.test",
+                        10L,
+                        20L,
+                        30L,
+                        40L))
+                .verifyComplete();
+
+        InOrder order = inOrder(occurrenceAuthorization, formationCatalog);
+        order.verify(occurrenceAuthorization).requireOwnedOccurrence(
+                "director@example.test", 10L, 20L, 30L);
+        order.verify(formationCatalog).findDraftForOccurrence(
+                10L, 20L, 30L, 40L);
+    }
+
+    @Test
+    void doesNotReadDraftWhenOccurrenceAuthorizationFails() {
+        when(occurrenceAuthorization.requireOwnedOccurrence(
+                "other@example.test", 10L, 20L, 30L))
+                .thenReturn(Mono.error(IllegalStateException::new));
+
+        StepVerifier.create(service.getDraft(
+                        "other@example.test",
+                        10L,
+                        20L,
+                        30L,
+                        40L))
+                .expectError(IllegalStateException.class)
+                .verify();
+
+        verify(formationCatalog, never()).findDraftForOccurrence(
+                10L, 20L, 30L, 40L);
+    }
 }
