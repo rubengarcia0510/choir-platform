@@ -246,7 +246,7 @@ class FormationDraftForeignVersionIntegrationTests {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("positions", java.util.List.of()))
                 .exchange()
-                .expectStatus().isBadRequest();
+                .expectStatus().isNotFound();
 
         Integer countAfterRejection = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM formation_positions

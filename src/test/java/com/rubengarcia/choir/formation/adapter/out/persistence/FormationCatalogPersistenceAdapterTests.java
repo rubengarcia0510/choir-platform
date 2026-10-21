@@ -201,20 +201,18 @@ class FormationCatalogPersistenceAdapterTests {
                 otherFormationId,
                 1);
 
-        assertThatThrownBy(() -> adapter.replaceDraftPositions(
-                        fixture.choirId(),
-                        fixture.concertId(),
-                        fixture.repertoireItemId(),
-                        fixture.formationId(),
-                        otherVersionId,
-                        List.of(new PositionUpdate(
-                                fixture.singerId(),
-                                "Posición cruzada",
-                                new BigDecimal("80"),
-                                new BigDecimal("80"))))
-                .block(TIMEOUT))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("no pertenece a la formación");
+        assertThat(adapter.replaceDraftPositions(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                otherVersionId,
+                List.of(new PositionUpdate(
+                        fixture.singerId(),
+                        "Posición cruzada",
+                        new BigDecimal("80"),
+                        new BigDecimal("80"))))
+                .block(TIMEOUT)).isNull();
 
         assertOriginalPositionRemains();
         assertThat(countPositions(otherVersionId)).isZero();

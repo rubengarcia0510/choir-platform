@@ -109,8 +109,6 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 .filter(formation -> formation.getId().equals(formationId))
                 .next()
                 .flatMap(formation -> lockVersion(formationId, versionId)
-                        .switchIfEmpty(Mono.error(new IllegalArgumentException(
-                                "La versión no pertenece a la formación")))
                         .flatMap(version -> {
                             if (!"DRAFT".equals(version.getStatus())) {
                                 return Mono.error(new IllegalStateException(
