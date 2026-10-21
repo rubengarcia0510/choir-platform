@@ -1,4 +1,9 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
+
+import com.rubengarcia.choir.service.ResourceAuthorizationService;
+
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationServiceImpl;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,4 +1,4 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
 
 import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;

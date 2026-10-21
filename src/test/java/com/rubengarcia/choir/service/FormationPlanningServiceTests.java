@@ -1,4 +1,7 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
+
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningServiceImpl;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

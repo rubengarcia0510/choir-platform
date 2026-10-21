@@ -1,4 +1,6 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
+
+import com.rubengarcia.choir.service.ResourceAuthorizationService;
 
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
