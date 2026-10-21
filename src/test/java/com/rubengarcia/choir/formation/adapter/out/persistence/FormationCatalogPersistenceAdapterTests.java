@@ -114,6 +114,39 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void persistenceFailureAfterDeleteRollsBackAndPreservesOriginalPositions() {
+        jdbcTemplate.execute(
+                "ALTER TABLE formation_positions "
+                        + "ADD CONSTRAINT choir71_force_failure "
+                        + "CHECK (position_label IS NULL "
+                        + "OR position_label <> 'FORCE_PERSISTENCE_FAILURE')");
+
+        try {
+            assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                            fixture.choirId(),
+                            fixture.concertId(),
+                            fixture.repertoireItemId(),
+                            fixture.formationId(),
+                            fixture.versionId(),
+                            List.of(new PositionUpdate(
+                                    fixture.singerId(),
+                                    "FORCE_PERSISTENCE_FAILURE",
+                                    new BigDecimal("80"),
+                                    new BigDecimal("80"))))
+                    .block(TIMEOUT))
+                    .isNotNull();
+
+            // El DELETE ocurrió antes del INSERT fallido: la fila original
+            // debe seguir existiendo si la operación fue transaccional.
+            assertOriginalPositionRemains();
+        } finally {
+            jdbcTemplate.execute(
+                    "ALTER TABLE formation_positions "
+                            + "DROP CONSTRAINT choir71_force_failure");
+        }
+    }
+
+    @Test
     void publishedVersionRejectsReplacementAndPreservesExistingPositions() {
         jdbcTemplate.update(
                 "UPDATE formation_versions "
