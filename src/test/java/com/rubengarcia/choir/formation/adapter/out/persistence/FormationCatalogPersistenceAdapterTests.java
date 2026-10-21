@@ -471,6 +471,55 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
 
+
+    @Test
+    void duplicationFailureRollsBackFormationAndVersion() {
+        int formationsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM formations WHERE choir_id = ?",
+                Integer.class,
+                fixture.choirId());
+
+        int versionsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM formation_versions",
+                Integer.class);
+
+        jdbcTemplate.execute(
+                "ALTER TABLE formation_positions "
+                        + "ADD CONSTRAINT choir72_force_duplicate_failure "
+                        + "CHECK (formation_version_id <= "
+                        + fixture.versionId() + ")");
+
+        try {
+            assertThatThrownBy(() -> duplicationPort.duplicate(
+                            fixture.choirId(),
+                            fixture.concertId(),
+                            fixture.repertoireItemId(),
+                            fixture.formationId(),
+                            null,
+                            "Copia que debe fallar " + fixture.suffix(),
+                            "Prueba de rollback")
+                    .block(TIMEOUT))
+                    .isNotNull();
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM formations WHERE choir_id = ?",
+                    Integer.class,
+                    fixture.choirId()))
+                    .isEqualTo(formationsBefore);
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM formation_versions",
+                    Integer.class))
+                    .isEqualTo(versionsBefore);
+
+            assertOriginalPositionRemains();
+        } finally {
+            jdbcTemplate.execute(
+                    "ALTER TABLE formation_positions "
+                            + "DROP CONSTRAINT choir72_force_duplicate_failure");
+        }
+    }
+
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
         FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
