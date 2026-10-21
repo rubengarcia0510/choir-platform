@@ -54,6 +54,12 @@ class FormationCatalogPersistenceAdapterTests {
                 "Cantante nuevo " + fixture.suffix(),
                 "ALTO",
                 true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
 
         List<PositionUpdate> updates = List.of(
                 new PositionUpdate(
@@ -160,6 +166,57 @@ class FormationCatalogPersistenceAdapterTests {
                 .block(TIMEOUT);
 
         assertThat(result).isNull();
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void singerAssignedToAnotherWorkIsRejectedWithoutDeletingExistingPositions() {
+        Long unassignedSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante asignado a otra obra " + fixture.suffix(),
+                "ALTO",
+                true);
+
+        Long anotherRepertoireItemId = insertRepertoireItem(
+                fixture.choirId(),
+                "Obra distinta " + fixture.suffix());
+
+        jdbcTemplate.update(
+                "INSERT INTO concert_repertoire "
+                        + "(concert_id, repertoire_item_id, order_index) "
+                        + "VALUES (?, ?, ?)",
+                fixture.concertId(),
+                anotherRepertoireItemId,
+                1);
+
+        Long anotherDivisionId = insertVocalPlanDivision(
+                fixture.choirId(),
+                anotherRepertoireItemId,
+                fixture.vocalSectionId());
+
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                anotherRepertoireItemId,
+                unassignedSingerId,
+                anotherDivisionId);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        unassignedSingerId,
+                                        "Asignación incorrecta",
+                                        new BigDecimal("40"),
+                                        new BigDecimal("40"))))
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no existe, está inactivo");
+
         assertOriginalPositionRemains();
     }
 
@@ -281,6 +338,23 @@ class FormationCatalogPersistenceAdapterTests {
                 0);
 
         jdbcTemplate.update(
+                "INSERT INTO vocal_sections (choir_id, name, sort_order) "
+                        + "VALUES (?, ?, ?)",
+                choirId,
+                "Sección de prueba " + suffix,
+                0);
+        Long vocalSectionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?",
+                Long.class,
+                choirId,
+                "Sección de prueba " + suffix);
+
+        Long divisionId = insertVocalPlanDivision(
+                choirId, repertoireItemId, vocalSectionId);
+        insertAssignment(
+                choirId, concertId, repertoireItemId, singerId, divisionId);
+
+        jdbcTemplate.update(
                 "INSERT INTO formations "
                         + "(choir_id, concert_id, repertoire_item_id, name, description) "
                         + "VALUES (?, ?, ?, ?, ?)",
@@ -338,7 +412,61 @@ class FormationCatalogPersistenceAdapterTests {
                 concertId,
                 repertoireItemId,
                 formationId,
-                versionId);
+                versionId,
+                vocalSectionId,
+                divisionId);
+    }
+
+    private Long insertVocalPlanDivision(
+            Long choirId,
+            Long repertoireItemId,
+            Long vocalSectionId) {
+        jdbcTemplate.update(
+                "INSERT INTO vocal_plans (repertoire_item_id, choir_id) "
+                        + "VALUES (?, ?)",
+                repertoireItemId,
+                choirId);
+
+        Long vocalPlanId = jdbcTemplate.queryForObject(
+                "SELECT id FROM vocal_plans WHERE repertoire_item_id = ?",
+                Long.class,
+                repertoireItemId);
+
+        jdbcTemplate.update(
+                "INSERT INTO vocal_plan_divisions "
+                        + "(vocal_plan_id, choir_id, vocal_section_id, division_number) "
+                        + "VALUES (?, ?, ?, ?)",
+                vocalPlanId,
+                choirId,
+                vocalSectionId,
+                1);
+
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM vocal_plan_divisions "
+                        + "WHERE vocal_plan_id = ? AND vocal_section_id = ? "
+                        + "AND division_number = ?",
+                Long.class,
+                vocalPlanId,
+                vocalSectionId,
+                1);
+    }
+
+    private void insertAssignment(
+            Long choirId,
+            Long concertId,
+            Long repertoireItemId,
+            Long singerId,
+            Long divisionId) {
+        jdbcTemplate.update(
+                "INSERT INTO concert_vocal_assignments "
+                        + "(concert_id, repertoire_item_id, singer_id, "
+                        + "vocal_plan_division_id, choir_id) "
+                        + "VALUES (?, ?, ?, ?, ?)",
+                concertId,
+                repertoireItemId,
+                singerId,
+                divisionId,
+                choirId);
     }
 
     private Long insertChoir(Long directorId, String name) {
@@ -539,5 +667,7 @@ class FormationCatalogPersistenceAdapterTests {
             Long concertId,
             Long repertoireItemId,
             Long formationId,
-            Long versionId) {}
+            Long versionId,
+            Long vocalSectionId,
+            Long divisionId) {}
 }

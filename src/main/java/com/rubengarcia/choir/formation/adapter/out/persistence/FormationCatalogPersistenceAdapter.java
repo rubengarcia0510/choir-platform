@@ -195,7 +195,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                             vs.name AS voice_section_name,
                             d.division_number AS division_number
                         FROM singers s
-                        LEFT JOIN concert_vocal_assignments a
+                        JOIN concert_vocal_assignments a
                             ON a.singer_id = s.id
                            AND a.choir_id = s.choir_id
                            AND a.concert_id = :concertId
