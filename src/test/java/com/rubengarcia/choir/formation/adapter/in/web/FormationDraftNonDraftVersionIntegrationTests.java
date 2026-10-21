@@ -50,8 +50,7 @@ class FormationDraftNonDraftVersionIntegrationTests {
             jdbcTemplate.update("""
                     DELETE FROM formation_positions
                     WHERE formation_version_id IN (
-                        SELECT fv.id
-                        FROM formation_versions fv
+                        SELECT fv.id FROM formation_versions fv
                         JOIN formations f ON f.id = fv.formation_id
                         WHERE f.choir_id = ?
                     )
@@ -97,7 +96,7 @@ class FormationDraftNonDraftVersionIntegrationTests {
     }
 
     @Test
-    void rejectsReplacementForPublishedVersionAndPreservesPositions() {
+    void rejectsReplacementForPublishedAndArchivedVersionsAndPreservesPositions() {
         String unique = UUID.randomUUID().toString();
         String email = "choir71-non-draft-" + unique + "@example.test";
         String choirName = "Non Draft Choir " + unique;
@@ -208,7 +207,6 @@ class FormationDraftNonDraftVersionIntegrationTests {
 
         Long formationId = ((Number) created.get("id")).longValue();
         Long versionId = ((Number) created.get("draftVersionId")).longValue();
-
         assertEquals("DRAFT", created.get("status"));
 
         Map<String, Object> original = jdbcTemplate.queryForMap("""
@@ -218,71 +216,92 @@ class FormationDraftNonDraftVersionIntegrationTests {
                 WHERE formation_version_id = ?
                 """, versionId);
 
-        assertEquals(
-                1,
-                jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*) FROM formation_positions
-                        WHERE formation_version_id = ?
-                        """, Integer.class, versionId));
+        assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM formation_positions
+                WHERE formation_version_id = ?
+                """, Integer.class, versionId));
 
-        // La versión deja de ser editable.
         jdbcTemplate.update("""
-                UPDATE formation_versions
-                SET status = 'PUBLISHED'
+                UPDATE formation_versions SET status = 'PUBLISHED'
                 WHERE id = ? AND formation_id = ?
                 """, versionId, formationId);
 
-        assertEquals("PUBLISHED", jdbcTemplate.queryForObject("""
+        assertEquals("PUBLISHED", currentStatus(versionId, formationId));
+        assertReplacementRejectedAndPreserved(
+                session, choirId, concertId, repertoireItemId,
+                formationId, versionId, singerId,
+                "Intento de modificación publicada", "10", "20", original);
+
+        jdbcTemplate.update("""
+                UPDATE formation_versions SET status = 'ARCHIVED'
+                WHERE id = ? AND formation_id = ?
+                """, versionId, formationId);
+
+        assertEquals("ARCHIVED", currentStatus(versionId, formationId));
+        assertReplacementRejectedAndPreserved(
+                session, choirId, concertId, repertoireItemId,
+                formationId, versionId, singerId,
+                "Intento de modificación archivada", "30", "40", original);
+    }
+
+    private String currentStatus(Long versionId, Long formationId) {
+        return jdbcTemplate.queryForObject("""
                 SELECT status FROM formation_versions
                 WHERE id = ? AND formation_id = ?
-                """, String.class, versionId, formationId));
+                """, String.class, versionId, formationId);
+    }
+
+    private void assertReplacementRejectedAndPreserved(
+            Session session,
+            Long choir,
+            Long concert,
+            Long repertoireItem,
+            Long formation,
+            Long version,
+            Long singer,
+            String label,
+            String x,
+            String y,
+            Map<String, Object> original) {
 
         webTestClient.put()
                 .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations/{formationId}/versions/{versionId}/positions",
-                        choirId, concertId, repertoireItemId, formationId, versionId)
+                        choir, concert, repertoireItem, formation, version)
                 .cookie("SESSION", session.sessionId())
                 .header("X-CSRF-TOKEN", session.csrfToken())
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of(
                         "positions",
                         List.of(Map.of(
-                                "singerId", singerId,
-                                "positionLabel", "Intento de modificación",
-                                "x", new BigDecimal("10"),
-                                "y", new BigDecimal("20")))))
+                                "singerId", singer,
+                                "positionLabel", label,
+                                "x", new BigDecimal(x),
+                                "y", new BigDecimal(y)))))
                 .exchange()
                 .expectStatus().isEqualTo(409);
 
-        Integer countAfterRejection = jdbcTemplate.queryForObject("""
+        assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM formation_positions
                 WHERE formation_version_id = ?
-                """, Integer.class, versionId);
-        assertEquals(1, countAfterRejection);
+                """, Integer.class, version));
 
         Map<String, Object> stored = jdbcTemplate.queryForMap("""
                 SELECT singer_id, singer_name_snapshot, position_label,
                        x_coordinate, y_coordinate
                 FROM formation_positions
                 WHERE formation_version_id = ?
-                """, versionId);
+                """, version);
 
         assertEquals(
                 ((Number) original.get("singer_id")).longValue(),
                 ((Number) stored.get("singer_id")).longValue());
-        assertEquals(
-                original.get("singer_name_snapshot"),
+        assertEquals(original.get("singer_name_snapshot"),
                 stored.get("singer_name_snapshot"));
-        assertEquals(
-                original.get("position_label"),
-                stored.get("position_label"));
-        assertEquals(
-                0,
-                new BigDecimal(original.get("x_coordinate").toString())
-                        .compareTo(new BigDecimal(stored.get("x_coordinate").toString())));
-        assertEquals(
-                0,
-                new BigDecimal(original.get("y_coordinate").toString())
-                        .compareTo(new BigDecimal(stored.get("y_coordinate").toString())));
+        assertEquals(original.get("position_label"), stored.get("position_label"));
+        assertEquals(0, new BigDecimal(original.get("x_coordinate").toString())
+                .compareTo(new BigDecimal(stored.get("x_coordinate").toString())));
+        assertEquals(0, new BigDecimal(original.get("y_coordinate").toString())
+                .compareTo(new BigDecimal(stored.get("y_coordinate").toString())));
     }
 
     private Map<String, Object> createFormation(
