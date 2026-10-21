@@ -164,6 +164,63 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void versionFromAnotherFormationIsRejectedWithoutDeletingExistingPositions() {
+        String otherFormationName = "Otra formación " + fixture.suffix();
+
+        jdbcTemplate.update(
+                "INSERT INTO formations "
+                        + "(choir_id, concert_id, repertoire_item_id, name, description) "
+                        + "VALUES (?, ?, ?, ?, ?)",
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                otherFormationName,
+                "Fixture de versión ajena");
+
+        Long otherFormationId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formations "
+                        + "WHERE choir_id = ? AND concert_id = ? "
+                        + "AND repertoire_item_id = ? AND name = ?",
+                Long.class,
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                otherFormationName);
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions (formation_id, version_number, status) "
+                        + "VALUES (?, ?, ?)",
+                otherFormationId,
+                1,
+                "DRAFT");
+
+        Long otherVersionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_versions "
+                        + "WHERE formation_id = ? AND version_number = ?",
+                Long.class,
+                otherFormationId,
+                1);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        otherVersionId,
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Posición cruzada",
+                                new BigDecimal("80"),
+                                new BigDecimal("80"))))
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no pertenece a la formación");
+
+        assertOriginalPositionRemains();
+        assertThat(countPositions(otherVersionId)).isZero();
+    }
+
+    @Test
     void incorrectConcertRepertoireAssociationDoesNotChangeFormationPositions() {
         Long anotherRepertoireItemId = insertRepertoireItem(
                 fixture.choirId(),
