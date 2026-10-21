@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.adapter.in.web;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -16,7 +17,6 @@ import org.springframework.test.context.TestConstructor;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest
@@ -32,8 +32,6 @@ class FormationDraftControllerTests {
 
     private Long directorId;
     private Long choirId;
-    private Long concertId;
-    private Long repertoireItemId;
 
     FormationDraftControllerTests(
             WebTestClient webTestClient,
@@ -48,15 +46,24 @@ class FormationDraftControllerTests {
     void cleanup() {
         if (choirId != null) {
             jdbcTemplate.update(
-                    "DELETE FROM formation_positions WHERE version_id IN "
-                            + "(SELECT fv.id FROM formation_versions fv "
-                            + "JOIN formations f ON f.id = fv.formation_id "
-                            + "WHERE f.choir_id = ?)",
+                    """
+                    DELETE FROM formation_positions
+                    WHERE formation_version_id IN (
+                        SELECT fv.id
+                        FROM formation_versions fv
+                        JOIN formations f ON f.id = fv.formation_id
+                        WHERE f.choir_id = ?
+                    )
+                    """,
                     choirId);
 
             jdbcTemplate.update(
-                    "DELETE FROM formation_versions WHERE formation_id IN "
-                            + "(SELECT id FROM formations WHERE choir_id = ?)",
+                    """
+                    DELETE FROM formation_versions
+                    WHERE formation_id IN (
+                        SELECT id FROM formations WHERE choir_id = ?
+                    )
+                    """,
                     choirId);
 
             jdbcTemplate.update(
@@ -64,16 +71,12 @@ class FormationDraftControllerTests {
                     choirId);
 
             jdbcTemplate.update(
-                    "DELETE FROM concert_vocal_assignments WHERE choir_id = ?",
-                    choirId);
-
-            jdbcTemplate.update(
-                    "DELETE FROM concert_repertoire WHERE concert_id IN "
-                            + "(SELECT id FROM concerts WHERE choir_id = ?)",
-                    choirId);
-
-            jdbcTemplate.update(
-                    "DELETE FROM repertoire_items WHERE choir_id = ?",
+                    """
+                    DELETE FROM concert_repertoire
+                    WHERE concert_id IN (
+                        SELECT id FROM concerts WHERE choir_id = ?
+                    )
+                    """,
                     choirId);
 
             jdbcTemplate.update(
@@ -81,15 +84,7 @@ class FormationDraftControllerTests {
                     choirId);
 
             jdbcTemplate.update(
-                    "DELETE FROM vocal_plan_divisions WHERE choir_id = ?",
-                    choirId);
-
-            jdbcTemplate.update(
-                    "DELETE FROM vocal_sections WHERE choir_id = ?",
-                    choirId);
-
-            jdbcTemplate.update(
-                    "DELETE FROM singers WHERE choir_id = ?",
+                    "DELETE FROM repertoire_items WHERE choir_id = ?",
                     choirId);
 
             jdbcTemplate.update(
@@ -144,26 +139,29 @@ class FormationDraftControllerTests {
         CsrfSession csrf = obtainCsrf();
 
         webTestClient.put()
-                .uri("/api/choirs/1/concerts/1/repertoire/1/formations/1/versions/1/positions")
+                .uri(
+                        "/api/choirs/1/concerts/1/repertoire/1"
+                                + "/formations/1/versions/1/positions")
                 .cookie("SESSION", csrf.sessionId())
                 .header("X-CSRF-TOKEN", csrf.token())
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("positions", java.util.List.of()))
+                .bodyValue(Map.of("positions", List.of()))
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
 
     @Test
-    void authenticatedDirectorCannotAccessFormationForIncorrectConcertRepertoireAssociation()
-            throws Exception {
-
+    void authenticatedDirectorCannotAccessFormationForIncorrectConcertRepertoireAssociation() {
         DirectorAccount director = createDirector();
         Session session = login(director.email());
 
-        ChoirFixture fixture = createChoirConcertAndRepertoire(director.id());
+        ChoirFixture fixture =
+                createChoirConcertAndRepertoire(director.id());
 
         webTestClient.get()
-                .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations",
+                .uri(
+                        "/api/choirs/{choirId}/concerts/{concertId}"
+                                + "/repertoire/{repertoireItemId}/formations",
                         fixture.choirId(),
                         fixture.foreignConcertId(),
                         fixture.repertoireItemId())
@@ -172,7 +170,9 @@ class FormationDraftControllerTests {
                 .expectStatus().isNotFound();
 
         webTestClient.post()
-                .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations",
+                .uri(
+                        "/api/choirs/{choirId}/concerts/{concertId}"
+                                + "/repertoire/{repertoireItemId}/formations",
                         fixture.choirId(),
                         fixture.foreignConcertId(),
                         fixture.repertoireItemId())
@@ -191,7 +191,8 @@ class FormationDraftControllerTests {
         String email = "formation-draft-" + unique + "@example.test";
         String displayName = "Formation Draft Director " + unique;
 
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO directors
                     (display_name, email, password_hash, email_verified)
                 VALUES (?, ?, ?, TRUE)
@@ -208,11 +209,12 @@ class FormationDraftControllerTests {
         assertNotNull(id);
         directorId = id;
 
-        return new DirectorAccount(id, displayName, email);
+        return new DirectorAccount(id, email);
     }
 
     private ChoirFixture createChoirConcertAndRepertoire(Long ownerDirectorId) {
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO choirs (director_id, name)
                 VALUES (?, ?)
                 """,
@@ -220,42 +222,47 @@ class FormationDraftControllerTests {
                 "Formation Draft Choir " + UUID.randomUUID());
 
         choirId = jdbcTemplate.queryForObject(
-                "SELECT id FROM choirs WHERE director_id = ? ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM choirs WHERE director_id = ? "
+                        + "ORDER BY id DESC LIMIT 1",
                 Long.class,
                 ownerDirectorId);
 
         assertNotNull(choirId);
 
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO concerts (choir_id, title)
                 VALUES (?, ?)
                 """,
                 choirId,
                 "Formation Draft Concert " + UUID.randomUUID());
 
-        concertId = jdbcTemplate.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
+        Long concertId = jdbcTemplate.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? "
+                        + "ORDER BY id DESC LIMIT 1",
                 Long.class,
                 choirId);
 
-        jdbcTemplate.update("""
+        assertNotNull(concertId);
+
+        jdbcTemplate.update(
+                """
                 INSERT INTO repertoire_items (choir_id, title)
                 VALUES (?, ?)
                 """,
                 choirId,
                 "Formation Draft Work " + UUID.randomUUID());
 
-        repertoireItemId = jdbcTemplate.queryForObject(
-                "SELECT id FROM repertoire_items WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
+        Long repertoireItemId = jdbcTemplate.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? "
+                        + "ORDER BY id DESC LIMIT 1",
                 Long.class,
                 choirId);
 
-        /*
-         * Creamos un segundo concierto del mismo coro, pero NO asociamos
-         * el repertorio a este concierto. La combinación es deliberadamente
-         * inexistente en concert_repertoire.
-         */
-        jdbcTemplate.update("""
+        assertNotNull(repertoireItemId);
+
+        jdbcTemplate.update(
+                """
                 INSERT INTO concerts (choir_id, title)
                 VALUES (?, ?)
                 """,
@@ -263,28 +270,30 @@ class FormationDraftControllerTests {
                 "Formation Draft Foreign Concert " + UUID.randomUUID());
 
         Long foreignConcertId = jdbcTemplate.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ? ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM concerts WHERE choir_id = ? "
+                        + "ORDER BY id DESC LIMIT 1",
                 Long.class,
                 choirId);
 
         assertNotNull(foreignConcertId);
 
-        return new ChoirFixture(
-                choirId,
-                concertId,
-                foreignConcertId,
-                repertoireItemId);
+        return new ChoirFixture(choirId, foreignConcertId, repertoireItemId);
     }
 
     private CsrfSession obtainCsrf() {
-        EntityExchangeResult<Map<String, String>> result = webTestClient.get()
-                .uri("/api/auth/csrf")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(new ParameterizedTypeReference<Map<String, String>>() {})
-                .returnResult();
+        EntityExchangeResult<Map<String, String>> result =
+                webTestClient.get()
+                        .uri("/api/auth/csrf")
+                        .exchange()
+                        .expectStatus().isOk()
+                        .expectBody(
+                                new ParameterizedTypeReference<
+                                        Map<String, String>>() {})
+                        .returnResult();
 
-        ResponseCookie cookie = result.getResponseCookies().getFirst("SESSION");
+        ResponseCookie cookie =
+                result.getResponseCookies().getFirst("SESSION");
+
         assertNotNull(cookie, "El endpoint CSRF debe crear una sesión");
         assertNotNull(result.getResponseBody());
 
@@ -294,23 +303,24 @@ class FormationDraftControllerTests {
         return new CsrfSession(cookie.getValue(), token);
     }
 
-    private Session login(String email) throws Exception {
+    private Session login(String email) {
         CsrfSession csrf = obtainCsrf();
 
         String body = """
                 {"email":"%s","password":"%s"}
                 """.formatted(email, PASSWORD);
 
-        EntityExchangeResult<String> loginResult = webTestClient.post()
-                .uri("/api/auth/login")
-                .cookie("SESSION", csrf.sessionId())
-                .header("X-CSRF-TOKEN", csrf.token())
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(body)
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .returnResult();
+        EntityExchangeResult<String> loginResult =
+                webTestClient.post()
+                        .uri("/api/auth/login")
+                        .cookie("SESSION", csrf.sessionId())
+                        .header("X-CSRF-TOKEN", csrf.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(body)
+                        .exchange()
+                        .expectStatus().isOk()
+                        .expectBody(String.class)
+                        .returnResult();
 
         ResponseCookie authenticatedCookie =
                 loginResult.getResponseCookies().getFirst("SESSION");
@@ -322,7 +332,7 @@ class FormationDraftControllerTests {
         return new Session(authenticatedCookie.getValue(), csrf.token());
     }
 
-    private record DirectorAccount(Long id, String displayName, String email) {}
+    private record DirectorAccount(Long id, String email) {}
 
     private record Session(String sessionId, String csrfToken) {}
 
@@ -330,7 +340,6 @@ class FormationDraftControllerTests {
 
     private record ChoirFixture(
             Long choirId,
-            Long concertId,
             Long foreignConcertId,
             Long repertoireItemId) {}
 }
