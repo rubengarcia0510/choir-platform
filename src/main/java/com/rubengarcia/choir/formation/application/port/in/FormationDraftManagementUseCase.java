@@ -20,4 +20,11 @@ public interface FormationDraftManagementUseCase {
             long repertoireItemId,
             String name,
             String description);
+
+    Mono<FormationCatalogPort.DraftDetails> getDraft(
+            String directorEmail,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId);
 }

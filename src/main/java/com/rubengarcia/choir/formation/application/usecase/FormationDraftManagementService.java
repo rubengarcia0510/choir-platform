@@ -57,4 +57,23 @@ public class FormationDraftManagementService
                                         name,
                                         description))));
     }
+
+    @Override
+    public Mono<FormationCatalogPort.DraftDetails> getDraft(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId) {
+
+        return Mono.defer(() ->
+                occurrenceAuthorization.requireOwnedOccurrence(
+                                email, choirId, concertId, repertoireItemId)
+                        .then(Mono.defer(() ->
+                                formationCatalog.findDraftForOccurrence(
+                                        choirId,
+                                        concertId,
+                                        repertoireItemId,
+                                        formationId))));
+    }
 }

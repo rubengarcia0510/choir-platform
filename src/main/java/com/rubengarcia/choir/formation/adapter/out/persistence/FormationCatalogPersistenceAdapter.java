@@ -6,6 +6,7 @@ import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
@@ -49,6 +50,33 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         choirId,
                         concertId,
                         repertoireItemId);
+    }
+
+    @Override
+    public Mono<DraftDetails> findDraftForOccurrence(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId) {
+
+        return findForOccurrence(choirId, concertId, repertoireItemId)
+                .filter(formation -> formation.getId().equals(formationId))
+                .next()
+                .flatMap(formation ->
+                        formationVersionRepository
+                                .findByFormationId(formation.getId())
+                                .filter(version -> "DRAFT".equals(version.getStatus()))
+                                .sort(Comparator.comparingInt(
+                                        FormationVersion::getVersionNumber).reversed())
+                                .next()
+                                .flatMap(version ->
+                                        formationPositionRepository
+                                                .findByFormationVersionId(version.getId())
+                                                .collectList()
+                                                .map(positions -> new DraftDetails(
+                                                        formation,
+                                                        version,
+                                                        List.copyOf(positions)))));
     }
 
     @Override
