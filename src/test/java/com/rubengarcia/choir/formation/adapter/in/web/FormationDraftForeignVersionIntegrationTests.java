@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -151,6 +152,21 @@ class FormationDraftForeignVersionIntegrationTests {
                 ) VALUES (?, ?, 0)
                 """, concertId, repertoireItemId);
 
+        String otherConcertName = "Other Concert " + unique;
+        jdbcTemplate.update(
+                "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
+                choirId, otherConcertName);
+        Long otherConcertId = jdbcTemplate.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, otherConcertName);
+        assertNotNull(otherConcertId);
+
+        jdbcTemplate.update("""
+                INSERT INTO concert_repertoire (
+                    concert_id, repertoire_item_id, order_index
+                ) VALUES (?, ?, 0)
+                """, otherConcertId, repertoireItemId);
+
         jdbcTemplate.update("""
                 INSERT INTO vocal_sections (choir_id, name, sort_order, active)
                 VALUES (?, ?, 0, TRUE)
@@ -278,6 +294,36 @@ class FormationDraftForeignVersionIntegrationTests {
                 originalPosition.get("y_coordinate").toString()).compareTo(
                         new BigDecimal(
                                 storedAfterRejection.get("y_coordinate").toString())));
+
+        // La misma obra en otro concierto no debe exponer formaciones
+        // pertenecientes a la primera ocurrencia.
+        webTestClient.get()
+                .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations",
+                        choirId, otherConcertId, repertoireItemId)
+                .cookie("SESSION", session.sessionId())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody().json("[]");
+
+        // Tampoco debe permitir leer el borrador desde la otra ocurrencia.
+        webTestClient.get()
+                .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations/{formationId}/draft",
+                        choirId, otherConcertId, repertoireItemId, firstFormationId)
+                .cookie("SESSION", session.sessionId())
+                .exchange()
+                .expectStatus().isNotFound();
+
+        // Ni modificar la versión usando la asociación del otro concierto.
+        webTestClient.put()
+                .uri("/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations/{formationId}/versions/{versionId}/positions",
+                        choirId, otherConcertId, repertoireItemId,
+                        firstFormationId, firstVersionId)
+                .cookie("SESSION", session.sessionId())
+                .header("X-CSRF-TOKEN", session.csrfToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("positions", List.of()))
+                .exchange()
+                .expectStatus().isNotFound();
     }
 
     private Map<String, Object> createFormation(
