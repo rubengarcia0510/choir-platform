@@ -1,18 +1,16 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningServiceImpl;
 import com.rubengarcia.choir.transition.adapter.out.persistence.R2dbcTransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningServiceImpl;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
-
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -30,13 +28,13 @@ class FormationPlanningServiceTests {
     @Autowired
     private DatabaseClient database;
 
+    @Autowired
     private FormationPlanningService service;
 
     private TransitionPlanningService transitionPlanningService;
 
-    @org.junit.jupiter.api.BeforeEach
+    @BeforeEach
     void setUpPlanningService() {
-        service = new FormationPlanningServiceImpl(database);
         transitionPlanningService = new TransitionPlanningServiceImpl(
                 new R2dbcTransitionPlanningPositionRepository(database));
     }
@@ -93,13 +91,29 @@ class FormationPlanningServiceTests {
                 new BigDecimal("8.000"),
                 new BigDecimal("9.000"))
                 .block(Duration.ofSeconds(10)))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(PublishedFormationModificationException.class)
                 .hasMessageContaining("No se puede modificar una formación publicada");
 
         assertThat(jdbc.queryForObject(
                 "SELECT position_label FROM formation_positions WHERE id = ?",
                 String.class, f.positionId()))
                 .isEqualTo("Posición original");
+    }
+
+    @Test
+    void rejectsUpdateWhenFormationPositionDoesNotExist() {
+        long nonexistentPositionId = Long.MAX_VALUE;
+
+        assertThatThrownBy(() -> service.updateDraftPosition(
+                nonexistentPositionId,
+                "Posición inexistente",
+                new BigDecimal("3.000"),
+                new BigDecimal("4.000"))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(FormationPositionNotFoundException.class)
+                .hasMessageContaining(
+                        "No existe la posición de formación: "
+                                + nonexistentPositionId);
     }
 
     @Test
