@@ -43,6 +43,7 @@ Ejemplo de solicitud:
   "name": "Formación principal",
   "description": "Distribución para el concierto"
 }
+```
 
 Reglas del cuerpo:
 
@@ -61,9 +62,9 @@ Respuestas:
 La respuesta incluye los identificadores de la formación y de la versión
 inicial, además del nombre, la descripción, el número de versión y su estado.
 
-Consultar el borrador
+### Consultar el borrador
 
-"GET {base}/formations/{formationId}/draft"
+`GET {base}/formations/{formationId}/draft`
 
 Devuelve los datos de la formación, su versión de borrador y sus posiciones.
 
@@ -78,17 +79,18 @@ Respuestas:
 - "404 Not Found": no existe un borrador accesible para esa inclusión
   del repertorio y formación.
 
-Reemplazar las posiciones del borrador
+### Reemplazar las posiciones del borrador
 
-"PUT {base}/formations/{formationId}/versions/{versionId}/positions"
+`PUT {base}/formations/{formationId}/versions/{versionId}/positions`
 
 Reemplaza la lista completa de posiciones de la versión de borrador.
 No es una operación de agregado incremental.
 
-Content-Type: "application/json"
+Content-Type: `application/json`
 
 Ejemplo de solicitud:
 
+```json
 {
   "positions": [
     {
@@ -99,6 +101,7 @@ Ejemplo de solicitud:
     }
   ]
 }
+```
 
 Reglas de cada posición:
 
