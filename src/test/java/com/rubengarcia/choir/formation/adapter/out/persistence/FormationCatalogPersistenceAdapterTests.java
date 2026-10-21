@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
+import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.PositionUpdate;
 import java.math.BigDecimal;
@@ -26,6 +27,9 @@ class FormationCatalogPersistenceAdapterTests {
 
     @Autowired
     private FormationCatalogPersistenceAdapter adapter;
+
+    @Autowired
+    private FormationDuplicationPort duplicationPort;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -464,6 +468,98 @@ class FormationCatalogPersistenceAdapterTests {
                 .isInstanceOf(RuntimeException.class);
 
         assertOriginalPositionRemains();
+    }
+
+
+    @Test
+    void duplicatesDraftAndKeepsPositionsIndependent() {
+        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        null,
+                        "Copia " + fixture.suffix(),
+                        "Duplicación de prueba")
+                .block(TIMEOUT);
+
+        assertThat(duplicated).isNotNull();
+        assertThat(duplicated.formation().getId()).isNotEqualTo(fixture.formationId());
+        assertThat(duplicated.formation().getChoirId()).isEqualTo(fixture.choirId());
+        assertThat(duplicated.formation().getConcertId()).isEqualTo(fixture.concertId());
+        assertThat(duplicated.formation().getRepertoireItemId())
+                .isEqualTo(fixture.repertoireItemId());
+        assertThat(duplicated.draftVersion().getId()).isNotEqualTo(fixture.versionId());
+        assertThat(duplicated.draftVersion().getVersionNumber()).isEqualTo(1);
+        assertThat(duplicated.draftVersion().getStatus()).isEqualTo("DRAFT");
+
+        Long copiedPositionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_positions WHERE formation_version_id = ?",
+                Long.class,
+                duplicated.draftVersion().getId());
+
+        assertThat(copiedPositionId).isNotNull();
+
+        Long originalPositionId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_positions WHERE formation_version_id = ?",
+                Long.class,
+                fixture.versionId());
+
+        assertThat(copiedPositionId).isNotEqualTo(originalPositionId);
+
+        Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
+                "SELECT singer_id, singer_name_snapshot, voice_part_snapshot, "
+                        + "position_label, x_coordinate, y_coordinate "
+                        + "FROM formation_positions WHERE id = ?",
+                copiedPositionId);
+
+        assertThat(copiedPosition.get("singer_id")).isEqualTo(fixture.singerId());
+        assertThat(copiedPosition.get("singer_name_snapshot"))
+                .isEqualTo("Snapshot anterior");
+        assertThat(copiedPosition.get("voice_part_snapshot")).isEqualTo("SOPRANO");
+        assertThat(copiedPosition.get("position_label")).isEqualTo("Posición anterior");
+        assertThat((BigDecimal) copiedPosition.get("x_coordinate"))
+                .isEqualByComparingTo("10.000");
+        assertThat((BigDecimal) copiedPosition.get("y_coordinate"))
+                .isEqualByComparingTo("20.000");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM formation_positions WHERE formation_version_id = ?",
+                Integer.class,
+                fixture.versionId())).isEqualTo(1);
+    }
+
+    @Test
+    void explicitlyDuplicatesPublishedVersion() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions "
+                        + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
+                        + "WHERE id = ?",
+                fixture.versionId());
+
+        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        "Copia publicada " + fixture.suffix(),
+                        "Copia de una versión publicada")
+                .block(TIMEOUT);
+
+        assertThat(duplicated).isNotNull();
+        assertThat(duplicated.formation().getId()).isNotEqualTo(fixture.formationId());
+        assertThat(duplicated.draftVersion().getId()).isNotEqualTo(fixture.versionId());
+        assertThat(duplicated.draftVersion().getStatus()).isEqualTo("DRAFT");
+
+        Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
+                "SELECT singer_name_snapshot, position_label "
+                        + "FROM formation_positions WHERE formation_version_id = ?",
+                duplicated.draftVersion().getId());
+
+        assertThat(copiedPosition.get("singer_name_snapshot"))
+                .isEqualTo("Snapshot anterior");
+        assertThat(copiedPosition.get("position_label")).isEqualTo("Posición anterior");
     }
 
     private Fixture createFixture() {
