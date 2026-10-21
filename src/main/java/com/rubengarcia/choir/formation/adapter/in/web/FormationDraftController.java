@@ -6,7 +6,10 @@ import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -19,6 +22,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -94,6 +98,42 @@ public class FormationDraftController {
                         "No existe un borrador para la formación indicada")));
     }
 
+    @PutMapping("/{formationId}/versions/{versionId}/positions")
+    public Mono<DraftDetailsResponse> replaceDraftPositions(
+            Authentication authentication,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long concertId,
+            @PathVariable @Positive long repertoireItemId,
+            @PathVariable @Positive long formationId,
+            @PathVariable @Positive long versionId,
+            @Valid @RequestBody SaveFormationDraftPositionsRequest request) {
+
+        return formationDraftManagement.replaceDraftPositions(
+                        authentication.getName(),
+                        choirId,
+                        concertId,
+                        repertoireItemId,
+                        formationId,
+                        versionId,
+                        request.positions().stream()
+                                .map(position -> new FormationCatalogPort.PositionUpdate(
+                                        position.singerId(),
+                                        position.positionLabel(),
+                                        position.x(),
+                                        position.y()))
+                                .toList())
+                .map(FormationDraftController::toDraftResponse)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "La formación o versión no pertenece a esta inclusión del repertorio")))
+                .onErrorMap(IllegalArgumentException.class, error ->
+                        new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, error.getMessage(), error))
+                .onErrorMap(IllegalStateException.class, error ->
+                        new ResponseStatusException(
+                                HttpStatus.CONFLICT, error.getMessage(), error));
+    }
+
     private static FormationSummaryResponse toSummary(Formation formation) {
         return new FormationSummaryResponse(
                 formation.getId(),
@@ -156,6 +196,17 @@ public class FormationDraftController {
     public record CreateFormationRequest(
             @NotBlank @Size(max = 160) String name,
             @Size(max = 1000) String description) {
+    }
+
+    public record SaveFormationDraftPositionsRequest(
+            @NotNull List<@NotNull @Valid PositionUpdateRequest> positions) {
+    }
+
+    public record PositionUpdateRequest(
+            @NotNull @Positive Long singerId,
+            @Size(max = 80) String positionLabel,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal x,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal y) {
     }
 
     public record FormationSummaryResponse(
