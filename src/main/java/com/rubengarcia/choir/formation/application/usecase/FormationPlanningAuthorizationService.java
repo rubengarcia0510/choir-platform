@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -13,9 +14,8 @@ public interface FormationPlanningAuthorizationService {
     Flux<FormationPlanningService.VocalAssignment> vocalAssignmentsForPlanning(
             String email, long choirId, long concertId, long repertoireItemId);
 
-    Flux<com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService.TransitionPlanningPosition>
-            positionsForTransitionVersion(
-                    String email, long choirId, long transitionVersionId);
+    Flux<TransitionPlanningPosition> positionsForTransitionVersion(
+            String email, long choirId, long transitionVersionId);
 
     Mono<Void> updateDraftPosition(
             String email,

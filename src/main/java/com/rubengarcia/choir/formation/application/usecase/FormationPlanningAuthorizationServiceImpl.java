@@ -2,7 +2,7 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.service.ResourceAuthorizationService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
-
+import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,7 +40,9 @@ public class FormationPlanningAuthorizationServiceImpl
     @Override
     public Flux<FormationPlanningService.VocalAssignment>
             vocalAssignmentsForPlanning(
-                    String email, long choirId, long concertId,
+                    String email,
+                    long choirId,
+                    long concertId,
                     long repertoireItemId) {
         return authorizationService
                 .requireOwnedConcertWork(
@@ -51,9 +53,8 @@ public class FormationPlanningAuthorizationServiceImpl
     }
 
     @Override
-    public Flux<TransitionPlanningService.TransitionPlanningPosition>
-            positionsForTransitionVersion(
-                    String email, long choirId, long transitionVersionId) {
+    public Flux<TransitionPlanningPosition> positionsForTransitionVersion(
+            String email, long choirId, long transitionVersionId) {
         return authorizationService
                 .requireOwnedTransitionVersion(
                         email, choirId, transitionVersionId)
@@ -64,8 +65,11 @@ public class FormationPlanningAuthorizationServiceImpl
 
     @Override
     public Mono<Void> updateDraftPosition(
-            String email, long choirId, long positionId,
-            String positionLabel, BigDecimal xCoordinate,
+            String email,
+            long choirId,
+            long positionId,
+            String positionLabel,
+            BigDecimal xCoordinate,
             BigDecimal yCoordinate) {
         return authorizationService
                 .requireOwnedPosition(email, choirId, positionId)
