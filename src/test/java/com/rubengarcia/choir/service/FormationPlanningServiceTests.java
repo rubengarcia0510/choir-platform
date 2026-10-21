@@ -1,11 +1,16 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
+import com.rubengarcia.choir.transition.adapter.out.persistence.R2dbcTransitionPlanningPositionRepository;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
+import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningServiceImpl;
+import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -23,11 +28,15 @@ class FormationPlanningServiceTests {
     @Autowired
     private DatabaseClient database;
 
+    @Autowired
     private FormationPlanningService service;
 
-    @org.junit.jupiter.api.BeforeEach
+    private TransitionPlanningService transitionPlanningService;
+
+    @BeforeEach
     void setUpPlanningService() {
-        service = new FormationPlanningServiceImpl(database);
+        transitionPlanningService = new TransitionPlanningServiceImpl(
+                new R2dbcTransitionPlanningPositionRepository(database));
     }
 
     @Test
@@ -82,13 +91,29 @@ class FormationPlanningServiceTests {
                 new BigDecimal("8.000"),
                 new BigDecimal("9.000"))
                 .block(Duration.ofSeconds(10)))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(PublishedFormationModificationException.class)
                 .hasMessageContaining("No se puede modificar una formación publicada");
 
         assertThat(jdbc.queryForObject(
                 "SELECT position_label FROM formation_positions WHERE id = ?",
                 String.class, f.positionId()))
                 .isEqualTo("Posición original");
+    }
+
+    @Test
+    void rejectsUpdateWhenFormationPositionDoesNotExist() {
+        long nonexistentPositionId = Long.MAX_VALUE;
+
+        assertThatThrownBy(() -> service.updateDraftPosition(
+                nonexistentPositionId,
+                "Posición inexistente",
+                new BigDecimal("3.000"),
+                new BigDecimal("4.000"))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(FormationPositionNotFoundException.class)
+                .hasMessageContaining(
+                        "No existe la posición de formación: "
+                                + nonexistentPositionId);
     }
 
     @Test
@@ -217,19 +242,20 @@ class FormationPlanningServiceTests {
                 "SELECT id FROM transition_versions WHERE transition_id = ? AND version_number = 1",
                 Long.class, transitionId);
 
-        var positions = service.positionsForTransitionVersion(transitionVersionId)
+        var positions = transitionPlanningService
+                .positionsForTransitionVersion(transitionVersionId)
                 .collectList()
                 .block(Duration.ofSeconds(10));
 
         assertThat(positions).hasSize(2);
-        assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::stage)
+        assertThat(positions)
+                .extracting(TransitionPlanningPosition::stage)
                 .containsExactly("FROM", "TO");
-        assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::divisionNumber)
+        assertThat(positions)
+                .extracting(TransitionPlanningPosition::divisionNumber)
                 .containsExactly(2, 3);
-        assertThat(positions).extracting(
-                FormationPlanningService.TransitionPlanningPosition::voiceSectionName)
+        assertThat(positions)
+                .extracting(TransitionPlanningPosition::voiceSectionName)
                 .containsExactly("Sopranos", "Altos");
     }
 
