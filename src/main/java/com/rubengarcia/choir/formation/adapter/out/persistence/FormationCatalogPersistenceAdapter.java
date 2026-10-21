@@ -168,6 +168,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             long repertoireItemId,
             long versionId,
             List<PositionUpdate> updates) {
+        long distinctSingerCount = updates.stream()
+                .map(PositionUpdate::singerId)
+                .distinct()
+                .count();
+
+        if (distinctSingerCount != updates.size()) {
+            return Mono.error(new IllegalArgumentException(
+                    "La solicitud contiene cantantes duplicados"));
+        }
+
         return Flux.fromIterable(updates)
                 .concatMap(update -> findSingerSnapshot(
                                 choirId,

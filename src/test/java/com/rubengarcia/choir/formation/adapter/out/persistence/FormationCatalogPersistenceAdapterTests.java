@@ -170,6 +170,37 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void sameWorkInAnotherConcertCannotReplaceFormationPositions() {
+        Long anotherConcertId = insertConcert(
+                fixture.choirId(),
+                "Otro concierto " + fixture.suffix());
+
+        jdbcTemplate.update(
+                "INSERT INTO concert_repertoire "
+                        + "(concert_id, repertoire_item_id, order_index) "
+                        + "VALUES (?, ?, ?)",
+                anotherConcertId,
+                fixture.repertoireItemId(),
+                0);
+
+        DraftDetails result = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        anotherConcertId,
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Posición cruzada",
+                                new BigDecimal("90"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT);
+
+        assertThat(result).isNull();
+        assertOriginalPositionRemains();
+    }
+
+    @Test
     void singerAssignedToAnotherWorkIsRejectedWithoutDeletingExistingPositions() {
         Long unassignedSingerId = insertSinger(
                 fixture.choirId(),
@@ -216,6 +247,32 @@ class FormationCatalogPersistenceAdapterTests {
                 .block(TIMEOUT))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no existe, está inactivo");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void duplicateSingerIsRejectedWithoutDeletingExistingPositions() {
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Primera posición",
+                                        new BigDecimal("20"),
+                                        new BigDecimal("20")),
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Posición duplicada",
+                                        new BigDecimal("80"),
+                                        new BigDecimal("80"))))
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cantantes duplicados");
 
         assertOriginalPositionRemains();
     }
