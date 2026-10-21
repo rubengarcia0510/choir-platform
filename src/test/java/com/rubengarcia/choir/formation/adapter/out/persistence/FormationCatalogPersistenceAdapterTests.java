@@ -217,6 +217,28 @@ class FormationCatalogPersistenceAdapterTests {
         assertOriginalPositionRemains();
     }
 
+
+    @Test
+    void failedInsertRollsBackDeletedPositions() {
+        String invalidLabel = "X".repeat(81);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                invalidLabel,
+                                new BigDecimal("40"),
+                                new BigDecimal("40"))))
+                .block(TIMEOUT))
+                .isInstanceOf(RuntimeException.class);
+
+        assertOriginalPositionRemains();
+    }
+
     private Fixture createFixture() {
         String suffix = UUID.randomUUID().toString();
 
