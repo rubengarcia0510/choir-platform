@@ -1,7 +1,9 @@
 package com.rubengarcia.choir.formation.application.port.in;
 
-import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.domain.Formation;
+import com.rubengarcia.choir.formation.domain.FormationPosition;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
+import java.math.BigDecimal;
 import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -14,7 +16,7 @@ public interface FormationDraftManagementUseCase {
             long concertId,
             long repertoireItemId);
 
-    Mono<FormationCatalogPort.CreatedFormation> create(
+    Mono<CreatedFormation> create(
             String directorEmail,
             long choirId,
             long concertId,
@@ -22,19 +24,37 @@ public interface FormationDraftManagementUseCase {
             String name,
             String description);
 
-    Mono<FormationCatalogPort.DraftDetails> getDraft(
+    Mono<DraftDetails> getDraft(
             String directorEmail,
             long choirId,
             long concertId,
             long repertoireItemId,
             long formationId);
 
-    Mono<FormationCatalogPort.DraftDetails> replaceDraftPositions(
+    Mono<DraftDetails> replaceDraftPositions(
             String directorEmail,
             long choirId,
             long concertId,
             long repertoireItemId,
             long formationId,
             long versionId,
-            List<FormationCatalogPort.PositionUpdate> positions);
+            List<PositionUpdate> positions);
+
+    record PositionUpdate(
+            Long singerId,
+            String positionLabel,
+            BigDecimal x,
+            BigDecimal y) {
+    }
+
+    record CreatedFormation(
+            Formation formation,
+            FormationVersion draftVersion) {
+    }
+
+    record DraftDetails(
+            Formation formation,
+            FormationVersion draftVersion,
+            List<FormationPosition> positions) {
+    }
 }
