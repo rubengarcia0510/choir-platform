@@ -1,5 +1,9 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
+
+import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;

@@ -1,5 +1,9 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
+
+import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -8,10 +12,10 @@ import java.math.BigDecimal;
 
 public interface FormationPlanningAuthorizationService {
 
-    Flux<FormationPlanningService.PlanningPosition> positionsForFormationVersion(
+    Flux<PlanningPosition> positionsForFormationVersion(
             String email, long choirId, long formationVersionId);
 
-    Flux<FormationPlanningService.VocalAssignment> vocalAssignmentsForPlanning(
+    Flux<VocalAssignment> vocalAssignmentsForPlanning(
             String email, long choirId, long concertId, long repertoireItemId);
 
     Flux<TransitionPlanningPosition> positionsForTransitionVersion(
