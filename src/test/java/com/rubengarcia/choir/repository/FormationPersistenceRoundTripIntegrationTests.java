@@ -44,10 +44,13 @@ class FormationPersistenceRoundTripIntegrationTests {
         Long versionId = null;
         Long positionId = null;
 
-        LocalDateTime formationCreatedAt = LocalDateTime.now().minusMinutes(3);
-        LocalDateTime versionCreatedAt = LocalDateTime.now().minusMinutes(2);
-        LocalDateTime publishedAt = LocalDateTime.now().minusMinutes(1);
-        LocalDateTime positionCreatedAt = LocalDateTime.now();
+        LocalDateTime formationCreatedAt =
+                LocalDateTime.now().minusMinutes(3).withNano(0);
+        LocalDateTime versionCreatedAt =
+                LocalDateTime.now().minusMinutes(2).withNano(0);
+        LocalDateTime publishedAt =
+                LocalDateTime.now().minusMinutes(1).withNano(0);
+        LocalDateTime positionCreatedAt = LocalDateTime.now().withNano(0);
 
         try {
             jdbc.update(
@@ -118,16 +121,14 @@ class FormationPersistenceRoundTripIntegrationTests {
                             7).block();
 
             assertThat(loadedVersion).isNotNull();
-            assertThat(loadedVersion.getFormationId())
-                    .isEqualTo(formationId);
+            assertThat(loadedVersion.getFormationId()).isEqualTo(formationId);
             assertThat(loadedVersion.getVersionNumber()).isEqualTo(7);
             assertThat(loadedVersion.getStatus()).isEqualTo("PUBLISHED");
             assertThat(loadedVersion.getNotes())
                     .isEqualTo("Published round trip");
             assertThat(loadedVersion.getCreatedAt())
                     .isEqualTo(versionCreatedAt);
-            assertThat(loadedVersion.getPublishedAt())
-                    .isEqualTo(publishedAt);
+            assertThat(loadedVersion.getPublishedAt()).isEqualTo(publishedAt);
 
             FormationPositionEntity position = new FormationPositionEntity();
             position.setFormationVersionId(versionId);
@@ -167,8 +168,7 @@ class FormationPersistenceRoundTripIntegrationTests {
                     .isEqualTo("First Soprano");
             assertThat(loadedPosition.getDivisionNumberSnapshot())
                     .isEqualTo(2);
-            assertThat(loadedPosition.getPositionLabel())
-                    .isEqualTo("Center");
+            assertThat(loadedPosition.getPositionLabel()).isEqualTo("Center");
             assertThat(loadedPosition.getXCoordinate())
                     .isEqualByComparingTo("12.50");
             assertThat(loadedPosition.getYCoordinate())
