@@ -85,7 +85,7 @@ class FormationDuplicationIndependenceTests {
     void changesToEitherFormationDoNotMutateTheOther() {
         createFixture();
 
-        FormationCatalogPort.CreatedFormation duplicate =
+        FormationDuplicationPort.CreatedFormation duplicate =
                 duplicationPort.duplicate(
                                 choirId,
                                 concertId,

@@ -522,7 +522,7 @@ class FormationCatalogPersistenceAdapterTests {
 
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
-        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+        FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
                         fixture.concertId(),
                         fixture.repertoireItemId(),
@@ -586,7 +586,7 @@ class FormationCatalogPersistenceAdapterTests {
                         + "WHERE id = ?",
                 fixture.versionId());
 
-        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+        FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
                         fixture.concertId(),
                         fixture.repertoireItemId(),
@@ -641,7 +641,7 @@ class FormationCatalogPersistenceAdapterTests {
                 new BigDecimal("70"),
                 new BigDecimal("80"));
 
-        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+        FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
                         fixture.concertId(),
                         fixture.repertoireItemId(),
@@ -733,7 +733,7 @@ class FormationCatalogPersistenceAdapterTests {
                 new BigDecimal("60"),
                 new BigDecimal("70"));
 
-        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+        FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
                         fixture.concertId(),
                         fixture.repertoireItemId(),
