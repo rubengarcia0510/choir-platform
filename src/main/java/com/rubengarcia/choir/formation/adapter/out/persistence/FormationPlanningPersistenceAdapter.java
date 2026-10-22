@@ -1,11 +1,11 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
+import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService.PlanningPosition;
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService.VocalAssignment;
-import com.rubengarcia.choir.formation.application.usecase.FormationPositionNotFoundException;
-import com.rubengarcia.choir.formation.application.usecase.FormationPositionUpdateException;
-import com.rubengarcia.choir.formation.application.usecase.PublishedFormationModificationException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionUpdateException;
+import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
 import java.math.BigDecimal;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;

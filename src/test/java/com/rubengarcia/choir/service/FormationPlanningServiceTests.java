@@ -1,6 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
 import com.rubengarcia.choir.transition.adapter.out.persistence.R2dbcTransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningServiceImpl;

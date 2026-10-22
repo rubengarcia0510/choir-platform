@@ -1,5 +1,8 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
+
 import com.rubengarcia.choir.service.ResourceAuthorizationService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
@@ -27,7 +30,7 @@ public class FormationPlanningAuthorizationServiceImpl
     }
 
     @Override
-    public Flux<FormationPlanningService.PlanningPosition>
+    public Flux<PlanningPosition>
             positionsForFormationVersion(
                     String email, long choirId, long formationVersionId) {
         return authorizationService
@@ -38,7 +41,7 @@ public class FormationPlanningAuthorizationServiceImpl
     }
 
     @Override
-    public Flux<FormationPlanningService.VocalAssignment>
+    public Flux<VocalAssignment>
             vocalAssignmentsForPlanning(
                     String email,
                     long choirId,

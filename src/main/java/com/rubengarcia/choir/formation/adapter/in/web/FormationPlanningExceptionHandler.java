@@ -1,8 +1,8 @@
 package com.rubengarcia.choir.formation.adapter.in.web;
 
-import com.rubengarcia.choir.formation.application.usecase.FormationPositionNotFoundException;
-import com.rubengarcia.choir.formation.application.usecase.FormationPositionUpdateException;
-import com.rubengarcia.choir.formation.application.usecase.PublishedFormationModificationException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionUpdateException;
+import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;

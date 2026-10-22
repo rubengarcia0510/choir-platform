@@ -1,4 +1,4 @@
-package com.rubengarcia.choir.formation.application.usecase;
+package com.rubengarcia.choir.formation.application.exception;
 
 /**
  * Indica que no se pudo actualizar una posición de formación.
