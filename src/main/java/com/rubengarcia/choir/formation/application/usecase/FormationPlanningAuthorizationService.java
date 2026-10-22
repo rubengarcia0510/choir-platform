@@ -1,8 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
-import com.rubengarcia.choir.formation.application.model.VocalAssignment;
-
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import reactor.core.publisher.Flux;

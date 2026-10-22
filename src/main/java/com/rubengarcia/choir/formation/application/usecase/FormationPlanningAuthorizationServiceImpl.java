@@ -1,8 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
-import com.rubengarcia.choir.formation.application.model.VocalAssignment;
-
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 
 import com.rubengarcia.choir.service.ResourceAuthorizationService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
