@@ -1,6 +1,5 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
-import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
@@ -33,7 +32,7 @@ public class FormationDuplicationPersistenceAdapter
 
     @Override
     @Transactional(transactionManager = "connectionFactoryTransactionManager")
-    public Mono<FormationCatalogPort.CreatedFormation> duplicate(
+    public Mono<FormationDuplicationPort.CreatedFormation> duplicate(
             long choirId,
             long concertId,
             long repertoireItemId,
@@ -92,7 +91,7 @@ public class FormationDuplicationPersistenceAdapter
                                 "La formación no tiene una versión duplicable"))));
     }
 
-    private Mono<FormationCatalogPort.CreatedFormation> copyFormation(
+    private Mono<FormationDuplicationPort.CreatedFormation> copyFormation(
             Formation sourceFormation,
             FormationVersion sourceVersion,
             long choirId,
@@ -118,7 +117,7 @@ public class FormationDuplicationPersistenceAdapter
                 });
     }
 
-    private Mono<FormationCatalogPort.CreatedFormation> createCopiedDraft(
+    private Mono<FormationDuplicationPort.CreatedFormation> createCopiedDraft(
             Formation duplicate,
             List<FormationPosition> sourcePositions) {
 
@@ -129,8 +128,8 @@ public class FormationDuplicationPersistenceAdapter
 
         return versionRepository.save(draft)
                 .flatMap(savedDraft -> {
-                    FormationCatalogPort.CreatedFormation result =
-                            new FormationCatalogPort.CreatedFormation(
+                    FormationDuplicationPort.CreatedFormation result =
+                            new FormationDuplicationPort.CreatedFormation(
                                     duplicate, savedDraft);
 
                     if (sourcePositions.isEmpty()) {
