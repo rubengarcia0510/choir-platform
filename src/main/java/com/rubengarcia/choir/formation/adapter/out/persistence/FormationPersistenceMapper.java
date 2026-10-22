@@ -21,6 +21,7 @@ public final class FormationPersistenceMapper {
         domain.setRepertoireItemId(entity.getRepertoireItemId());
         domain.setName(entity.getName());
         domain.setDescription(entity.getDescription());
+        domain.setCreatedAt(entity.getCreatedAt());
         return domain;
     }
 
