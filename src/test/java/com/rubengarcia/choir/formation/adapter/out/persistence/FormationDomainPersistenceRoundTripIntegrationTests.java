@@ -101,14 +101,14 @@ class FormationDomainPersistenceRoundTripIntegrationTests {
             assertThat(savedVersion.getId()).isNotNull();
             versionId = savedVersion.getId();
 
-            Formation loadedVersion = loadedFormation;
+            Long loadedFormationId = loadedFormation.getId();
             FormationVersion roundTrippedVersion = FormationPersistenceMapper.toDomain(
                     versions.findByFormationIdAndVersionNumber(formationId, 7).block());
 
             assertThat(roundTrippedVersion).isNotNull();
             assertThat(roundTrippedVersion.getId()).isEqualTo(versionId);
             assertThat(roundTrippedVersion.getFormationId())
-                    .isEqualTo(loadedVersion.getId());
+                    .isEqualTo(loadedFormationId);
             assertThat(roundTrippedVersion.getVersionNumber()).isEqualTo(7);
             assertThat(roundTrippedVersion.getStatus()).isEqualTo("PUBLISHED");
             assertThat(roundTrippedVersion.getNotes()).isEqualTo("Published domain version");
