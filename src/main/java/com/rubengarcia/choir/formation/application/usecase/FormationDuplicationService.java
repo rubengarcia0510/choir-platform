@@ -21,7 +21,7 @@ public class FormationDuplicationService implements FormationDuplicationUseCase 
     }
 
     @Override
-    public Mono<FormationCatalogPort.CreatedFormation> duplicate(
+    public Mono<FormationDuplicationUseCase.CreatedFormation> duplicate(
             String directorEmail,
             long choirId,
             long concertId,
@@ -40,6 +40,10 @@ public class FormationDuplicationService implements FormationDuplicationUseCase 
                                 sourceFormationId,
                                 sourceVersionId,
                                 name,
-                                description))));
+                                description)
+                        .map(created ->
+                                new FormationDuplicationUseCase.CreatedFormation(
+                                        created.formation(),
+                                        created.draftVersion())))));
     }
 }

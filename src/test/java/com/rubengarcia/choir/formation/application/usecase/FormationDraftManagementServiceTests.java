@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.port.in.FormationDraftManagementUseCase;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationOccurrenceAuthorizationPort;
 import java.math.BigDecimal;
@@ -173,8 +174,11 @@ class FormationDraftManagementServiceTests {
 
     @Test
     void authorizesOccurrenceBeforeReplacingDraftPositions() {
-        List<FormationCatalogPort.PositionUpdate> positions =
+        List<FormationDraftManagementUseCase.PositionUpdate> positions =
                 List.of(validPosition(SINGER_ID));
+
+        List<FormationCatalogPort.PositionUpdate> catalogPositions =
+                toCatalogPositions(positions);
 
         when(occurrenceAuthorization.requireOwnedOccurrence(
                 DIRECTOR_EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
@@ -185,7 +189,7 @@ class FormationDraftManagementServiceTests {
                 REPERTOIRE_ITEM_ID,
                 FORMATION_ID,
                 VERSION_ID,
-                positions))
+                catalogPositions))
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(service.replaceDraftPositions(
@@ -207,7 +211,7 @@ class FormationDraftManagementServiceTests {
                 REPERTOIRE_ITEM_ID,
                 FORMATION_ID,
                 VERSION_ID,
-                positions);
+                catalogPositions);
     }
 
     @Test
@@ -216,6 +220,9 @@ class FormationDraftManagementServiceTests {
                 OTHER_EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
                 .thenReturn(Mono.error(IllegalStateException::new));
 
+        List<FormationDraftManagementUseCase.PositionUpdate> positions =
+                List.of(validPosition(SINGER_ID));
+
         StepVerifier.create(service.replaceDraftPositions(
                         OTHER_EMAIL,
                         CHOIR_ID,
@@ -223,7 +230,7 @@ class FormationDraftManagementServiceTests {
                         REPERTOIRE_ITEM_ID,
                         FORMATION_ID,
                         VERSION_ID,
-                        List.of(validPosition(SINGER_ID))))
+                        positions))
                 .expectError(IllegalStateException.class)
                 .verify();
 
@@ -233,7 +240,7 @@ class FormationDraftManagementServiceTests {
                 REPERTOIRE_ITEM_ID,
                 FORMATION_ID,
                 VERSION_ID,
-                List.of(validPosition(SINGER_ID)));
+                toCatalogPositions(positions));
     }
 
     @Test
@@ -249,14 +256,14 @@ class FormationDraftManagementServiceTests {
     @Test
     void rejectsNullSingerIdBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
+                new FormationDraftManagementUseCase.PositionUpdate(
                         null, "Soprano", BigDecimal.TEN, BigDecimal.TEN)));
     }
 
     @Test
     void rejectsNonPositiveSingerIdBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
+                new FormationDraftManagementUseCase.PositionUpdate(
                         0L, "Soprano", BigDecimal.TEN, BigDecimal.TEN)));
     }
 
@@ -270,49 +277,61 @@ class FormationDraftManagementServiceTests {
     @Test
     void rejectsNullXCoordinateBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
+                new FormationDraftManagementUseCase.PositionUpdate(
                         SINGER_ID, "Soprano", null, BigDecimal.TEN)));
     }
 
     @Test
     void rejectsXCoordinateBelowZeroBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID, "Soprano", BigDecimal.valueOf(-1), BigDecimal.TEN)));
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID,
+                        "Soprano",
+                        BigDecimal.valueOf(-1),
+                        BigDecimal.TEN)));
     }
 
     @Test
     void rejectsXCoordinateAboveOneHundredBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID, "Soprano", BigDecimal.valueOf(101), BigDecimal.TEN)));
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID,
+                        "Soprano",
+                        BigDecimal.valueOf(101),
+                        BigDecimal.TEN)));
     }
 
     @Test
     void rejectsNullYCoordinateBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
+                new FormationDraftManagementUseCase.PositionUpdate(
                         SINGER_ID, "Soprano", BigDecimal.TEN, null)));
     }
 
     @Test
     void rejectsYCoordinateBelowZeroBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID, "Soprano", BigDecimal.TEN, BigDecimal.valueOf(-1))));
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID,
+                        "Soprano",
+                        BigDecimal.TEN,
+                        BigDecimal.valueOf(-1))));
     }
 
     @Test
     void rejectsYCoordinateAboveOneHundredBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID, "Soprano", BigDecimal.TEN, BigDecimal.valueOf(101))));
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID,
+                        "Soprano",
+                        BigDecimal.TEN,
+                        BigDecimal.valueOf(101))));
     }
 
     @Test
     void rejectsLabelLongerThanEightyCharactersBeforeCallingDependencies() {
         assertInvalidPositions(List.of(
-                new FormationCatalogPort.PositionUpdate(
+                new FormationDraftManagementUseCase.PositionUpdate(
                         SINGER_ID,
                         "X".repeat(81),
                         BigDecimal.TEN,
@@ -321,12 +340,20 @@ class FormationDraftManagementServiceTests {
 
     @Test
     void acceptsCoordinatesAtBothBoundaries() {
-        List<FormationCatalogPort.PositionUpdate> positions = List.of(
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID, "Soprano", BigDecimal.ZERO, BigDecimal.ZERO),
-                new FormationCatalogPort.PositionUpdate(
-                        SINGER_ID + 1, "Tenor",
-                        BigDecimal.valueOf(100), BigDecimal.valueOf(100)));
+        List<FormationDraftManagementUseCase.PositionUpdate> positions = List.of(
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID,
+                        "Soprano",
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO),
+                new FormationDraftManagementUseCase.PositionUpdate(
+                        SINGER_ID + 1,
+                        "Tenor",
+                        BigDecimal.valueOf(100),
+                        BigDecimal.valueOf(100)));
+
+        List<FormationCatalogPort.PositionUpdate> catalogPositions =
+                toCatalogPositions(positions);
 
         when(occurrenceAuthorization.requireOwnedOccurrence(
                 DIRECTOR_EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
@@ -337,7 +364,7 @@ class FormationDraftManagementServiceTests {
                 REPERTOIRE_ITEM_ID,
                 FORMATION_ID,
                 VERSION_ID,
-                positions))
+                catalogPositions))
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(service.replaceDraftPositions(
@@ -356,11 +383,11 @@ class FormationDraftManagementServiceTests {
                 REPERTOIRE_ITEM_ID,
                 FORMATION_ID,
                 VERSION_ID,
-                positions);
+                catalogPositions);
     }
 
     private void assertInvalidPositions(
-            List<FormationCatalogPort.PositionUpdate> positions) {
+            List<FormationDraftManagementUseCase.PositionUpdate> positions) {
 
         StepVerifier.create(service.replaceDraftPositions(
                         DIRECTOR_EMAIL,
@@ -376,11 +403,28 @@ class FormationDraftManagementServiceTests {
         verifyNoInteractions(formationCatalog, occurrenceAuthorization);
     }
 
-    private FormationCatalogPort.PositionUpdate validPosition(long singerId) {
-        return new FormationCatalogPort.PositionUpdate(
+    private FormationDraftManagementUseCase.PositionUpdate validPosition(
+            long singerId) {
+        return new FormationDraftManagementUseCase.PositionUpdate(
                 singerId,
                 "Soprano",
                 BigDecimal.valueOf(25),
                 BigDecimal.valueOf(75));
+    }
+
+    private List<FormationCatalogPort.PositionUpdate> toCatalogPositions(
+            List<FormationDraftManagementUseCase.PositionUpdate> positions) {
+        if (positions == null) {
+            return null;
+        }
+
+        return positions.stream()
+                .map(position ->
+                        new FormationCatalogPort.PositionUpdate(
+                                position.singerId(),
+                                position.positionLabel(),
+                                position.x(),
+                                position.y()))
+                .toList();
     }
 }
