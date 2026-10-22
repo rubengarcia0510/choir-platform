@@ -307,7 +307,7 @@ class FormationDuplicationControllerTests {
                 """,
                 formationId,
                 1,
-                "DRAFT");
+                "PUBLISHED");
 
         return new Fixture(
                 suffix,

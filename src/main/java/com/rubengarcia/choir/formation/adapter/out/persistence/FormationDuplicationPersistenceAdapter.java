@@ -80,16 +80,11 @@ public class FormationDuplicationPersistenceAdapter
         }
 
         return versions.stream()
-                .filter(version -> DRAFT.equals(version.getStatus()))
+                .filter(version -> PUBLISHED.equals(version.getStatus()))
                 .max(Comparator.comparingInt(FormationVersion::getVersionNumber))
                 .map(Mono::just)
-                .orElseGet(() -> versions.stream()
-                        .filter(version -> PUBLISHED.equals(version.getStatus()))
-                        .max(Comparator.comparingInt(
-                                FormationVersion::getVersionNumber))
-                        .map(Mono::just)
-                        .orElseGet(() -> Mono.error(new IllegalStateException(
-                                "La formación no tiene una versión duplicable"))));
+                .orElseGet(() -> Mono.error(new IllegalStateException(
+                        "La formación no tiene una versión publicada para duplicar")));
     }
 
     private Mono<FormationDuplicationPort.CreatedFormation> copyFormation(

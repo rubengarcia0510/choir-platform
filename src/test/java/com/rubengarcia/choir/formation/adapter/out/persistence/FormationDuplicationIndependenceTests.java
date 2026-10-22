@@ -194,7 +194,7 @@ class FormationDuplicationIndependenceTests {
 
         jdbcTemplate.update("""
                 INSERT INTO formation_versions (formation_id, version_number, status)
-                VALUES (?, 1, 'DRAFT')
+                VALUES (?, 1, 'PUBLISHED')
                 """, formationId);
         versionId = jdbcTemplate.queryForObject("""
                 SELECT id FROM formation_versions
