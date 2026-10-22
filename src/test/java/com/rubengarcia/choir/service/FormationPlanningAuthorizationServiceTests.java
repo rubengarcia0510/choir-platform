@@ -1,6 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
-import com.rubengarcia.choir.service.ResourceAuthorizationService;
+import com.rubengarcia.choir.formation.application.port.out.FormationPlanningResourceAuthorizationPort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService;
@@ -30,7 +30,7 @@ class FormationPlanningAuthorizationServiceTests {
     private TransitionPlanningService transitionPlanningService;
 
     @Mock
-    private ResourceAuthorizationService authorizationService;
+    private FormationPlanningResourceAuthorizationPort authorizationService;
 
     @InjectMocks
     private FormationPlanningAuthorizationServiceImpl service;
