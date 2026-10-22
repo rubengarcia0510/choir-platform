@@ -46,7 +46,7 @@ public class FormationDraftManagementService
     }
 
     @Override
-    public Mono<FormationCatalogPort.CreatedFormation> create(
+    public Mono<FormationDraftManagementUseCase.CreatedFormation> create(
             String email,
             long choirId,
             long concertId,
@@ -63,11 +63,15 @@ public class FormationDraftManagementService
                                         concertId,
                                         repertoireItemId,
                                         name,
-                                        description))));
+                                        description)
+                                .map(created ->
+                                        new FormationDraftManagementUseCase.CreatedFormation(
+                                                created.formation(),
+                                                created.draftVersion())))));
     }
 
     @Override
-    public Mono<FormationCatalogPort.DraftDetails> getDraft(
+    public Mono<FormationDraftManagementUseCase.DraftDetails> getDraft(
             String email,
             long choirId,
             long concertId,
@@ -82,18 +86,23 @@ public class FormationDraftManagementService
                                         choirId,
                                         concertId,
                                         repertoireItemId,
-                                        formationId))));
+                                        formationId)
+                                .map(details ->
+                                        new FormationDraftManagementUseCase.DraftDetails(
+                                                details.formation(),
+                                                details.draftVersion(),
+                                                details.positions())))));
     }
 
     @Override
-    public Mono<FormationCatalogPort.DraftDetails> replaceDraftPositions(
+    public Mono<FormationDraftManagementUseCase.DraftDetails> replaceDraftPositions(
             String email,
             long choirId,
             long concertId,
             long repertoireItemId,
             long formationId,
             long versionId,
-            List<FormationCatalogPort.PositionUpdate> positions) {
+            List<FormationDraftManagementUseCase.PositionUpdate> positions) {
 
         return Mono.defer(() -> {
             validatePositions(positions);
@@ -107,12 +116,24 @@ public class FormationDraftManagementService
                                     repertoireItemId,
                                     formationId,
                                     versionId,
-                                    List.copyOf(positions))));
+                                    positions.stream()
+                                            .map(position ->
+                                                    new FormationCatalogPort.PositionUpdate(
+                                                            position.singerId(),
+                                                            position.positionLabel(),
+                                                            position.x(),
+                                                            position.y()))
+                                            .toList())
+                            .map(details ->
+                                    new FormationDraftManagementUseCase.DraftDetails(
+                                            details.formation(),
+                                            details.draftVersion(),
+                                            details.positions()))));
         });
     }
 
     private void validatePositions(
-            List<FormationCatalogPort.PositionUpdate> positions) {
+            List<FormationDraftManagementUseCase.PositionUpdate> positions) {
 
         if (positions == null) {
             throw new IllegalArgumentException(
@@ -121,7 +142,7 @@ public class FormationDraftManagementService
 
         Set<Long> singerIds = new HashSet<>();
 
-        for (FormationCatalogPort.PositionUpdate position : positions) {
+        for (FormationDraftManagementUseCase.PositionUpdate position : positions) {
             if (position == null) {
                 throw new IllegalArgumentException(
                         "La lista contiene una posición nula");

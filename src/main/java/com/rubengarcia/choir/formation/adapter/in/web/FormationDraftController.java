@@ -1,7 +1,6 @@
 package com.rubengarcia.choir.formation.adapter.in.web;
 
 import com.rubengarcia.choir.formation.application.port.in.FormationDraftManagementUseCase;
-import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
@@ -116,7 +115,7 @@ public class FormationDraftController {
                         formationId,
                         versionId,
                         request.positions().stream()
-                                .map(position -> new FormationCatalogPort.PositionUpdate(
+                                .map(position -> new FormationDraftManagementUseCase.PositionUpdate(
                                         position.singerId(),
                                         position.positionLabel(),
                                         position.x(),
@@ -142,7 +141,7 @@ public class FormationDraftController {
     }
 
     private static CreateFormationResponse toCreateResponse(
-            FormationCatalogPort.CreatedFormation created) {
+            FormationDraftManagementUseCase.CreatedFormation created) {
 
         Formation formation = created.formation();
 
@@ -156,7 +155,7 @@ public class FormationDraftController {
     }
 
     private static DraftDetailsResponse toDraftResponse(
-            FormationCatalogPort.DraftDetails details) {
+            FormationDraftManagementUseCase.DraftDetails details) {
 
         Formation formation = details.formation();
         FormationVersion version = details.draftVersion();

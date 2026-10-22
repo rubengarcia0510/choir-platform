@@ -1,7 +1,6 @@
 package com.rubengarcia.choir.formation.adapter.in.web;
 
 import com.rubengarcia.choir.formation.application.port.in.FormationDuplicationUseCase;
-import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.domain.Formation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -61,7 +60,7 @@ public class FormationDuplicationController {
     }
 
     private static FormationDraftController.CreateFormationResponse toResponse(
-            FormationCatalogPort.CreatedFormation created) {
+            FormationDuplicationUseCase.CreatedFormation created) {
         Formation formation = created.formation();
         return new FormationDraftController.CreateFormationResponse(
                 formation.getId(),
