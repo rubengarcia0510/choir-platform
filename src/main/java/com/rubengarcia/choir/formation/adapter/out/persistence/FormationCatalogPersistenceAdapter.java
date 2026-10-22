@@ -47,7 +47,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             long repertoireItemId) {
         return formationRepository
                 .findByChoirIdAndConcertIdAndRepertoireItemId(
-                        choirId, concertId, repertoireItemId);
+                        choirId, concertId, repertoireItemId)
+                .map(FormationPersistenceMapper::toDomain);
     }
 
     @Override
@@ -62,6 +63,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 .flatMap(formation ->
                         formationVersionRepository
                                 .findByFormationId(formation.getId())
+                                .map(FormationPersistenceMapper::toDomain)
                                 .filter(version -> "DRAFT".equals(version.getStatus()))
                                 .sort(Comparator.comparingInt(
                                         FormationVersion::getVersionNumber).reversed())
@@ -69,6 +71,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                 .flatMap(version ->
                                         formationPositionRepository
                                                 .findByFormationVersionId(version.getId())
+                                                .map(FormationPersistenceMapper::toDomain)
                                                 .collectList()
                                                 .map(positions -> new DraftDetails(
                                                         formation,
@@ -91,7 +94,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         formation.setName(name);
         formation.setDescription(description);
 
-        return formationRepository.save(formation)
+        return formationRepository.save(FormationPersistenceMapper.toEntity(formation))
+                .map(FormationPersistenceMapper::toDomain)
                 .flatMap(savedFormation -> createInitialDraft(
                         savedFormation, choirId, concertId, repertoireItemId));
     }
@@ -258,13 +262,18 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             List<FormationPosition> positions) {
         Mono<Void> savePositions = positions.isEmpty()
                 ? Mono.empty()
-                : formationPositionRepository.saveAll(positions).then();
+                : formationPositionRepository.saveAll(
+                        positions.stream()
+                                .map(FormationPersistenceMapper::toEntity)
+                                .toList())
+                        .then();
 
         return formationPositionRepository
                 .deleteByFormationVersionId(version.getId())
                 .then(savePositions)
                 .then(formationPositionRepository
                         .findByFormationVersionId(version.getId())
+                        .map(FormationPersistenceMapper::toDomain)
                         .collectList())
                 .map(savedPositions -> new DraftDetails(
                         formation, version, List.copyOf(savedPositions)));
@@ -280,7 +289,9 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         draft.setVersionNumber(1);
         draft.setStatus("DRAFT");
 
-        return formationVersionRepository.save(draft)
+        return formationVersionRepository.save(
+                        FormationPersistenceMapper.toEntity(draft))
+                .map(FormationPersistenceMapper::toDomain)
                 .flatMap(savedDraft -> {
                     CreatedFormation created = new CreatedFormation(formation, savedDraft);
                     return findInitialAssignments(choirId, concertId, repertoireItemId)
@@ -293,7 +304,10 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                 List<FormationPosition> positions =
                                         createPositions(savedDraft.getId(), assignments);
 
-                                return formationPositionRepository.saveAll(positions)
+                                return formationPositionRepository.saveAll(
+                                                positions.stream()
+                                                        .map(FormationPersistenceMapper::toEntity)
+                                                        .toList())
                                         .then(Mono.just(created));
                             });
                 });

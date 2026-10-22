@@ -2,30 +2,21 @@ package com.rubengarcia.choir.formation.domain;
 
 import java.time.LocalDateTime;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
 
-@Table("formation_versions")
 public class FormationVersion {
 
-    @Id
     private Long id;
 
-    @Column("formation_id")
     private Long formationId;
 
-    @Column("version_number")
     private int versionNumber;
 
     private String status = "DRAFT";
 
     private String notes;
 
-    @Column("created_at")
     private LocalDateTime createdAt;
 
-    @Column("published_at")
     private LocalDateTime publishedAt;
 
     public FormationVersion() {
