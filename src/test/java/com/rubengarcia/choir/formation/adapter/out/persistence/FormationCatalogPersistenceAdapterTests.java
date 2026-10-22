@@ -522,6 +522,12 @@ class FormationCatalogPersistenceAdapterTests {
 
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions "
+                        + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
+                        + "WHERE id = ?",
+                fixture.versionId());
+
         FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
                         fixture.concertId(),
@@ -613,12 +619,50 @@ class FormationCatalogPersistenceAdapterTests {
 
 
     @Test
-    void duplicationSelectsHighestNumberedDraftVersion() {
+    void duplicationSelectsHighestNumberedPublishedVersionEvenWhenNewerDraftExists() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions "
+                        + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
+                        + "WHERE id = ?",
+                fixture.versionId());
+
         jdbcTemplate.update(
                 "INSERT INTO formation_versions (formation_id, version_number, status) "
                         + "VALUES (?, ?, ?)",
                 fixture.formationId(),
                 2,
+                "PUBLISHED");
+
+        Long newerPublishedId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_versions "
+                        + "WHERE formation_id = ? AND version_number = ?",
+                Long.class,
+                fixture.formationId(),
+                2);
+
+        jdbcTemplate.update(
+                "UPDATE formation_versions "
+                        + "SET published_at = CURRENT_TIMESTAMP WHERE id = ?",
+                newerPublishedId);
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_positions "
+                        + "(formation_version_id, singer_id, singer_name_snapshot, "
+                        + "voice_part_snapshot, position_label, x_coordinate, y_coordinate) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                newerPublishedId,
+                fixture.singerId(),
+                "Snapshot de la versión publicada más reciente",
+                "ALTO",
+                "Posición publicada más reciente",
+                new BigDecimal("70"),
+                new BigDecimal("80"));
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions (formation_id, version_number, status) "
+                        + "VALUES (?, ?, ?)",
+                fixture.formationId(),
+                3,
                 "DRAFT");
 
         Long newerDraftId = jdbcTemplate.queryForObject(
@@ -626,7 +670,7 @@ class FormationCatalogPersistenceAdapterTests {
                         + "WHERE formation_id = ? AND version_number = ?",
                 Long.class,
                 fixture.formationId(),
-                2);
+                3);
 
         jdbcTemplate.update(
                 "INSERT INTO formation_positions "
@@ -635,11 +679,11 @@ class FormationCatalogPersistenceAdapterTests {
                         + "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 newerDraftId,
                 fixture.singerId(),
-                "Snapshot del DRAFT más reciente",
-                "ALTO",
-                "Posición del DRAFT más reciente",
-                new BigDecimal("70"),
-                new BigDecimal("80"));
+                "Snapshot del DRAFT que no debe elegirse",
+                "BASS",
+                "Posición del DRAFT posterior",
+                new BigDecimal("90"),
+                new BigDecimal("95"));
 
         FormationDuplicationPort.CreatedFormation duplicated = duplicationPort.duplicate(
                         fixture.choirId(),
@@ -647,8 +691,8 @@ class FormationCatalogPersistenceAdapterTests {
                         fixture.repertoireItemId(),
                         fixture.formationId(),
                         null,
-                        "Copia de varios DRAFT " + fixture.suffix(),
-                        "Debe elegir el DRAFT de mayor número")
+                        "Copia de versiones publicadas y borradores " + fixture.suffix(),
+                        "Debe elegir la versión publicada de mayor número")
                 .block(TIMEOUT);
 
         assertThat(duplicated).isNotNull();
@@ -659,10 +703,10 @@ class FormationCatalogPersistenceAdapterTests {
                 duplicated.draftVersion().getId());
 
         assertThat(copiedPosition.get("singer_name_snapshot"))
-                .isEqualTo("Snapshot del DRAFT más reciente");
+                .isEqualTo("Snapshot de la versión publicada más reciente");
         assertThat(copiedPosition.get("voice_part_snapshot")).isEqualTo("ALTO");
         assertThat(copiedPosition.get("position_label"))
-                .isEqualTo("Posición del DRAFT más reciente");
+                .isEqualTo("Posición publicada más reciente");
     }
 
     @Test

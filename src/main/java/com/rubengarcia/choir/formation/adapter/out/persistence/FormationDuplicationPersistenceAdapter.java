@@ -54,7 +54,7 @@ public class FormationDuplicationPersistenceAdapter
                                 .map(FormationPersistenceMapper::toDomain)
                                 .collectList()
                                 .flatMap(versions -> selectSourceVersion(
-                                        versions, sourceVersionId))
+                                        versions, sourceFormationId, sourceVersionId))
                                 .flatMap(sourceVersion ->
                                         copyFormation(
                                                 sourceVersion,
@@ -67,11 +67,14 @@ public class FormationDuplicationPersistenceAdapter
 
     private Mono<FormationVersion> selectSourceVersion(
             List<FormationVersion> versions,
+            long sourceFormationId,
             Long sourceVersionId) {
 
         if (sourceVersionId != null) {
             return versions.stream()
                     .filter(version -> sourceVersionId.equals(version.getId()))
+                    .filter(version -> version.getFormationId() != null
+                            && Long.valueOf(sourceFormationId).equals(version.getFormationId()))
                     .filter(version -> PUBLISHED.equals(version.getStatus()))
                     .findFirst()
                     .map(Mono::just)
@@ -80,16 +83,13 @@ public class FormationDuplicationPersistenceAdapter
         }
 
         return versions.stream()
-                .filter(version -> DRAFT.equals(version.getStatus()))
+                .filter(version -> version.getFormationId() != null
+                        && Long.valueOf(sourceFormationId).equals(version.getFormationId()))
+                .filter(version -> PUBLISHED.equals(version.getStatus()))
                 .max(Comparator.comparingInt(FormationVersion::getVersionNumber))
                 .map(Mono::just)
-                .orElseGet(() -> versions.stream()
-                        .filter(version -> PUBLISHED.equals(version.getStatus()))
-                        .max(Comparator.comparingInt(
-                                FormationVersion::getVersionNumber))
-                        .map(Mono::just)
-                        .orElseGet(() -> Mono.error(new IllegalStateException(
-                                "La formación no tiene una versión duplicable"))));
+                .orElseGet(() -> Mono.error(new IllegalStateException(
+                        "La formación no tiene una versión publicada para duplicar")));
     }
 
     private Mono<FormationDuplicationPort.CreatedFormation> copyFormation(
