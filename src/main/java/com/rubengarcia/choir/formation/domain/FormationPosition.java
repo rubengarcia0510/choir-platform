@@ -3,47 +3,31 @@ package com.rubengarcia.choir.formation.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
 
-@Table("formation_positions")
 public class FormationPosition {
 
-    @Id
     private Long id;
 
-    @Column("formation_version_id")
     private Long formationVersionId;
 
-    @Column("singer_id")
     private Long singerId;
 
-    @Column("singer_name_snapshot")
     private String singerNameSnapshot;
 
-    @Column("voice_part_snapshot")
     private String voicePartSnapshot;
 
-    @Column("voice_section_id_snapshot")
     private Long voiceSectionIdSnapshot;
 
-    @Column("voice_section_name_snapshot")
     private String voiceSectionNameSnapshot;
 
-    @Column("division_number_snapshot")
     private Integer divisionNumberSnapshot;
 
-    @Column("position_label")
     private String positionLabel;
 
-    @Column("x_coordinate")
     private BigDecimal xCoordinate;
 
-    @Column("y_coordinate")
     private BigDecimal yCoordinate;
 
-    @Column("created_at")
     private LocalDateTime createdAt;
 
     public FormationPosition() {

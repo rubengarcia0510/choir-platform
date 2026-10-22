@@ -44,12 +44,14 @@ public class FormationDuplicationPersistenceAdapter
         return formationRepository
                 .findByChoirIdAndConcertIdAndRepertoireItemId(
                         choirId, concertId, repertoireItemId)
+                .map(FormationPersistenceMapper::toDomain)
                 .filter(formation -> formation.getId().equals(sourceFormationId))
                 .next()
                 .switchIfEmpty(Mono.error(new IllegalArgumentException(
                         "La formación de origen no pertenece a esta inclusión de repertorio")))
                 .flatMap(sourceFormation ->
                         versionRepository.findByFormationId(sourceFormationId)
+                                .map(FormationPersistenceMapper::toDomain)
                                 .collectList()
                                 .flatMap(versions -> selectSourceVersion(
                                         versions, sourceVersionId))
@@ -100,6 +102,7 @@ public class FormationDuplicationPersistenceAdapter
 
         return positionRepository
                 .findByFormationVersionId(sourceVersion.getId())
+                .map(FormationPersistenceMapper::toDomain)
                 .collectList()
                 .flatMap(sourcePositions -> {
                     Formation duplicate = new Formation();
@@ -109,7 +112,9 @@ public class FormationDuplicationPersistenceAdapter
                     duplicate.setName(name);
                     duplicate.setDescription(description);
 
-                    return formationRepository.save(duplicate)
+                    return formationRepository.save(
+                                    FormationPersistenceMapper.toEntity(duplicate))
+                            .map(FormationPersistenceMapper::toDomain)
                             .flatMap(savedFormation -> createCopiedDraft(
                                     savedFormation, sourcePositions));
                 });
@@ -124,7 +129,8 @@ public class FormationDuplicationPersistenceAdapter
         draft.setVersionNumber(1);
         draft.setStatus(DRAFT);
 
-        return versionRepository.save(draft)
+        return versionRepository.save(FormationPersistenceMapper.toEntity(draft))
+                .map(FormationPersistenceMapper::toDomain)
                 .flatMap(savedDraft -> {
                     FormationDuplicationPort.CreatedFormation result =
                             new FormationDuplicationPort.CreatedFormation(
@@ -138,7 +144,10 @@ public class FormationDuplicationPersistenceAdapter
                             .map(source -> copyPosition(source, savedDraft.getId()))
                             .toList();
 
-                    return positionRepository.saveAll(copiedPositions)
+                    return positionRepository.saveAll(
+                                    copiedPositions.stream()
+                                            .map(FormationPersistenceMapper::toEntity)
+                                            .toList())
                             .then(Mono.just(result));
                 });
     }

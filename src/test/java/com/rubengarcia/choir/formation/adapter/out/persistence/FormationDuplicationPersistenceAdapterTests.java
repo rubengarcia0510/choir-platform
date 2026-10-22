@@ -6,8 +6,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.rubengarcia.choir.formation.domain.Formation;
-import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -28,10 +26,10 @@ class FormationDuplicationPersistenceAdapterTests {
     private FormationPositionRepository positionRepository;
 
     @Mock
-    private Formation sourceFormation;
+    private FormationEntity sourceFormation;
 
     @Mock
-    private FormationVersion sourceVersion;
+    private FormationVersionEntity sourceVersion;
 
     @InjectMocks
     private FormationDuplicationPersistenceAdapter duplicationAdapter;
@@ -51,7 +49,7 @@ class FormationDuplicationPersistenceAdapterTests {
                         "no pertenece a esta inclusión de repertorio");
 
         verify(versionRepository, never()).findByFormationId(any());
-        verify(formationRepository, never()).save(any(Formation.class));
+        verify(formationRepository, never()).save(any(FormationEntity.class));
     }
 
     @Test
@@ -68,7 +66,7 @@ class FormationDuplicationPersistenceAdapterTests {
                         "no pertenece a esta inclusión de repertorio");
 
         verify(versionRepository, never()).findByFormationId(any());
-        verify(formationRepository, never()).save(any(Formation.class));
+        verify(formationRepository, never()).save(any(FormationEntity.class));
     }
 
     @Test
@@ -89,6 +87,6 @@ class FormationDuplicationPersistenceAdapterTests {
                 .hasMessageContaining(
                         "no existe o no está publicada");
 
-        verify(formationRepository, never()).save(any(Formation.class));
+        verify(formationRepository, never()).save(any(FormationEntity.class));
     }
 }

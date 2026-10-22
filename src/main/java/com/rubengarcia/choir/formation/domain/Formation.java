@@ -1,30 +1,21 @@
 package com.rubengarcia.choir.formation.domain;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.relational.core.mapping.Column;
-import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 
-@Table("formations")
 public class Formation {
 
-    @Id
     private Long id;
 
-    @Column("choir_id")
     private Long choirId;
 
-    @Column("concert_id")
     private Long concertId;
 
-    @Column("repertoire_item_id")
     private Long repertoireItemId;
 
     private String name;
     private String description;
 
-    @Column("created_at")
     private LocalDateTime createdAt;
 
     public Formation() {
@@ -32,6 +23,10 @@ public class Formation {
 
     public Long getId() {
         return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
     }
 
     public Long getChoirId() {
@@ -76,5 +71,9 @@ public class Formation {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 }
