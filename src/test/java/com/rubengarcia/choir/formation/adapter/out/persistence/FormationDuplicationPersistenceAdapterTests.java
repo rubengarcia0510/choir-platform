@@ -55,6 +55,23 @@ class FormationDuplicationPersistenceAdapterTests {
     }
 
     @Test
+    void rejectsMissingSourceFormation() {
+        when(formationRepository.findByChoirIdAndConcertIdAndRepertoireItemId(
+                1L, 2L, 3L))
+                .thenReturn(Flux.empty());
+
+        assertThatThrownBy(() -> duplicationAdapter.duplicate(
+                        1L, 2L, 3L, 10L, null, "Copia", "Prueba")
+                .block())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(
+                        "no pertenece a esta inclusión de repertorio");
+
+        verify(versionRepository, never()).findByFormationId(any());
+        verify(formationRepository, never()).save(any(Formation.class));
+    }
+
+    @Test
     void rejectsExplicitSourceVersionThatIsNotPublished() {
         when(formationRepository.findByChoirIdAndConcertIdAndRepertoireItemId(
                 1L, 2L, 3L))

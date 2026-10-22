@@ -55,7 +55,6 @@ public class FormationDuplicationPersistenceAdapter
                                         versions, sourceVersionId))
                                 .flatMap(sourceVersion ->
                                         copyFormation(
-                                                sourceFormation,
                                                 sourceVersion,
                                                 choirId,
                                                 concertId,
@@ -92,7 +91,6 @@ public class FormationDuplicationPersistenceAdapter
     }
 
     private Mono<FormationDuplicationPort.CreatedFormation> copyFormation(
-            Formation sourceFormation,
             FormationVersion sourceVersion,
             long choirId,
             long concertId,

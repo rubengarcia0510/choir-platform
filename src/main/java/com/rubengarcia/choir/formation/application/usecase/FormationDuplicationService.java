@@ -1,7 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.port.in.FormationDuplicationUseCase;
-import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationOccurrenceAuthorizationPort;
 import org.springframework.stereotype.Service;
