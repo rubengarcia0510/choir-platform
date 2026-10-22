@@ -1,7 +1,7 @@
 package com.rubengarcia.choir.formation.application.port.out;
 
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService.PlanningPosition;
-import com.rubengarcia.choir.formation.application.usecase.FormationPlanningService.VocalAssignment;
+import com.rubengarcia.choir.formation.application.model.PlanningPosition;
+import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
