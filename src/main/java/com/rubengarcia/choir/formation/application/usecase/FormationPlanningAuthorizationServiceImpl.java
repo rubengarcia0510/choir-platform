@@ -2,8 +2,7 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
-
-import com.rubengarcia.choir.service.ResourceAuthorizationService;
+import com.rubengarcia.choir.formation.application.port.out.FormationPlanningResourceAuthorizationPort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import org.springframework.stereotype.Service;
@@ -18,22 +17,21 @@ public class FormationPlanningAuthorizationServiceImpl
 
     private final FormationPlanningService planningService;
     private final TransitionPlanningService transitionPlanningService;
-    private final ResourceAuthorizationService authorizationService;
+    private final FormationPlanningResourceAuthorizationPort authorizationPort;
 
     public FormationPlanningAuthorizationServiceImpl(
             FormationPlanningService planningService,
             TransitionPlanningService transitionPlanningService,
-            ResourceAuthorizationService authorizationService) {
+            FormationPlanningResourceAuthorizationPort authorizationPort) {
         this.planningService = planningService;
         this.transitionPlanningService = transitionPlanningService;
-        this.authorizationService = authorizationService;
+        this.authorizationPort = authorizationPort;
     }
 
     @Override
-    public Flux<PlanningPosition>
-            positionsForFormationVersion(
-                    String email, long choirId, long formationVersionId) {
-        return authorizationService
+    public Flux<PlanningPosition> positionsForFormationVersion(
+            String email, long choirId, long formationVersionId) {
+        return authorizationPort
                 .requireOwnedFormationVersion(email, choirId, formationVersionId)
                 .thenMany(Flux.defer(() ->
                         planningService.positionsForFormationVersion(
@@ -41,13 +39,12 @@ public class FormationPlanningAuthorizationServiceImpl
     }
 
     @Override
-    public Flux<VocalAssignment>
-            vocalAssignmentsForPlanning(
-                    String email,
-                    long choirId,
-                    long concertId,
-                    long repertoireItemId) {
-        return authorizationService
+    public Flux<VocalAssignment> vocalAssignmentsForPlanning(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId) {
+        return authorizationPort
                 .requireOwnedConcertWork(
                         email, choirId, concertId, repertoireItemId)
                 .thenMany(Flux.defer(() ->
@@ -58,9 +55,8 @@ public class FormationPlanningAuthorizationServiceImpl
     @Override
     public Flux<TransitionPlanningPosition> positionsForTransitionVersion(
             String email, long choirId, long transitionVersionId) {
-        return authorizationService
-                .requireOwnedTransitionVersion(
-                        email, choirId, transitionVersionId)
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
                 .thenMany(Flux.defer(() ->
                         transitionPlanningService.positionsForTransitionVersion(
                                 transitionVersionId)));
@@ -74,7 +70,7 @@ public class FormationPlanningAuthorizationServiceImpl
             String positionLabel,
             BigDecimal xCoordinate,
             BigDecimal yCoordinate) {
-        return authorizationService
+        return authorizationPort
                 .requireOwnedPosition(email, choirId, positionId)
                 .then(Mono.defer(() -> planningService.updateDraftPosition(
                         positionId, positionLabel, xCoordinate, yCoordinate)));
