@@ -611,6 +611,152 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat(copiedPosition.get("position_label")).isEqualTo("Posición anterior");
     }
 
+
+    @Test
+    void duplicationSelectsHighestNumberedDraftVersion() {
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions (formation_id, version_number, status) "
+                        + "VALUES (?, ?, ?)",
+                fixture.formationId(),
+                2,
+                "DRAFT");
+
+        Long newerDraftId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_versions "
+                        + "WHERE formation_id = ? AND version_number = ?",
+                Long.class,
+                fixture.formationId(),
+                2);
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_positions "
+                        + "(formation_version_id, singer_id, singer_name_snapshot, "
+                        + "voice_part_snapshot, position_label, x_coordinate, y_coordinate) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                newerDraftId,
+                fixture.singerId(),
+                "Snapshot del DRAFT más reciente",
+                "ALTO",
+                "Posición del DRAFT más reciente",
+                new BigDecimal("70"),
+                new BigDecimal("80"));
+
+        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        null,
+                        "Copia de varios DRAFT " + fixture.suffix(),
+                        "Debe elegir el DRAFT de mayor número")
+                .block(TIMEOUT);
+
+        assertThat(duplicated).isNotNull();
+
+        Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
+                "SELECT singer_name_snapshot, voice_part_snapshot, position_label "
+                        + "FROM formation_positions WHERE formation_version_id = ?",
+                duplicated.draftVersion().getId());
+
+        assertThat(copiedPosition.get("singer_name_snapshot"))
+                .isEqualTo("Snapshot del DRAFT más reciente");
+        assertThat(copiedPosition.get("voice_part_snapshot")).isEqualTo("ALTO");
+        assertThat(copiedPosition.get("position_label"))
+                .isEqualTo("Posición del DRAFT más reciente");
+    }
+
+    @Test
+    void duplicationFallsBackToLatestPublishedAndIgnoresArchivedVersions() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET status = 'ARCHIVED' WHERE id = ?",
+                fixture.versionId());
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions "
+                        + "(formation_id, version_number, status) VALUES (?, ?, ?)",
+                fixture.formationId(),
+                2,
+                "PUBLISHED");
+
+        Long olderPublishedId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_versions "
+                        + "WHERE formation_id = ? AND version_number = ?",
+                Long.class,
+                fixture.formationId(),
+                2);
+
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET published_at = CURRENT_TIMESTAMP WHERE id = ?",
+                olderPublishedId);
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_positions "
+                        + "(formation_version_id, singer_id, singer_name_snapshot, "
+                        + "voice_part_snapshot, position_label, x_coordinate, y_coordinate) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                olderPublishedId,
+                fixture.singerId(),
+                "Snapshot publicado anterior",
+                "TENOR",
+                "Posición publicada anterior",
+                new BigDecimal("20"),
+                new BigDecimal("30"));
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_versions "
+                        + "(formation_id, version_number, status) VALUES (?, ?, ?)",
+                fixture.formationId(),
+                3,
+                "PUBLISHED");
+
+        Long latestPublishedId = jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_versions "
+                        + "WHERE formation_id = ? AND version_number = ?",
+                Long.class,
+                fixture.formationId(),
+                3);
+
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET published_at = CURRENT_TIMESTAMP WHERE id = ?",
+                latestPublishedId);
+
+        jdbcTemplate.update(
+                "INSERT INTO formation_positions "
+                        + "(formation_version_id, singer_id, singer_name_snapshot, "
+                        + "voice_part_snapshot, position_label, x_coordinate, y_coordinate) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                latestPublishedId,
+                fixture.singerId(),
+                "Snapshot publicado más reciente",
+                "BASS",
+                "Posición publicada más reciente",
+                new BigDecimal("60"),
+                new BigDecimal("70"));
+
+        FormationCatalogPort.CreatedFormation duplicated = duplicationPort.duplicate(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        null,
+                        "Copia sin DRAFT " + fixture.suffix(),
+                        "Debe elegir la versión publicada más reciente")
+                .block(TIMEOUT);
+
+        assertThat(duplicated).isNotNull();
+
+        Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
+                "SELECT singer_name_snapshot, voice_part_snapshot, position_label "
+                        + "FROM formation_positions WHERE formation_version_id = ?",
+                duplicated.draftVersion().getId());
+
+        assertThat(copiedPosition.get("singer_name_snapshot"))
+                .isEqualTo("Snapshot publicado más reciente");
+        assertThat(copiedPosition.get("voice_part_snapshot")).isEqualTo("BASS");
+        assertThat(copiedPosition.get("position_label"))
+                .isEqualTo("Posición publicada más reciente");
+    }
+
     private Fixture createFixture() {
         String suffix = UUID.randomUUID().toString();
 
