@@ -147,3 +147,59 @@ Seguridad
 No se deben incluir credenciales, cookies de sesión ni tokens CSRF en
 ejemplos compartidos o documentación versionada. Las solicitudes autenticadas
 de modificación deben cumplir la protección CSRF configurada por la aplicación.
+
+### Duplicar una formación
+
+`POST {base}/formations/{formationId}/duplicate`
+
+Crea una formación nueva a partir de una formación existente y copia las
+posiciones de una de sus versiones publicadas. La formación nueva recibe
+una versión inicial en estado `DRAFT`, con número de versión `1`.
+La formación original no se modifica.
+
+Content-Type: `application/json`
+
+Ejemplo de solicitud:
+
+```json
+{
+  "name": "Formación alternativa",
+  "description": "Distribución alternativa para el concierto",
+  "sourceVersionId": 123
+}
+```
+
+Campos del cuerpo:
+
+- "name" es obligatorio, no puede estar en blanco y admite hasta 160
+  caracteres. Se eliminan los espacios al principio y al final.
+- "description" es opcional y admite hasta 1000 caracteres.
+- "sourceVersionId" es opcional y, si se informa, debe ser un identificador
+  positivo de una versión publicada perteneciente a la formación de origen.
+
+Selección de la versión de origen:
+
+- Si se informa "sourceVersionId", se utiliza esa versión publicada.
+- Si se omite, se selecciona la versión publicada con el mayor número
+  de versión de la formación de origen.
+- Si no existe una versión publicada elegible, la duplicación se rechaza.
+- Las posiciones copiadas conservan sus datos y snapshots, incluidos los
+  datos de identidad vocal, etiquetas y coordenadas.
+
+Respuestas:
+
+- "201 Created": formación duplicada y borrador inicial creados. La respuesta
+  incluye "id", "name", "description", "draftVersionId", "versionNumber"
+  y "status".
+- "400 Bad Request": cuerpo inválido, identificadores no positivos o
+  formación/versión de origen no válida para la duplicación.
+- "401 Unauthorized": falta autenticación válida.
+- "404 Not Found": la inclusión del repertorio no está disponible para
+  el director.
+- "409 Conflict": la formación de origen no tiene una versión publicada
+  elegible cuando no se proporciona "sourceVersionId".
+
+La operación requiere autenticación y protección CSRF para la solicitud
+de modificación, conforme a la configuración de seguridad de la aplicación.
+La autorización de la inclusión del repertorio se verifica antes de ejecutar
+la duplicación.
