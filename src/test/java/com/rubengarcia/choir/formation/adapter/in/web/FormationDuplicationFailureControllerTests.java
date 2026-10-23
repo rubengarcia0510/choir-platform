@@ -1,8 +1,14 @@
 package com.rubengarcia.choir.formation.adapter.in.web;
 
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationPositionEntity;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationPositionRepository;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationVersionEntity;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationVersionRepository;
+import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,11 +19,18 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestConstructor;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 
 @SpringBootTest
 @AutoConfigureWebTestClient
@@ -29,6 +42,13 @@ class FormationDuplicationFailureControllerTests {
     private final WebTestClient webTestClient;
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final FormationDuplicationPort duplicationPort;
+
+    @MockitoSpyBean
+    private FormationVersionRepository versionRepository;
+
+    @MockitoSpyBean
+    private FormationPositionRepository positionRepository;
 
     private Long directorId;
     private Long choirId;
@@ -36,10 +56,12 @@ class FormationDuplicationFailureControllerTests {
     FormationDuplicationFailureControllerTests(
             WebTestClient webTestClient,
             JdbcTemplate jdbcTemplate,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            FormationDuplicationPort duplicationPort) {
         this.webTestClient = webTestClient;
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.duplicationPort = duplicationPort;
     }
 
     @AfterEach
@@ -78,7 +100,13 @@ class FormationDuplicationFailureControllerTests {
             jdbcTemplate.update(
                     "DELETE FROM repertoire_items WHERE choir_id = ?", choirId);
 
-            jdbcTemplate.update("DELETE FROM choirs WHERE id = ?", choirId);
+            // Las posiciones ya se eliminaron; ahora se pueden borrar
+            // los cantantes referenciados por el coro.
+            jdbcTemplate.update(
+                    "DELETE FROM singers WHERE choir_id = ?", choirId);
+
+            jdbcTemplate.update(
+                    "DELETE FROM choirs WHERE id = ?", choirId);
             choirId = null;
         }
 
@@ -121,11 +149,154 @@ class FormationDuplicationFailureControllerTests {
         assertThat(countFormations()).isEqualTo(formationsBefore);
     }
 
+    @Test
+    void rollsBackFormationWhenInitialVersionPersistenceFails() {
+        Fixture fixture = createFixture();
+        preparePublishedSourceWithPositions(fixture);
+
+        int formationsBefore = countFormations();
+        int versionsBefore = countVersions();
+        int positionsBefore = countPositions();
+
+        doReturn(Mono.error(
+                new IllegalStateException("forced version persistence failure")))
+                .when(versionRepository)
+                .save(any(FormationVersionEntity.class));
+
+        assertThatThrownBy(() -> duplicate(fixture).block(Duration.ofSeconds(10)))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(countFormations()).isEqualTo(formationsBefore);
+        assertThat(countVersions()).isEqualTo(versionsBefore);
+        assertThat(countPositions()).isEqualTo(positionsBefore);
+    }
+
+    @Test
+    void rollsBackFormationVersionAndFirstPositionWhenNextPositionFails() {
+        Fixture fixture = createFixture();
+        preparePublishedSourceWithPositions(fixture);
+
+        int formationsBefore = countFormations();
+        int versionsBefore = countVersions();
+        int positionsBefore = countPositions();
+
+        doAnswer(invocation -> {
+            Iterable<FormationPositionEntity> positions =
+                    invocation.getArgument(0);
+
+            return Flux.fromIterable(positions)
+                    .take(1)
+                    .concatMap(positionRepository::save)
+                    .concatWith(Flux.error(
+                            new IllegalStateException(
+                                    "forced position persistence failure")));
+        }).when(positionRepository).saveAll(any(Iterable.class));
+
+        assertThatThrownBy(() -> duplicate(fixture).block(Duration.ofSeconds(10)))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(countFormations()).isEqualTo(formationsBefore);
+        assertThat(countVersions()).isEqualTo(versionsBefore);
+        assertThat(countPositions()).isEqualTo(positionsBefore);
+    }
+
+    private Mono<FormationDuplicationPort.CreatedFormation> duplicate(
+            Fixture fixture) {
+        return duplicationPort.duplicate(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                null,
+                "Rollback test copy " + UUID.randomUUID(),
+                "Integration test");
+    }
+
+    private void preparePublishedSourceWithPositions(Fixture fixture) {
+        jdbcTemplate.update("""
+                UPDATE formation_versions
+                SET status = 'PUBLISHED'
+                WHERE formation_id = ? AND version_number = 1
+                """, fixture.formationId());
+
+        Long versionId = jdbcTemplate.queryForObject("""
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, fixture.formationId());
+        assertNotNull(versionId);
+
+        Long firstSingerId = insertSinger("Rollback Singer One");
+        Long secondSingerId = insertSinger("Rollback Singer Two");
+
+        insertPosition(versionId, firstSingerId, "Singer One", "Soprano", "Left", 0.2, 0.3);
+        insertPosition(versionId, secondSingerId, "Singer Two", "Alto", "Right", 0.7, 0.6);
+    }
+
+    private Long insertSinger(String name) {
+        jdbcTemplate.update("""
+                INSERT INTO singers (choir_id, display_name, voice_part, active)
+                VALUES (?, ?, ?, TRUE)
+                """, choirId, name, "Soprano");
+
+        return jdbcTemplate.queryForObject("""
+                SELECT id FROM singers
+                WHERE choir_id = ? AND display_name = ?
+                """, Long.class, choirId, name);
+    }
+
+    private void insertPosition(
+            Long versionId,
+            Long singerId,
+            String singerName,
+            String voicePart,
+            String label,
+            double x,
+            double y) {
+        jdbcTemplate.update("""
+                INSERT INTO formation_positions (
+                    formation_version_id,
+                    singer_id,
+                    singer_name_snapshot,
+                    voice_part_snapshot,
+                    position_label,
+                    x_coordinate,
+                    y_coordinate
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                versionId,
+                singerId,
+                singerName,
+                voicePart,
+                label,
+                BigDecimal.valueOf(x),
+                BigDecimal.valueOf(y));
+    }
+
     private int countFormations() {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM formations WHERE choir_id = ?",
                 Integer.class,
                 choirId);
+    }
+
+    private int countVersions() {
+        return jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM formation_versions fv
+                JOIN formations f ON f.id = fv.formation_id
+                WHERE f.choir_id = ?
+                """, Integer.class, choirId);
+    }
+
+    private int countPositions() {
+        return jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM formation_positions fp
+                JOIN formation_versions fv ON fv.id = fp.formation_version_id
+                JOIN formations f ON f.id = fv.formation_id
+                WHERE f.choir_id = ?
+                """, Integer.class, choirId);
     }
 
     private Fixture createFixture() {
@@ -204,7 +375,7 @@ class FormationDuplicationFailureControllerTests {
                 concertId,
                 repertoireItemId,
                 formationName,
-                "Source for archived-only duplication test");
+                "Source for duplication failure test");
 
         Long formationId = jdbcTemplate.queryForObject("""
                 SELECT id FROM formations

@@ -55,6 +55,9 @@ jobs:
       R2DBC_URL: r2dbc:postgresql://localhost:5432/choir
       DATABASE_USERNAME: choir
       DATABASE_PASSWORD: choir
+      SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE: 2
+      SPRING_R2DBC_POOL_MAXSIZE: 2
+      SPRING_R2DBC_POOL_INITIALSIZE: 2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
