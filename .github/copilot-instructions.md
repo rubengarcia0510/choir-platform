@@ -10,6 +10,12 @@ Usá SOLID como guía para tomar decisiones y revisar cambios, no como requisito
 - **Segregación de interfaces (ISP):** definí contratos pequeños y cohesivos, relacionados con una capacidad concreta. Evitá interfaces generales que obliguen a sus implementaciones a depender de operaciones que no utilizan.
 - **Inversión de dependencias (DIP):** los servicios coordinan casos de uso y dependen de contratos adecuados en los límites del dominio. Seguí la inyección de dependencias de Spring y los patrones existentes; no agregues interfaces para clases que no necesitan implementaciones alternativas ni abstraigas detalles sin una frontera útil.
 
+## Respetar la arquitectura hexagonal
+
+El proyecto debe mantener una separación hexagonal entre el núcleo de la aplicación y sus adaptadores. Tratá los controladores HTTP como adaptadores de entrada, los servicios como coordinación de casos de uso y los repositorios como adaptadores de salida. Mantené las reglas del dominio fuera de los detalles de transporte y persistencia, y evitá que el núcleo dependa de frameworks o de tecnologías de infraestructura cuando los límites existentes lo permitan. En particular, las consultas R2DBC y los límites transaccionales que coordinan varias escrituras persistentes pertenecen a los adaptadores de salida/persistencia, no a los servicios de aplicación.
+
+Usá puertos o interfaces en los límites cuando aporten desacoplamiento útil y seguí los contratos que el proyecto ya tenga. No agregues capas, puertos ni interfaces ceremoniales, ni hagas una refactorización arquitectónica amplia como parte de un cambio funcional acotado. Antes de editar, inspeccioná la estructura existente y resolvé cada cambio dentro de sus límites sin romper los patrones actuales.
+
 ## Proceso para cada cambio
 
 1. Trazá el caso de uso y las reglas existentes antes de editar. Revisá controladores, servicios, repositorios, migraciones y pruebas relacionadas para no duplicar lógica ni saltarte autorización.
