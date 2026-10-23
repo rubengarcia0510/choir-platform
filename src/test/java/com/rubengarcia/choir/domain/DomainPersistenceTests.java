@@ -1,5 +1,9 @@
 package com.rubengarcia.choir.domain;
 
+import com.rubengarcia.choir.formation.domain.Formation;
+import com.rubengarcia.choir.formation.domain.FormationPosition;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
+
 import com.rubengarcia.choir.repository.SingerRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
