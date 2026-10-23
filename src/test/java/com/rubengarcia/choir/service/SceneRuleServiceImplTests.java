@@ -2,18 +2,23 @@ package com.rubengarcia.choir.service;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.server.ResponseStatusException;
-
+import com.rubengarcia.choir.domain.SceneRuleRevision;
+import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 
 @SpringBootTest
 class SceneRuleServiceImplTests {
@@ -23,6 +28,9 @@ class SceneRuleServiceImplTests {
 
     @Autowired
     private SceneRuleService sceneRuleService;
+
+    @MockitoSpyBean
+    private SceneRuleRevisionRepository revisionRepository;
 
     private final List<Long> createdDirectorIds = new ArrayList<>();
 
@@ -183,6 +191,47 @@ class SceneRuleServiceImplTests {
                 .isFalse();
 
         assertThat(jdbc.queryForObject("""
+                SELECT rule_type FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 1
+                """, String.class, first.id()))
+                .isEqualTo("MOVEMENT");
+        assertThat(jdbc.queryForObject("""
+                SELECT description FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 1
+                """, String.class, first.id()))
+                .isEqualTo("Desplazamiento inicial");
+        assertThat(jdbc.queryForObject("""
+                SELECT rule_type FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 2
+                """, String.class, first.id()))
+                .isEqualTo("CAST_DIVISION");
+        assertThat(jdbc.queryForObject("""
+                SELECT rule_order FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 3
+                """, Integer.class, first.id()))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForList("""
+                SELECT revision_group.group_label
+                FROM scene_rule_revision_groups revision_group
+                JOIN scene_rule_revisions revision
+                    ON revision.id = revision_group.revision_id
+                WHERE revision.scene_rule_id = ?
+                  AND revision.revision_number = 1
+                ORDER BY revision_group.group_order
+                """, String.class, first.id()))
+                .containsExactly("Entrada");
+        assertThat(jdbc.queryForList("""
+                SELECT revision_group.group_label
+                FROM scene_rule_revision_groups revision_group
+                JOIN scene_rule_revisions revision
+                    ON revision.id = revision_group.revision_id
+                WHERE revision.scene_rule_id = ?
+                  AND revision.revision_number = 2
+                ORDER BY revision_group.group_order
+                """, String.class, first.id()))
+                .containsExactly("Grupo A", "Grupo B");
+
+        assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM scene_rule_revision_groups
                 WHERE revision_id IN (
                     SELECT id FROM scene_rule_revisions
@@ -308,6 +357,88 @@ class SceneRuleServiceImplTests {
                 Integer.class,
                 fixture.repertoireItemId()))
                 .isZero();
+    }
+
+    @Test
+    void rollsBackRuleAndGroupsWhenCreateRevisionFails() {
+        Fixture fixture = createFixture("create-revision-failure");
+        doReturn(Mono.error(new IllegalStateException("forced revision failure")))
+                .when(revisionRepository)
+                .save(any(SceneRuleRevision.class));
+
+        assertThatThrownBy(() -> createRule(fixture, "No debe persistirse"))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scene_rules WHERE repertoire_item_id = ?",
+                Integer.class,
+                fixture.repertoireItemId()))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM scene_rule_groups groups
+                JOIN scene_rules rules ON rules.id = groups.scene_rule_id
+                WHERE rules.repertoire_item_id = ?
+                """,
+                Integer.class,
+                fixture.repertoireItemId()))
+                .isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM scene_rule_revisions revisions
+                JOIN scene_rules rules ON rules.id = revisions.scene_rule_id
+                WHERE rules.repertoire_item_id = ?
+                """, Integer.class, fixture.repertoireItemId()))
+                .isZero();
+    }
+
+    @Test
+    void rollsBackRuleAndGroupsWhenUpdateRevisionFails() {
+        Fixture fixture = createFixture("update-revision-failure");
+        SceneRuleService.RuleView rule = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Descripción original",
+                        List.of(new SceneRuleService.GroupData("Original", 3))))
+                .block(Duration.ofSeconds(10));
+        doReturn(Mono.error(new IllegalStateException("forced revision failure")))
+                .when(revisionRepository)
+                .save(any(SceneRuleRevision.class));
+
+        assertThatThrownBy(() -> sceneRuleService.update(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                rule.id(),
+                new SceneRuleService.RuleData(
+                        "EXIT",
+                        "Descripción editada",
+                        List.of(new SceneRuleService.GroupData("Nueva", 5))))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT description FROM scene_rules WHERE id = ?",
+                String.class,
+                rule.id()))
+                .isEqualTo("Descripción original");
+        assertThat(jdbc.queryForList("""
+                SELECT group_label FROM scene_rule_groups
+                WHERE scene_rule_id = ?
+                ORDER BY group_order
+                """, String.class, rule.id()))
+                .containsExactly("Original");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM scene_rule_revisions
+                WHERE scene_rule_id = ?
+                """, Integer.class, rule.id()))
+                .isEqualTo(1);
     }
 
     private SceneRuleService.RuleView createRule(Fixture fixture, String description) {
