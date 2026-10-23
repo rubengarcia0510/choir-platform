@@ -55,10 +55,22 @@ public interface SceneRuleService {
             List<GroupData> groups) {
     }
 
-    record GroupData(String label, int memberCount) {
+    record GroupData(
+            String label,
+            String compositionMode,
+            Integer memberCount,
+            List<Long> singerIds) {
+        public GroupData(String label, int memberCount) {
+            this(label, "COUNT", memberCount, List.of());
+        }
     }
 
-    record GroupView(int order, String label, int memberCount) {
+    record GroupView(
+            int order,
+            String label,
+            String compositionMode,
+            int memberCount,
+            List<Long> singerIds) {
     }
 
     record RuleView(

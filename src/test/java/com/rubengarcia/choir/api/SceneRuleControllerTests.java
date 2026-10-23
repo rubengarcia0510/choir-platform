@@ -59,6 +59,7 @@ class SceneRuleControllerTests {
                         """, choirId);
                 jdbc.update("DELETE FROM concerts WHERE choir_id = ?", choirId);
                 jdbc.update("DELETE FROM repertoire_items WHERE choir_id = ?", choirId);
+                jdbc.update("DELETE FROM singers WHERE choir_id = ?", choirId);
                 jdbc.update("DELETE FROM choirs WHERE id = ?", choirId);
             }
             jdbc.update("DELETE FROM directors WHERE id = ?", directorId);
@@ -78,6 +79,14 @@ class SceneRuleControllerTests {
     void directorCanManageRulesThroughHttp() throws Exception {
         Fixture fixture = fixture("crud");
         Session session = login(fixture.email());
+        jdbc.update("""
+                INSERT INTO singers (choir_id, display_name, voice_part, active)
+                VALUES (?, 'Coreuta identificada', 'SOPRANO', TRUE)
+                """, fixture.choirId());
+        Long singerId = jdbc.queryForObject("""
+                SELECT id FROM singers
+                WHERE choir_id = ? AND display_name = 'Coreuta identificada'
+                """, Long.class, fixture.choirId());
 
         String base = path(
                 fixture.choirId(), fixture.concertId(), fixture.songId());
@@ -92,14 +101,18 @@ class SceneRuleControllerTests {
                         "description", "Entrada ordenada",
                         "groups", List.of(Map.of(
                                 "label", "Grupo A",
-                                "memberCount", 4)))))
+                                "compositionMode", "IDENTIFIED",
+                                "singerIds", List.of(singerId))))))
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
                 .jsonPath("$.id").isNumber()
                 .jsonPath("$.order").isEqualTo(0)
                 .jsonPath("$.active").isEqualTo(true)
-                .jsonPath("$.groups[0].label").isEqualTo("Grupo A");
+                .jsonPath("$.groups[0].label").isEqualTo("Grupo A")
+                .jsonPath("$.groups[0].compositionMode").isEqualTo("IDENTIFIED")
+                .jsonPath("$.groups[0].memberCount").isEqualTo(1)
+                .jsonPath("$.groups[0].singerIds[0]").isEqualTo(singerId);
 
         String secondBody = objectMapper.writeValueAsString(Map.of(
                 "ruleType", "EXIT",

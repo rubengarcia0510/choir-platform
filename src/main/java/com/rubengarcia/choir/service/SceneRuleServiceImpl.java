@@ -3,7 +3,6 @@ package com.rubengarcia.choir.service;
 import com.rubengarcia.choir.domain.SceneRule;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.Failure;
-import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.FailureType;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.GroupDefinition;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.RuleDefinition;
 import org.springframework.http.HttpStatus;
@@ -20,6 +19,8 @@ import java.util.Set;
 @Service
 public class SceneRuleServiceImpl implements SceneRuleService {
 
+    private static final String COUNT = "COUNT";
+    private static final String IDENTIFIED = "IDENTIFIED";
     private static final Set<String> RULE_TYPES =
             Set.of("MOVEMENT", "EXIT", "CAST_DIVISION");
 
@@ -64,7 +65,8 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                 .then(authorizeOccurrence(
                         email, choirId, concertId, repertoireItemId))
                 .then(Mono.defer(() ->
-                        persistencePort.create(repertoireItemId, toDefinition(data))))
+                        persistencePort.create(
+                                choirId, repertoireItemId, toDefinition(data))))
                 .onErrorMap(Failure.class, this::mapPersistenceFailure)
                 .flatMap(this::toView);
     }
@@ -81,7 +83,7 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                 .then(authorizeOccurrence(
                         email, choirId, concertId, repertoireItemId))
                 .then(Mono.defer(() -> persistencePort.update(
-                        repertoireItemId, ruleId, toDefinition(data))))
+                        choirId, repertoireItemId, ruleId, toDefinition(data))))
                 .onErrorMap(Failure.class, this::mapPersistenceFailure)
                 .flatMap(this::toView);
     }
@@ -132,10 +134,15 @@ public class SceneRuleServiceImpl implements SceneRuleService {
 
     private Mono<RuleView> toView(SceneRule rule) {
         return persistencePort.findGroupsBySceneRuleId(rule.getId())
-                .map(group -> new GroupView(
-                        group.getGroupOrder(),
-                        group.getGroupLabel(),
-                        group.getMemberCount()))
+                .concatMap(group -> persistencePort
+                        .findSingerIdsByGroupId(group.getId())
+                        .collectList()
+                        .map(singerIds -> new GroupView(
+                                group.getGroupOrder(),
+                                group.getGroupLabel(),
+                                group.getCompositionMode(),
+                                group.getMemberCount(),
+                                singerIds)))
                 .collectList()
                 .map(groups -> new RuleView(
                         rule.getId(),
@@ -161,9 +168,9 @@ public class SceneRuleServiceImpl implements SceneRuleService {
         }
         if (data.groups().stream().anyMatch(group -> group == null
                 || group.label() == null || group.label().isBlank()
-                || group.label().length() > 100 || group.memberCount() <= 0)) {
+                || group.label().length() > 100 || !validGroup(group))) {
             return Mono.error(badRequest(
-                    "Cada grupo requiere una etiqueta y una cantidad positiva de integrantes"));
+                    "Cada grupo debe definir una composición válida de coreutas"));
         }
         if ("CAST_DIVISION".equals(normalizeType(data.ruleType()))
                 && data.groups().size() < 2) {
@@ -182,9 +189,48 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                 normalizeType(data.ruleType()),
                 data.description().trim(),
                 data.groups().stream()
-                        .map(group -> new GroupDefinition(
-                                group.label().trim(), group.memberCount()))
+                        .map(group -> {
+                            String compositionMode =
+                                    normalizeCompositionMode(group.compositionMode());
+                            List<Long> singerIds = group.singerIds() == null
+                                    ? List.of()
+                                    : List.copyOf(group.singerIds());
+                            int memberCount = IDENTIFIED.equals(compositionMode)
+                                    ? singerIds.size()
+                                    : group.memberCount();
+                            return new GroupDefinition(
+                                    group.label().trim(),
+                                    compositionMode,
+                                    memberCount,
+                                    singerIds);
+                        })
                         .toList());
+    }
+
+    private boolean validGroup(GroupData group) {
+        if (group.compositionMode() == null) {
+            return false;
+        }
+        String compositionMode = normalizeCompositionMode(group.compositionMode());
+        List<Long> singerIds = group.singerIds();
+        if (COUNT.equals(compositionMode)) {
+            return group.memberCount() != null
+                    && group.memberCount() > 0
+                    && (singerIds == null || singerIds.isEmpty());
+        }
+        if (IDENTIFIED.equals(compositionMode)) {
+            return singerIds != null
+                    && !singerIds.isEmpty()
+                    && singerIds.stream().allMatch(id -> id != null && id > 0)
+                    && new HashSet<>(singerIds).size() == singerIds.size()
+                    && (group.memberCount() == null
+                            || group.memberCount() == singerIds.size());
+        }
+        return false;
+    }
+
+    private String normalizeCompositionMode(String compositionMode) {
+        return compositionMode.trim().toUpperCase(Locale.ROOT);
     }
 
     private ResponseStatusException mapPersistenceFailure(Failure failure) {
@@ -195,6 +241,8 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                     HttpStatus.BAD_REQUEST, failure.getMessage(), failure);
             case ORDER_LIMIT -> new ResponseStatusException(
                     HttpStatus.CONFLICT, failure.getMessage(), failure);
+            case INVALID_GROUP_MEMBERS -> new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, failure.getMessage(), failure);
         };
     }
 
@@ -202,7 +250,4 @@ public class SceneRuleServiceImpl implements SceneRuleService {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
-    private ResponseStatusException conflict(String message) {
-        return new ResponseStatusException(HttpStatus.CONFLICT, message);
-    }
 }

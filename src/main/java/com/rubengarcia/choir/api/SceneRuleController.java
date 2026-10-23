@@ -137,14 +137,23 @@ public class SceneRuleController {
                     description,
                     groups.stream()
                             .map(group -> new GroupData(
-                                    group.label(), group.memberCount()))
+                                    group.label(),
+                                    group.compositionMode() == null
+                                            ? "COUNT"
+                                            : group.compositionMode(),
+                                    group.memberCount(),
+                                    group.singerIds() == null
+                                            ? List.of()
+                                            : group.singerIds()))
                             .toList());
         }
     }
 
     public record GroupRequest(
             @NotBlank @Size(max = 100) String label,
-            @Positive int memberCount) {
+            String compositionMode,
+            @Positive Integer memberCount,
+            List<@NotNull @Positive Long> singerIds) {
     }
 
     public record RuleOrderRequest(

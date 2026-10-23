@@ -14,10 +14,16 @@ public interface SceneRulePersistencePort {
 
     Flux<SceneRuleGroup> findGroupsBySceneRuleId(long ruleId);
 
-    Mono<SceneRule> create(long repertoireItemId, RuleDefinition definition);
+    Flux<Long> findSingerIdsByGroupId(long groupId);
+
+    Mono<SceneRule> create(
+            long choirId, long repertoireItemId, RuleDefinition definition);
 
     Mono<SceneRule> update(
-            long repertoireItemId, long ruleId, RuleDefinition definition);
+            long choirId,
+            long repertoireItemId,
+            long ruleId,
+            RuleDefinition definition);
 
     Mono<Void> reorder(long repertoireItemId, List<Long> ruleIds);
 
@@ -29,13 +35,18 @@ public interface SceneRulePersistencePort {
             List<GroupDefinition> groups) {
     }
 
-    record GroupDefinition(String label, int memberCount) {
+    record GroupDefinition(
+            String label,
+            String compositionMode,
+            int memberCount,
+            List<Long> singerIds) {
     }
 
     enum FailureType {
         NOT_FOUND,
         INVALID_ORDER,
-        ORDER_LIMIT
+        ORDER_LIMIT,
+        INVALID_GROUP_MEMBERS
     }
 
     final class Failure extends RuntimeException {

@@ -22,6 +22,9 @@ public class SceneRuleGroup {
     @Column("member_count")
     private int memberCount;
 
+    @Column("composition_mode")
+    private String compositionMode = "COUNT";
+
     public SceneRuleGroup() {
     }
 
@@ -59,5 +62,13 @@ public class SceneRuleGroup {
 
     public void setMemberCount(int memberCount) {
         this.memberCount = memberCount;
+    }
+
+    public String getCompositionMode() {
+        return compositionMode;
+    }
+
+    public void setCompositionMode(String compositionMode) {
+        this.compositionMode = compositionMode;
     }
 }

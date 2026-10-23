@@ -7,6 +7,7 @@ import com.rubengarcia.choir.repository.SceneRuleGroupRepository;
 import com.rubengarcia.choir.repository.SceneRuleMutationRepository;
 import com.rubengarcia.choir.repository.SceneRuleRepository;
 import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
+import com.rubengarcia.choir.repository.SingerRepository;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort;
 import java.util.HashSet;
 import java.util.List;
@@ -31,6 +32,7 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
     private final SceneRuleRepository ruleRepository;
     private final SceneRuleGroupRepository groupRepository;
     private final SceneRuleRevisionRepository revisionRepository;
+    private final SingerRepository singerRepository;
     private final DatabaseClient databaseClient;
 
     public SceneRulePersistenceAdapter(
@@ -38,11 +40,13 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
             SceneRuleRepository ruleRepository,
             SceneRuleGroupRepository groupRepository,
             SceneRuleRevisionRepository revisionRepository,
+            SingerRepository singerRepository,
             DatabaseClient databaseClient) {
         this.mutationRepository = mutationRepository;
         this.ruleRepository = ruleRepository;
         this.groupRepository = groupRepository;
         this.revisionRepository = revisionRepository;
+        this.singerRepository = singerRepository;
         this.databaseClient = databaseClient;
     }
 
@@ -64,10 +68,24 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
     }
 
     @Override
+    public Flux<Long> findSingerIdsByGroupId(long groupId) {
+        return databaseClient.sql("""
+                SELECT singer_id
+                FROM scene_rule_group_members
+                WHERE scene_rule_group_id = :groupId
+                ORDER BY member_order
+                """)
+                .bind("groupId", groupId)
+                .map((row, metadata) -> row.get("singer_id", Long.class))
+                .all();
+    }
+
+    @Override
     @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<SceneRule> create(
-            long repertoireItemId, RuleDefinition definition) {
-        return lockRepertoireItem(repertoireItemId)
+            long choirId, long repertoireItemId, RuleDefinition definition) {
+        return validateGroupMembers(choirId, definition.groups())
+                .then(lockRepertoireItem(repertoireItemId))
                 .then(ruleRepository
                         .findByRepertoireItemIdOrderByRuleOrderDesc(repertoireItemId)
                         .next()
@@ -84,7 +102,8 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
                     rule.setDescription(definition.description());
                     rule.setActive(true);
                     return ruleRepository.save(rule)
-                            .flatMap(saved -> replaceGroups(saved.getId(), definition.groups())
+                            .flatMap(saved -> replaceGroups(
+                                            saved.getId(), definition.groups())
                                     .then(createRevision(saved, CREATE))
                                     .thenReturn(saved));
                 });
@@ -93,16 +112,19 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
     @Override
     @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<SceneRule> update(
+            long choirId,
             long repertoireItemId,
             long ruleId,
             RuleDefinition definition) {
-        return lockRepertoireItem(repertoireItemId)
+        return validateGroupMembers(choirId, definition.groups())
+                .then(lockRepertoireItem(repertoireItemId))
                 .then(findRule(repertoireItemId, ruleId))
                 .flatMap(rule -> {
                     rule.setRuleType(definition.ruleType());
                     rule.setDescription(definition.description());
                     return ruleRepository.save(rule)
-                            .flatMap(saved -> replaceGroups(ruleId, definition.groups())
+                            .flatMap(saved -> replaceGroups(
+                                            ruleId, definition.groups())
                                     .then(createRevision(saved, UPDATE))
                                     .thenReturn(saved));
                 });
@@ -209,18 +231,28 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
     private Mono<Void> saveRevisionGroup(long revisionId, SceneRuleGroup group) {
         return databaseClient.sql("""
                 INSERT INTO scene_rule_revision_groups (
-                    revision_id, group_order, group_label, member_count
+                    revision_id, group_order, group_label, member_count,
+                    composition_mode
                 ) VALUES (
-                    :revisionId, :groupOrder, :groupLabel, :memberCount
+                    :revisionId, :groupOrder, :groupLabel, :memberCount,
+                    :compositionMode
                 )
                 """)
                 .bind("revisionId", revisionId)
                 .bind("groupOrder", group.getGroupOrder())
                 .bind("groupLabel", group.getGroupLabel())
                 .bind("memberCount", group.getMemberCount())
+                .bind("compositionMode", group.getCompositionMode())
                 .fetch()
                 .rowsUpdated()
-                .then();
+                .then(findSingerIdsByGroupId(group.getId())
+                        .index()
+                        .concatMap(member -> saveRevisionGroupMember(
+                                revisionId,
+                                group.getGroupOrder(),
+                                member.getT2(),
+                                Math.toIntExact(member.getT1())))
+                        .then());
     }
 
     private Mono<Void> replaceGroups(
@@ -234,8 +266,71 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
                             group.setGroupOrder(order);
                             group.setGroupLabel(definition.label());
                             group.setMemberCount(definition.memberCount());
+                            group.setCompositionMode(definition.compositionMode());
                             return groupRepository.save(group);
                         }))
+                .concatMap(savedGroup -> {
+                    GroupDefinition definition =
+                            groups.get(savedGroup.getGroupOrder());
+                    return Flux.fromIterable(definition.singerIds())
+                            .index()
+                            .concatMap(member -> saveGroupMember(
+                                    savedGroup.getId(),
+                                    member.getT2(),
+                                    Math.toIntExact(member.getT1())))
+                            .then();
+                })
+                .then();
+    }
+
+    private Mono<Void> validateGroupMembers(
+            long choirId, List<GroupDefinition> groups) {
+        return Flux.fromIterable(groups)
+                .concatMap(group -> Flux.fromIterable(group.singerIds()))
+                .distinct()
+                .concatMap(singerId -> singerRepository
+                        .findByIdAndChoirId(singerId, choirId)
+                        .switchIfEmpty(Mono.error(new Failure(
+                                FailureType.INVALID_GROUP_MEMBERS,
+                                "Los coreutas de un grupo deben pertenecer al coro"))))
+                .then();
+    }
+
+    private Mono<Void> saveGroupMember(
+            long groupId, long singerId, int memberOrder) {
+        return databaseClient.sql("""
+                INSERT INTO scene_rule_group_members (
+                    scene_rule_group_id, singer_id, member_order
+                ) VALUES (
+                    :groupId, :singerId, :memberOrder
+                )
+                """)
+                .bind("groupId", groupId)
+                .bind("singerId", singerId)
+                .bind("memberOrder", memberOrder)
+                .fetch()
+                .rowsUpdated()
+                .then();
+    }
+
+    private Mono<Void> saveRevisionGroupMember(
+            long revisionId,
+            int groupOrder,
+            long singerId,
+            int memberOrder) {
+        return databaseClient.sql("""
+                INSERT INTO scene_rule_revision_group_members (
+                    revision_id, group_order, singer_id, member_order
+                ) VALUES (
+                    :revisionId, :groupOrder, :singerId, :memberOrder
+                )
+                """)
+                .bind("revisionId", revisionId)
+                .bind("groupOrder", groupOrder)
+                .bind("singerId", singerId)
+                .bind("memberOrder", memberOrder)
+                .fetch()
+                .rowsUpdated()
                 .then();
     }
 

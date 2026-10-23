@@ -49,6 +49,7 @@ class SceneRuleServiceImplTests {
                         """, choirId);
                 jdbc.update("DELETE FROM concerts WHERE choir_id = ?", choirId);
                 jdbc.update("DELETE FROM repertoire_items WHERE choir_id = ?", choirId);
+                jdbc.update("DELETE FROM singers WHERE choir_id = ?", choirId);
                 jdbc.update("DELETE FROM choirs WHERE id = ?", choirId);
             }
             jdbc.update("DELETE FROM directors WHERE id = ?", directorId);
@@ -239,6 +240,119 @@ class SceneRuleServiceImplTests {
                 )
                 """, Integer.class, first.id()))
                 .isEqualTo(7);
+    }
+
+    @Test
+    void preservesIdentifiedGroupMembersInImmutableRevisions() {
+        Fixture fixture = createFixture("identified-groups");
+        long firstSingerId = createSinger(fixture, "Primera coreuta");
+        long secondSingerId = createSinger(fixture, "Segundo coreuta");
+
+        SceneRuleService.RuleView created = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Entrada identificada",
+                        List.of(new SceneRuleService.GroupData(
+                                "Entrada",
+                                "IDENTIFIED",
+                                null,
+                                List.of(firstSingerId, secondSingerId)))))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(created.groups()).containsExactly(new SceneRuleService.GroupView(
+                0,
+                "Entrada",
+                "IDENTIFIED",
+                2,
+                List.of(firstSingerId, secondSingerId)));
+
+        SceneRuleService.RuleView updated = sceneRuleService.update(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                created.id(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Entrada actualizada",
+                        List.of(new SceneRuleService.GroupData(
+                                "Entrada",
+                                "IDENTIFIED",
+                                null,
+                                List.of(secondSingerId)))))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(updated.groups()).containsExactly(new SceneRuleService.GroupView(
+                0,
+                "Entrada",
+                "IDENTIFIED",
+                1,
+                List.of(secondSingerId)));
+        assertThat(jdbc.queryForList("""
+                SELECT member.singer_id
+                FROM scene_rule_revision_group_members member
+                JOIN scene_rule_revisions revision
+                    ON revision.id = member.revision_id
+                WHERE revision.scene_rule_id = ?
+                  AND revision.revision_number = 1
+                ORDER BY member.member_order
+                """, Long.class, created.id()))
+                .containsExactly(firstSingerId, secondSingerId);
+        assertThat(jdbc.queryForList("""
+                SELECT member.singer_id
+                FROM scene_rule_revision_group_members member
+                JOIN scene_rule_revisions revision
+                    ON revision.id = member.revision_id
+                WHERE revision.scene_rule_id = ?
+                  AND revision.revision_number = 2
+                ORDER BY member.member_order
+                """, Long.class, created.id()))
+                .containsExactly(secondSingerId);
+        assertThat(jdbc.queryForList("""
+                SELECT composition_mode
+                FROM scene_rule_revision_groups group_snapshot
+                JOIN scene_rule_revisions revision
+                    ON revision.id = group_snapshot.revision_id
+                WHERE revision.scene_rule_id = ?
+                ORDER BY revision.revision_number
+                """, String.class, created.id()))
+                .containsExactly("IDENTIFIED", "IDENTIFIED");
+    }
+
+    @Test
+    void rejectsIdentifiedGroupMembersFromAnotherChoir() {
+        Fixture owner = createFixture("identified-owner");
+        Fixture other = createFixture("identified-other");
+        long foreignSingerId = createSinger(other, "Coreuta ajena");
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                owner.email(),
+                owner.choirId(),
+                owner.concertId(),
+                owner.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Entrada no permitida",
+                        List.of(new SceneRuleService.GroupData(
+                                "Entrada",
+                                "IDENTIFIED",
+                                null,
+                                List.of(foreignSingerId)))))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> assertThat(
+                        ((ResponseStatusException) exception).getStatusCode().value())
+                        .isEqualTo(400));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scene_rules WHERE repertoire_item_id = ?",
+                Integer.class,
+                owner.repertoireItemId()))
+                .isZero();
     }
 
     @Test
@@ -450,6 +564,18 @@ class SceneRuleServiceImplTests {
                 new SceneRuleService.RuleData(
                         "MOVEMENT", description, List.of()))
                 .block(Duration.ofSeconds(10));
+    }
+
+    private long createSinger(Fixture fixture, String name) {
+        jdbc.update("""
+                INSERT INTO singers (choir_id, display_name, voice_part, active)
+                VALUES (?, ?, 'SOPRANO', TRUE)
+                """, fixture.choirId(), name);
+        return jdbc.queryForObject(
+                "SELECT id FROM singers WHERE choir_id = ? AND display_name = ?",
+                Long.class,
+                fixture.choirId(),
+                name);
     }
 
     private Fixture createFixture(String label) {
