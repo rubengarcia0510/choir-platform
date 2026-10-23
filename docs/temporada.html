@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Formaciones del concierto coral</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f7f6f3;--fg:#1d1d1b;--muted:#6b6a66;--card:#fff;--line:#dcdad3;--accent:#2f5d8a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171716;--fg:#f0efeb;--muted:#9b9a95;--card:#232321;--line:#3a3a37;--accent:#7fb0e0}}
+:root[data-theme="dark"]{--bg:#171716;--fg:#f0efeb;--muted:#9b9a95;--card:#232321;--line:#3a3a37;--accent:#7fb0e0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:14px;max-width:560px;margin-inline:auto}
+h1{font-size:18px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+#now{font-size:17px;font-weight:600}
+#sub{color:var(--muted);font-size:13px;margin-top:2px}
+#count{font-size:34px;font-weight:700;color:var(--accent);min-height:42px}
+#stage{position:relative;width:100%;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px}
+#audience{position:absolute;bottom:3px;width:100%;text-align:center;font-size:11px;color:#777}
+.p{position:absolute;z-index:1;border-radius:50%;border:1px solid #555;color:#111;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;background:#fff;transition:left 8s ease-in-out,top 8s ease-in-out,opacity 3s,background-color 2s;will-change:left,top}
+@keyframes bow{0%,100%{transform:scale(1)}50%{transform:scale(1.45)}}
+.p.bow{animation:bow .9s ease-in-out 3}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;padding:9px 14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button.main{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+label{font-size:13px;color:var(--muted)}
+ol{margin:0;padding-left:0;list-style:none;font-size:13px}
+ol li{padding:5px 8px;border-radius:7px;display:flex;justify-content:space-between;gap:8px;cursor:pointer}
+ol li.on{background:var(--accent);color:var(--bg)}
+ol li span{opacity:.75}
+.note{font-size:12px;color:var(--muted);line-height:1.4}
+</style>
+</head>
+<body>
+<h1>Formaciones del concierto</h1>
+<div class="card">
+  <div id="now">Listo para empezar</div>
+  <div id="sub">Tocá "Iniciar"</div>
+  <div id="count"></div>
+</div>
+<div id="stage"><div id="audience">▼ público ▼</div></div>
+<div class="card" id="steps" style="display:none"></div>
+<div class="card row">
+  <button class="main" id="go">Iniciar</button>
+  <button id="pause">Pausa</button>
+  <button id="reset">Reiniciar</button>
+  <label>Duración de cada tema: <b id="dv">6</b> s<br><input type="range" id="dur" min="3" max="40" value="6"></label>
+</div>
+<div class="card"><ol id="list"></ol></div>
+<p class="note">Las posiciones y colores salen de tus PDFs. Al final W saluda a la izquierda y después a la derecha, y recién ahí viene la salida. Entre temas W saluda a la izquierda y va al púlpito a presentar la siguiente canción; la formación cambia cuando W llega al púlpito. W (blanco, al frente) es el director. Entre cada tema hay 10 segundos de espera. En Pescador de hombres los 8 que salen se reparten 4 y 4, y caminan por detrás del coro hacia cada costado; después vuelven por el mismo camino.</p>
+
+<script>
+const WAIT=10;
+const COL={or:"#ff9900",pk:"#ea9999",mg:"#ff00ff",bl:"#9fc5e8",gr:"#93c47d",rd:"#cc4125",wh:"#ffffff",ye:"#ffd966",lo:"#f6b26b",bl2:"#a4c2f4",dy:"#bf9000"};
+const BASE={Gv:"G",Gr:"G",Mb:"M",Mp:"M"};
+// [id, x, y, color]  (coordenadas de los PDFs)
+const basica=[["Li",169,482,"rd"],["Gv",177,408,"gr"],["Mb",195,335,"bl"],["Mr",260,273,"or"],["Va",329,219,"or"],["Cl",398,219,"pk"],["Ro",467,219,"mg"],["So",538,219,"mg"],["Fr",608,219,"bl"],["Gr",680,271,"rd"],["Sa",739,335,"or"],["Da",771,408,"gr"],["Ru",785,477,"bl"],
+["Ch",228,459,"pk"],["Ol",246,397,"pk"],["Vi",279,335,"pk"],["Pe",338,297,"bl"],["Cy",398,284,"or"],["Ji",467,284,"gr"],["C",538,284,"gr"],["Ju",608,297,"or"],["Mp",658,335,"pk"],["An",697,397,"mg"],["As",718,459,"mg"],["W",467,550,"wh"]];
+const lux=[["Mp",169,485,"ye"],["Vi",177,411,"ye"],["Cl",211,338,"ye"],["Ro",260,275,"lo"],["So",329,222,"lo"],["Mb",398,222,"bl2"],["Fr",467,222,"bl2"],["C",538,222,"gr"],["Da",608,222,"gr"],["Mr",680,272,"pk"],["Sa",731,338,"pk"],["Gr",767,411,"rd"],["Li",782,480,"rd"],
+["Ol",228,461,"ye"],["Ch",245,399,"ye"],["As",278,338,"lo"],["An",338,300,"lo"],["Ru",398,287,"bl2"],["Pe",467,287,"bl2"],["Ji",538,287,"dy"],["Gv",608,300,"dy"],["Va",658,338,"pk"],["Cy",697,399,"pk"],["Ju",718,461,"pk"],["W",467,552,"wh"]];
+const K=1.294;
+const pescRaw=[["Ro",289,250,"mg"],["So",335,174,"mg"],["An",410,136,"mg"],["As",489,128,"mg"],["Ol",565,128,"pk"],["Vi",648,128,"pk"],["Cl",725,128,"pk"],["Ch",802,136,"pk"],["Mp",873,174,"pk"],
+["Va",261,325,"or"],["Sa",261,400,"or"],["Ju",261,486,"or"],["Cy",913,250,"or"],["Gr",938,325,"or"],["Li",938,406,"or"],["Mr",938,486,"or"],["W",604,553,"wh"]];
+const pesc=pescRaw.map(([i,x,y,c])=>[i,x/K,y/K+123,c]);
+const FORM={
+ basica:{name:"Básica mezclados",pts:basica,lab:{}},
+ octeto:{name:"Propia / Octeto",pts:pesc,lab:{}},
+ lux:{name:"Lux – MaTe – Candombe",pts:lux,lab:{Gv:"Gs",Mb:"Mi",C:"Cl"}}
+};
+const SONGS=[["Cantamos","basica"],["10k","basica"],["Pescador de hombres","octeto"],["Regina Coeli","basica"],["Lux aeterna","lux"],["Caminito","basica"],["Quizás mañana","basica"],["Zamba por vos","basica"],["Mariposa technicolor","lux"],["Candombe de mucho palo","lux"],["Salida","lux"]];
+const ALL=basica.map(p=>p[0]);
+const stage=document.getElementById("stage");
+const els={};
+ALL.forEach(id=>{const d=document.createElement("div");d.className="p";els[id]=d;stage.appendChild(d)});
+let cur="basica",prev=null,keepW=false;
+// Los que salen en Pescador: mitad por la izquierda, mitad por la derecha (k=0 el más cercano al borde)
+const EXIT={Gv:["L",0],Mb:["L",1],Pe:["L",2],Ji:["L",3],Ru:["R",0],Da:["R",1],Fr:["R",2],C:["R",3]};
+function place(key,instant){
+  const f=FORM[key];
+  const s=(stage.clientWidth-16)/740;
+  const size=Math.max(22,50*s);
+  stage.style.height=((575-130)*s+34)+"px";
+  const Wd=stage.clientWidth;
+  const map={};f.pts.forEach(p=>map[p[0]]=p);
+  const pm={};if(prev)FORM[prev].pts.forEach(p=>pm[p[0]]=p);
+  const laneY=(158-130)*s+6-size/2; // pasillo por detrás del coro
+  layoutPulpit(geo());
+  if(!instant&&prev&&prev!==key&&prev!=="octeto"&&key!=="octeto"){const T=choreo(prev,key);prev=key;cur=key;return T}
+  ALL.forEach(id=>{
+    const e=els[id];
+    e.style.width=e.style.height=size+"px";
+    if(id==="W"&&keepW)return;
+    const p=map[id];const wasIn=!!pm[id];const side=EXIT[id];
+    let tr="";
+    if(instant){tr="none"}
+    else if(side&&!p&&wasIn){ // sale: primero sube, después camina hacia el costado
+      tr=`top 2.8s ease-in-out 0s, left 4s ease-in-out ${2.8+side[1]*0.35}s, background-color 2s`;
+    }else if(side&&p&&!wasIn){ // vuelve: primero camina por atrás, después baja a su lugar
+      tr=`left 4s ease-in-out ${(3-side[1])*0.35}s, top 2.8s ease-in-out 5.1s, background-color 2s`;
+    }
+    e.style.transition=tr;
+    if(p){
+      e.style.left=((p[1]-90)*s+8-size/2)+"px";
+      e.style.top=((p[2]-130)*s+6-size/2)+"px";
+      e.style.backgroundColor=COL[p[3]];
+      e.textContent=f.lab[id]||BASE[id]||id;
+    }else{
+      e.style.left=((side&&side[0]==="L")?-size-12:Wd+12)+"px";
+      e.style.top=laneY+"px";
+    }
+    e.style.opacity=1;
+  });
+  if(instant){void stage.offsetWidth;ALL.forEach(id=>els[id].style.transition="")}
+  prev=key;cur=key;
+  return 0;
+}
+
+// ---- Entrada: la fila de Li entra por la derecha y la fila de As por la izquierda ----
+const OUTER=basica.slice(0,13).map(p=>p[0]); // fila de Li (izq→der)
+const INNER=basica.slice(13,24).map(p=>p[0]); // fila de As (izq→der)
+function geo(){const s=(stage.clientWidth-16)/740;return {s,size:Math.max(22,50*s),Wd:stage.clientWidth}}
+function pos(p,g){return [(p[1]-90)*g.s+8-g.size/2,(p[2]-130)*g.s+6-g.size/2]}
+function entranceReset(){
+  const g=geo();const map={};basica.forEach(p=>map[p[0]]=p);
+  stage.style.height=((575-130)*g.s+34)+"px";
+  const yR=pos(map["Ru"],g)[1],yL=pos(map["Ch"],g)[1];
+  ALL.forEach(id=>{
+    const e=els[id];const p=map[id];
+    e.style.transition="none";e.style.width=e.style.height=g.size+"px";
+    e.style.backgroundColor=COL[p[3]];e.textContent=BASE[id]||id;e.style.opacity=1;
+    if(id==="W"){const q=pos(p,g);e.style.left=q[0]+"px";e.style.top=q[1]+"px"}
+    else if(OUTER.includes(id)){e.style.left=(g.Wd+g.size+4)+"px";e.style.top=yR+"px"}
+    else{e.style.left=(-g.size-4)+"px";e.style.top=yL+"px"}
+  });
+  layoutPulpit(g);
+  void stage.offsetWidth;
+  prev="basica";cur="basica";
+}
+function enter(tok){
+  const g=geo();const v=150*g.s;const gap=g.size*1.3/v;
+  const map={};basica.forEach(p=>map[p[0]]=p);
+  const wingR=[g.Wd+g.size+4,pos(map["Ru"],g)[1]],wingL=[-g.size-4,pos(map["Ch"],g)[1]];
+  const P={};
+  OUTER.forEach((id,m)=>{const pts=[wingR];for(let k=OUTER.length-1;k>=m;k--)pts.push(pos(map[OUTER[k]],g));P[id]={pts,delay:m*gap}});
+  INNER.forEach((id,m)=>{const pts=[wingL];for(let k=0;k<=m;k++)pts.push(pos(map[INNER[k]],g));P[id]={pts,delay:(INNER.length-1-m)*gap}});
+  Object.values(P).forEach(o=>{o.cum=[0];for(let i=1;i<o.pts.length;i++)o.cum.push(o.cum[i-1]+Math.hypot(o.pts[i][0]-o.pts[i-1][0],o.pts[i][1]-o.pts[i-1][1]));o.len=o.cum[o.cum.length-1]});
+  let t=0,last=performance.now();
+  function frame(now){
+    if(tok!==run)return;
+    const dt=now-last;last=now;if(!paused)t+=dt/1000;
+    let done=true;
+    for(const id in P){
+      const o=P[id];let d=(t-o.delay)*v;
+      let x,y;
+      if(d<=0){x=o.pts[0][0];y=o.pts[0][1];done=false}
+      else if(d>=o.len){x=o.pts[o.pts.length-1][0];y=o.pts[o.pts.length-1][1]}
+      else{done=false;let i=1;while(o.cum[i]<d)i++;const f=(d-o.cum[i-1])/(o.cum[i]-o.cum[i-1]);x=o.pts[i-1][0]+(o.pts[i][0]-o.pts[i-1][0])*f;y=o.pts[i-1][1]+(o.pts[i][1]-o.pts[i-1][1])*f}
+      els[id].style.left=x+"px";els[id].style.top=y+"px";
+    }
+    if(!done)requestAnimationFrame(frame);
+    else ALL.forEach(id=>els[id].style.transition="");
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---- Salida: primero el director, después la fila de Li y luego la otra fila (todos hacia la derecha) ----
+function animate(P,v,tok){
+  Object.values(P).forEach(o=>{o.cum=[0];for(let i=1;i<o.pts.length;i++)o.cum.push(o.cum[i-1]+Math.hypot(o.pts[i][0]-o.pts[i-1][0],o.pts[i][1]-o.pts[i-1][1]));o.len=o.cum[o.cum.length-1]});
+  let t=0,last=performance.now(),est=0;
+  for(const id in P)est=Math.max(est,P[id].delay+P[id].len/v);
+  function frame(now){
+    if(tok!==run)return;
+    const dt=now-last;last=now;if(!paused)t+=dt/1000;
+    let done=true;
+    for(const id in P){
+      const o=P[id];const d=(t-o.delay)*v;let x,y;
+      if(d<=0){x=o.pts[0][0];y=o.pts[0][1];done=false}
+      else if(d>=o.len){x=o.pts[o.pts.length-1][0];y=o.pts[o.pts.length-1][1]}
+      else{done=false;let i=1;while(o.cum[i]<d)i++;const f=(d-o.cum[i-1])/(o.cum[i]-o.cum[i-1]);x=o.pts[i-1][0]+(o.pts[i][0]-o.pts[i-1][0])*f;y=o.pts[i-1][1]+(o.pts[i][1]-o.pts[i-1][1])*f}
+      els[id].style.left=x+"px";els[id].style.top=y+"px";
+    }
+    if(!done)requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return est;
+}
+function leave(tok,fromRight){
+  const g=geo();const v=220*g.s;const gap=g.size*1.3/v;
+  const map={};lux.forEach(p=>map[p[0]]=p);
+  const O=lux.slice(0,13).map(p=>p[0]),I=lux.slice(13,24).map(p=>p[0]);
+  const wx=g.Wd+g.size+4;
+  ALL.forEach(id=>{els[id].style.transition="none"});
+  const P={};
+  const wingO=[wx,pos(map[O[O.length-1]],g)[1]],wingI=[wx,pos(map[I[I.length-1]],g)[1]];
+  const w=fromRight?pos(GREET_R,g):pos(map["W"],g);
+  const wp1=pos(["x",800,map["W"][2]],g);
+  P["W"]={pts:fromRight?[w,wingO]:[w,wp1,wingO],delay:0};
+  const plen=a=>{let L=0;for(let i=1;i<a.length;i++)L+=Math.hypot(a[i][0]-a[i-1][0],a[i][1]-a[i-1][1]);return L};
+  // la fila de Li arranca cuando W ya va 2 pasos por delante, en el mismo carril
+  const startO=Math.max(0,plen(P["W"].pts)/v-plen([pos(map[O[O.length-1]],g),wingO])/v+2*gap);
+  O.forEach((id,m)=>{const pts=[];for(let k=m;k<O.length;k++)pts.push(pos(map[O[k]],g));pts.push(wingO);P[id]={pts,delay:startO+(O.length-1-m)*gap}});
+  // la otra fila arranca recién cuando la fila de Li salió del todo
+  let outerEnd=0;
+  O.forEach(id=>{const o=P[id];let L=0;for(let i=1;i<o.pts.length;i++)L+=Math.hypot(o.pts[i][0]-o.pts[i-1][0],o.pts[i][1]-o.pts[i-1][1]);outerEnd=Math.max(outerEnd,o.delay+L/v)});
+  I.forEach((id,m)=>{const pts=[];for(let k=m;k<I.length;k++)pts.push(pos(map[I[k]],g));pts.push(wingI);P[id]={pts,delay:outerEnd+0.5+(I.length-1-m)*gap}});
+  return animate(P,v,tok);
+}
+
+// ---- Saludo entre temas: W va a la izquierda, saluda, vuelve hacia atrás al púlpito (misma izquierda) y explica ----
+const PULPIT=["P",118,285],GREET=["G",118,550];
+const pulpitEl=document.createElement("div");
+pulpitEl.style.cssText="position:absolute;z-index:0;border:1.5px dashed #888;border-radius:6px;font-size:7px;color:#777;display:flex;align-items:flex-end;justify-content:center;padding-bottom:1px;pointer-events:none";
+pulpitEl.textContent="púlpito";stage.appendChild(pulpitEl);
+function layoutPulpit(g){const q=pos(PULPIT,g);const pad=5;pulpitEl.style.width=pulpitEl.style.height=(g.size+pad*2)+"px";pulpitEl.style.left=(q[0]-pad)+"px";pulpitEl.style.top=(q[1]-pad)+"px"}
+function wSpot(key,g){return pos(FORM[key].pts.find(p=>p[0]==="W"),g)}
+async function greet(tok){
+  keepW=true;
+  const g=geo();const W=els["W"];const v=160*g.s;
+  const from=wSpot(prev,g),gs=pos(GREET,g),pl=pos(PULPIT,g);
+  W.style.transition="none";
+  $("count").textContent="";
+  $("sub").textContent="W se va a la izquierda para saludar";
+  let est=animate({W:{pts:[from,gs],delay:0}},v,tok);
+  if(!(await sleepTick(Math.ceil(est),()=>{},tok)))return false;
+  $("sub").textContent="W saluda";
+  W.textContent="👏";W.classList.add("bow");
+  const ok=await sleepTick(3,()=>{},tok);
+  W.classList.remove("bow");W.textContent="W";
+  if(!ok)return false;
+  $("sub").textContent="W va hacia atrás, al púlpito";
+  est=animate({W:{pts:[gs,pl],delay:0}},v,tok);
+  return await sleepTick(Math.ceil(est),()=>{},tok);
+}
+async function backToFront(tok,nxKey){
+  const g=geo();const W=els["W"];const v=160*g.s;
+  const gs=pos(GREET,g),pl=pos(PULPIT,g),to=wSpot(nxKey,g);
+  $("count").textContent="";
+  $("sub").textContent="W vuelve al frente";
+  const est=animate({W:{pts:[pl,gs,to],delay:0}},v,tok);
+  const ok=await sleepTick(Math.ceil(est),()=>{},tok);
+  if(ok)keepW=false;
+  return ok;
+}
+
+// ---- Saludo final: izquierda, después derecha, y recién ahí la salida ----
+const GREET_R=["R",816,550];
+async function bow(tok,msg){
+  const W=els["W"];$("sub").textContent=msg;
+  W.textContent="👏";W.classList.add("bow");
+  const ok=await sleepTick(3,()=>{},tok);
+  W.classList.remove("bow");W.textContent="W";
+  return ok;
+}
+async function finalGreetings(tok){
+  keepW=true;
+  const g=geo();const W=els["W"];const v=160*g.s;
+  const from=wSpot(prev,g),gl=pos(GREET,g),gr=pos(GREET_R,g);
+  W.style.transition="none";$("count").textContent="";
+  $("sub").textContent="Saludo final: W va a la izquierda";
+  let est=animate({W:{pts:[from,gl],delay:0}},v,tok);
+  if(!(await sleepTick(Math.ceil(est),()=>{},tok)))return false;
+  if(!(await bow(tok,"W saluda del lado izquierdo")))return false;
+  $("sub").textContent="W cruza por el frente hacia la derecha";
+  est=animate({W:{pts:[gl,gr],delay:0}},v,tok);
+  if(!(await sleepTick(Math.ceil(est),()=>{},tok)))return false;
+  return await bow(tok,"W saluda del lado derecho");
+}
+
+// ---- Cambio coreografiado (Básica <-> Lux): cada lugar lo ocupa otra persona, así que se resuelve por "ciclos" ----
+function lab(id,key){return FORM[key].lab[id]||BASE[id]||id}
+function ease(u){return u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2}
+function along(pts,f){
+  const seg=[];let tot=0;
+  for(let i=1;i<pts.length;i++){const d=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seg.push(d);tot+=d}
+  if(tot===0)return pts[pts.length-1];
+  let d=f*tot;
+  for(let i=0;i<seg.length;i++){
+    if(d<=seg[i]||i===seg.length-1){const u=seg[i]?Math.min(1,d/seg[i]):1;return [pts[i][0]+(pts[i+1][0]-pts[i][0])*u,pts[i][1]+(pts[i+1][1]-pts[i][1])*u]}
+    d-=seg[i];
+  }
+  return pts[pts.length-1];
+}
+function legPos(legs,t){
+  let cur=legs[0].pts[0];
+  for(const L of legs){
+    if(t<L.t0)return cur;
+    const u=Math.min(1,(t-L.t0)/L.dur);
+    cur=along(L.pts,ease(u));
+    if(u<1)return cur;
+  }
+  return cur;
+}
+function choreo(a,b){
+  const g=geo();const myRun=run;
+  const A={},T={};FORM[a].pts.forEach(p=>A[p[0]]=p);FORM[b].pts.forEach(p=>T[p[0]]=p);
+  const ppl=ALL.filter(id=>id!=="W");
+  const R=46,GAP=0.7,LEG=2.0;
+  const px=p=>pos(p,g);
+  const lane=pos(["x",0,158],g)[1];
+  const fixed=new Set(),nxt={};
+  ppl.forEach(p=>{
+    if(Math.hypot(T[p][1]-A[p][1],T[p][2]-A[p][2])<R){fixed.add(p);return}
+    let best=null,bd=1e9;
+    ppl.forEach(q=>{if(q===p)return;const d=Math.hypot(T[p][1]-A[q][1],T[p][2]-A[q][2]);if(d<bd){bd=d;best=q}});
+    nxt[p]=bd<R?best:null;
+  });
+  const seen=new Set(),groups=[];
+  ppl.forEach(p=>{
+    if(fixed.has(p)||seen.has(p))return;
+    const path=[];let c=p;
+    while(c&&!seen.has(c)&&!fixed.has(c)){seen.add(c);path.push(c);c=nxt[c]}
+    groups.push({list:path,cycle:c===p});
+  });
+  groups.sort((x,y)=>x.list.length-y.list.length);
+  const items={},text=[];
+  function plen(pts){let L=0;for(let i=1;i<pts.length;i++)L+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);return L}
+  function planGroup(grp,t0,n){
+    let end=t0;
+    if(grp.cycle){
+      const L=grp.list;let mi=0;
+      L.forEach((p,i)=>{if(A[p][2]<A[L[mi]][2])mi=i});
+      const rot=L.slice(mi).concat(L.slice(0,mi));
+      const X=rot[0];const movers=rot.slice(1).reverse();
+      const xs=px(A[X]),xt=px(T[X]),park=[xs[0],lane];
+      items[X]=[{pts:[xs,park],t0:t0,dur:1.6}];
+      movers.forEach((p,i)=>{
+        const t=t0+0.9+i*GAP;
+        items[p]=[{pts:[px(A[p]),px(T[p])],t0:t,dur:LEG}];
+        end=Math.max(end,t+LEG);
+      });
+      const lastStart=t0+0.9+(movers.length-1)*GAP;
+      const t2=Math.max(t0+1.6,lastStart+0.9);
+      const leg2=[park,[xt[0],lane],xt];
+      const d2=Math.max(2,plen(leg2)/(200*g.s));
+      items[X].push({pts:leg2,t0:t2,dur:d2});
+      end=Math.max(end,t2+d2);
+      text.push(`Grupo ${n}: ${lab(X,a)} sale por atrás y espera. Después: ${movers.map(p=>lab(p,a)+" al lugar de "+lab(nxt[p],a)).join(", ")}. Por último ${lab(X,a)} entra al lugar de ${lab(rot[1],a)}.`);
+    }else{
+      const movers=grp.list.slice().reverse();
+      movers.forEach((p,i)=>{
+        const t=t0+i*GAP;
+        items[p]=[{pts:[px(A[p]),px(T[p])],t0:t,dur:LEG}];
+        end=Math.max(end,t+LEG);
+      });
+      text.push(`Grupo ${n}: ${movers.map(p=>lab(p,a)).join(", ")} (en ese orden, cada uno avanza al lugar libre).`);
+    }
+    return end;
+  }
+  let T0=0,n=1,Tend=0;
+  for(let gi=0;gi<groups.length;gi+=2){
+    let gEnd=T0;
+    for(const grp of groups.slice(gi,gi+2)){gEnd=Math.max(gEnd,planGroup(grp,T0,n++))}
+    Tend=Math.max(Tend,gEnd);T0=gEnd+0.5;
+  }
+  const look=(id)=>{const e=els[id];e.style.backgroundColor=COL[T[id][3]];e.textContent=lab(id,b)};
+  ALL.forEach(id=>{if(id==="W")return;els[id].style.transition="background-color 1s"});
+  fixed.forEach(id=>{look(id);const q=px(T[id]);els[id].style.transition="left 1s,top 1s,background-color 1s";els[id].style.left=q[0]+"px";els[id].style.top=q[1]+"px"});
+  const fixedTxt=[...fixed].map(p=>lab(p,a));
+  const st=document.getElementById("steps");
+  st.style.display="block";
+  st.innerHTML=`<b>${FORM[a].name} → ${FORM[b].name}</b><div class="note">Cada lugar lo ocupa otra persona, así que el cambio se hace en grupos que giran: uno sale por atrás y los demás van ocupando el lugar que queda libre. ${fixedTxt.length?fixedTxt.join(", ")+" se queda en su lugar. ":""}Los grupos van de a dos.</div><ol style="margin-top:8px;padding-left:18px;font-size:12px;line-height:1.45;list-style:decimal">`+text.map(x=>`<li style="display:list-item;cursor:auto;padding:2px 0">${x.replace(/^Grupo \d+: /,"")}</li>`).join("")+"</ol>";
+  let t=0,last=performance.now();const done=new Set();
+  function frame(now){
+    if(myRun!==run)return;
+    const dt=now-last;last=now;if(!paused)t+=dt/1000;
+    for(const id in items){
+      const legs=items[id];const q=legPos(legs,t);
+      els[id].style.left=q[0]+"px";els[id].style.top=q[1]+"px";
+      const ll=legs[legs.length-1];
+      if(!done.has(id)&&t>=ll.t0+ll.dur){done.add(id);look(id)}
+    }
+    if(t<Tend+0.05)requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return Tend;
+}
+const list=document.getElementById("list");
+SONGS.forEach((s,i)=>{const li=document.createElement("li");li.innerHTML=`<b>${i===0?"Entrada · "+s[0]:i===SONGS.length-1?"Salida":i+". "+s[0]}</b><span>${FORM[s[1]].name}</span>`;list.appendChild(li)});
+const lis=[...list.children];
+let run=0,paused=false,dur=6;
+const $=id=>document.getElementById(id);
+$("dur").oninput=e=>{dur=+e.target.value;$("dv").textContent=dur};
+const sleepTick=async(sec,onTick,tok)=>{
+  for(let s=sec;s>0;s--){
+    if(tok!==run)return false;
+    onTick(s);
+    let w=0;while(w<1000){if(tok!==run)return false;await new Promise(r=>setTimeout(r,100));if(!paused)w+=100}
+  }
+  return tok===run;
+};
+function setNow(i){
+  lis.forEach((l,j)=>l.classList.toggle("on",j===i));
+  $("now").textContent=i===0?`Entrada: ${SONGS[i][0]}`:i===SONGS.length-1?"Salida":`Tema ${i}: ${SONGS[i][0]}`;
+  $("sub").textContent=`Formación ${FORM[SONGS[i][1]].name}`;
+}
+async function play(){
+  const tok=++run;paused=false;keepW=false;$("pause").textContent="Pausa";
+  entranceReset();
+  for(let i=0;i<SONGS.length;i++){
+    setNow(i);
+    const isLast=i===SONGS.length-1;let est=0;
+    if(i===0)enter(tok);
+    if(isLast)est=leave(tok,true);
+    $("count").textContent=isLast?"→":"♪";
+    if(!(await sleepTick(isLast?Math.ceil(est)+1:(i===0?Math.max(dur,10):dur),()=>{},tok)))return;
+    if(i<SONGS.length-1){
+      const nx=SONGS[i+1];
+      const toExit=(i+1===SONGS.length-1);
+      if(toExit){
+        if(!(await finalGreetings(tok)))return;
+      }else{
+        if(!(await greet(tok)))return;
+        $("sub").textContent=`W presenta "${nx[0]}" (${FORM[nx[1]].name})`;
+        const chT=place(nx[1],false)||0; // si hay cambio de formación, arranca ahora que W llegó al púlpito
+        if(!(await sleepTick(Math.max(WAIT,Math.ceil(chT)+1),s=>{$("count").textContent=s+" s"},tok)))return;
+        if(!(await backToFront(tok,nx[1])))return;
+      }
+    }
+  }
+  $("now").textContent="Fin del concierto";$("sub").textContent="";$("count").textContent="";
+}
+$("go").onclick=play;
+$("pause").onclick=()=>{paused=!paused;$("pause").textContent=paused?"Seguir":"Pausa"};
+$("reset").onclick=()=>{run++;paused=false;keepW=false;$("pause").textContent="Pausa";place("basica",true);lis.forEach(l=>l.classList.remove("on"));$("now").textContent="Listo para empezar";$("sub").textContent='Tocá "Iniciar"';$("count").textContent=""};
+lis.forEach((l,i)=>l.onclick=()=>{run++;paused=false;keepW=false;setNow(i);place(SONGS[i][1],false);$("count").textContent=""});
+place("basica",true);
+window.addEventListener("resize",()=>place(cur,true));
+</script>
+</body>
+</html>
