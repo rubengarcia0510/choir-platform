@@ -31,7 +31,7 @@ public class Concert {
     @Column("created_at")
     private LocalDateTime createdAt;
 
-    protected Concert() {
+    public Concert() {
     }
 
     public Long getId() {

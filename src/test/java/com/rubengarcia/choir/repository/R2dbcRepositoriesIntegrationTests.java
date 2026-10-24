@@ -1,6 +1,12 @@
 package com.rubengarcia.choir.repository;
 
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationEntity;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationPositionRepository;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationRepository;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationVersionEntity;
+import com.rubengarcia.choir.formation.adapter.out.persistence.FormationVersionRepository;
 import com.rubengarcia.choir.domain.*;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -239,6 +245,44 @@ class R2dbcRepositoriesIntegrationTests {
                     .extracting(Concert::getId)
                     .containsExactly(concertId);
 
+            LocalDate updatedConcertDate = LocalDate.now().plusDays(1);
+            assertThat(concerts.updateIfStatus(
+                    choirId,
+                    concertId,
+                    "PLANNED",
+                    "Updated concert " + suffix,
+                    updatedConcertDate,
+                    "Auditorium",
+                    "REHEARSAL").block())
+                    .isEqualTo(1);
+
+            jdbc.update("""
+                    UPDATE concerts
+                    SET status = 'PUBLISHED',
+                        published_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """, concertId);
+
+            assertThat(concerts.updateIfStatus(
+                    choirId,
+                    concertId,
+                    "REHEARSAL",
+                    "Stale update " + suffix,
+                    LocalDate.now().plusDays(2),
+                    "Other venue",
+                    "PLANNED").block())
+                    .isZero();
+
+            Concert unchangedPublishedConcert = concerts.findById(concertId).block();
+            assertThat(unchangedPublishedConcert).isNotNull();
+            assertThat(unchangedPublishedConcert.getStatus()).isEqualTo("PUBLISHED");
+            assertThat(unchangedPublishedConcert.getPublishedAt()).isNotNull();
+            assertThat(unchangedPublishedConcert.getTitle())
+                    .isEqualTo("Updated concert " + suffix);
+            assertThat(unchangedPublishedConcert.getConcertDate())
+                    .isEqualTo(updatedConcertDate);
+            assertThat(unchangedPublishedConcert.getVenue()).isEqualTo("Auditorium");
+
             // ConcertCastSnapshotRepository
             assertThat(snapshots.findByConcertId(concertId).collectList().block())
                     .hasSize(1);
@@ -255,19 +299,19 @@ class R2dbcRepositoriesIntegrationTests {
 
             // FormationRepository
             assertThat(formations.findByChoirId(choirId).collectList().block())
-                    .extracting(Formation::getId)
+                    .extracting(FormationEntity::getId)
                     .containsExactly(formationId);
 
             // FormationVersionRepository
             assertThat(formationVersions.findByFormationId(formationId)
                     .collectList().block())
-                    .extracting(FormationVersion::getVersionNumber)
+                    .extracting(FormationVersionEntity::getVersionNumber)
                     .containsExactlyInAnyOrder(1, 2);
 
             assertThat(formationVersions.findByFormationIdAndVersionNumber(
                     formationId, 2).block())
                     .isNotNull()
-                    .extracting(FormationVersion::getId)
+                    .extracting(FormationVersionEntity::getId)
                     .isEqualTo(versionTwoId);
 
             // FormationPositionRepository

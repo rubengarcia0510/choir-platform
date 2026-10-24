@@ -22,7 +22,7 @@ public class RepertoireItem {
     @Column("created_at")
     private LocalDateTime createdAt;
 
-    protected RepertoireItem() {}
+    public RepertoireItem() {}
 
     public Long getId() { return id; }
     public Long getChoirId() { return choirId; }

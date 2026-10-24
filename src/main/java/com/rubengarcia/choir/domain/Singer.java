@@ -26,6 +26,9 @@ public class Singer {
     @Column("voice_section_id")
     private Long voiceSectionId;
 
+    private String mobility;
+    private String restrictions;
+
     private boolean active = true;
 
     @Column("created_at")
@@ -34,63 +37,36 @@ public class Singer {
     protected Singer() {
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public Long getChoirId() {
-        return choirId;
-    }
-
-    public void setChoirId(Long choirId) {
+    public Singer(Long choirId, String displayName, String email,
+                  String voicePart, Long voiceSectionId,
+                  String mobility, String restrictions) {
         this.choirId = choirId;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public void setDisplayName(String displayName) {
         this.displayName = displayName;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
         this.email = email;
-    }
-
-    public String getVoicePart() {
-        return voicePart;
-    }
-
-    public void setVoicePart(String voicePart) {
         this.voicePart = voicePart;
-    }
-
-    public Long getVoiceSectionId() {
-        return voiceSectionId;
-    }
-
-    public void setVoiceSectionId(Long voiceSectionId) {
         this.voiceSectionId = voiceSectionId;
+        this.mobility = mobility;
+        this.restrictions = restrictions;
+        this.active = true;
     }
 
-    public boolean isActive() {
-        return active;
-    }
-
-    public void setActive(boolean active) {
-        this.active = active;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
+    public Long getId() { return id; }
+    public Long getChoirId() { return choirId; }
+    public void setChoirId(Long choirId) { this.choirId = choirId; }
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public String getVoicePart() { return voicePart; }
+    public void setVoicePart(String voicePart) { this.voicePart = voicePart; }
+    public Long getVoiceSectionId() { return voiceSectionId; }
+    public void setVoiceSectionId(Long voiceSectionId) { this.voiceSectionId = voiceSectionId; }
+    public String getMobility() { return mobility; }
+    public void setMobility(String mobility) { this.mobility = mobility; }
+    public String getRestrictions() { return restrictions; }
+    public void setRestrictions(String restrictions) { this.restrictions = restrictions; }
+    public boolean isActive() { return active; }
+    public void setActive(boolean active) { this.active = active; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

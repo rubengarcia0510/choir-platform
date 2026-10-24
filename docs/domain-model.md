@@ -5,8 +5,8 @@
 - Director administra uno o varios coros.
 - Coro pertenece a un director y contiene coreutas, repertorio, conciertos, formaciones y transiciones.
 - Coreuta pertenece a un coro.
-- Concierto pertenece a un coro y tiene repertorio ordenado.
-- Ítem de repertorio pertenece a un coro; `concert_repertoire` asocia obras a conciertos y conserva su orden.
+- Concierto pertenece a un coro y tiene repertorio ordenado; cada aparición conserva su duración estimada y necesidades escénicas.
+- Ítem de repertorio pertenece a un coro; `concert_repertoire` asocia obras a conciertos, conserva su orden y sus datos escénicos específicos.
 - La captura de elenco conserva nombre, cuerda vocal e identidad/nombre de sección vocal tal como eran al capturar el elenco. La referencia al coreuta es opcional para no perder la captura si se elimina esa ficha. La identidad y el nombre de sección son datos históricos sin FK a la sección mutable; renombrar o reasignar un coreuta no modifica la captura.
 - `concert_vocal_assignments` representa la asignación de coreutas a divisiones vocales por obra y concierto. Al publicar el concierto, `concert_vocal_assignment_snapshots` conserva una copia histórica por obra y coreuta: nombre, cuerda, sección y número de división. La referencia al coreuta puede quedar nula si se elimina la ficha; los datos descriptivos capturados se conservan.
 - Formación identifica una formación lógica. Cada versión de formación tiene número propio y estado; sus posiciones pertenecen a esa versión, no a la formación abstracta. Las posiciones conservan nombre, cuerda, identidad/nombre de sección y, cuando se conoce, división vocal. Las capturas no dependen del nombre actual de la sección.
@@ -15,13 +15,17 @@
 
 ## Flujo de publicación y captura histórica
 
-El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED`.
+El elenco se configura con `PUT /api/choirs/{choirId}/concerts/{concertId}/cast` y se consulta con `GET` sobre la misma ruta. Al guardar una selección se captura inmediatamente nombre, cuerda y sección vocal para que cambios posteriores en las fichas del coro no alteren el concierto. Si no hubo selección explícita, el elenco activo se captura al publicar.
+
+El catálogo de obras del coro se consulta y amplía con `GET` y `POST /api/choirs/{choirId}/repertoire`. El repertorio del concierto se consulta y reemplaza ordenado con `GET` y `PUT /api/choirs/{choirId}/concerts/{concertId}/repertoire`. Cada elemento incluye duración estimada y necesidades escénicas; la lista es reemplazada transaccionalmente y solo admite obras del coro asociado.
+
+El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED` o `REHEARSAL`.
 
 Dentro de una transacción, la publicación cambia el estado a `PUBLISHED`, registra `published_at` y captura:
-- El elenco activo del coro en `concert_cast_snapshots`.
+- El elenco efectivo del concierto en `concert_cast_snapshots` (sin sobrescribir una selección ya capturada).
 - Las asignaciones vocales por cada ítem del repertorio en `concert_vocal_assignment_snapshots`, incluyendo el número de división correspondiente.
 
-Si el concierto ya no está en estado `PLANNED`, la operación falla en lugar de volver a publicar y duplicar las capturas. La actualización condicional protege también frente a intentos concurrentes. El cambio de estado y las capturas deben confirmarse o revertirse juntos.
+Si el concierto ya está publicado o en cualquier estado distinto de `PLANNED` y `REHEARSAL`, la operación falla en lugar de volver a publicar y duplicar las capturas. La actualización condicional protege también frente a intentos concurrentes. El cambio de estado y las capturas deben confirmarse o revertirse juntos.
 
 Los snapshots son registros históricos: no deben reconstruirse ni actualizarse desde los datos actuales del coreuta o de la sección. Para datos históricos anteriores a la introducción de una columna, se conserva `NULL` cuando no existe evidencia para determinar el valor; no se inventan divisiones.
 
@@ -54,6 +58,6 @@ La integración de las divisiones vocales como restricciones del algoritmo de fo
 2. **Cantidad de divisiones:** k es la cantidad de divisiones persistidas para esa cuerda. Si N < k, el plan requiere revisión; no se borran, fusionan ni renumeran divisiones o asignaciones automáticamente.
 3. **Asignación por obra:** el director puede asignar explícitamente un coreuta a una división del plan de una obra, incluso si esa cuerda difiere de su cuerda habitual. La asignación no modifica la cuerda habitual ni las asignaciones de otras obras.
 4. **Ajustes por concierto:** las asignaciones de `concert_vocal_assignments` son específicas de una aparición de obra en un concierto y no modifican el plan base ni las asignaciones reutilizables de la obra. No se heredan automáticamente asignaciones de `work_vocal_assignments`: las advertencias y la captura histórica del concierto se calculan sobre las asignaciones explícitas de esa aparición. Las divisiones sin asignaciones generan advertencias.
-5. **Captura histórica:** al publicar un concierto en estado `PLANNED`, dentro de la misma transacción se cambia su estado a `PUBLISHED` y se capturan el elenco activo y las asignaciones vocales explícitas del concierto. Una publicación repetida se rechaza; los snapshots no se reconstruyen desde datos actuales.
+5. **Captura histórica:** al publicar un concierto en estado `PLANNED` o `REHEARSAL`, dentro de la misma transacción se cambia su estado a `PUBLISHED` y se capturan el elenco activo y las asignaciones vocales explícitas del concierto. Una publicación repetida se rechaza; los snapshots no se reconstruyen desde datos actuales.
 6. **Migración asistida:** la correspondencia entre `voice_part` y una cuerda configurable requiere confirmación explícita del director. Solo se migran coreutas sin cuerda configurable asignada; se conserva el valor legado y no se infieren correspondencias ambiguas.
 7. **Recuperación:** las migraciones V5–V11 son aditivas y no modifican V1 ni rellenan datos históricos que no existían. El script de rollback elimina estructuras y datos nuevos, por lo que no conserva esos datos. Antes de usarlo hay que verificar un backup y ensayar tanto el rollback como la restauración en una copia de la base. La recuperación de los datos eliminados depende de restaurar el backup; el script no revierte automáticamente el historial de Flyway.

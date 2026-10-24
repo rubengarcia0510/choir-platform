@@ -82,12 +82,16 @@ class ConcertRepertoireRepositoryTests {
                     Long.class, choirId, "Obra B " + suffix);
 
             ConcertRepertoire first =
-                    new ConcertRepertoire(concertId, firstItemId, 10);
+                    new ConcertRepertoire(
+                            concertId, firstItemId, 10, 4, "Atriles y sillas");
             ConcertRepertoire second =
-                    new ConcertRepertoire(concertId, secondItemId, 20);
+                    new ConcertRepertoire(
+                            concertId, secondItemId, 20, null, null);
 
             assertThat(repository.insert(first).block()).isSameAs(first);
             assertThat(repository.insert(second).block()).isSameAs(second);
+            assertThat(repository.findStatusForUpdate(choirId, concertId).block())
+                    .isEqualTo("PLANNED");
 
             ConcertRepertoireId firstKey =
                     new ConcertRepertoireId(concertId, firstItemId);
@@ -98,6 +102,8 @@ class ConcertRepertoireRepositoryTests {
             assertThat(found.getConcertId()).isEqualTo(concertId);
             assertThat(found.getRepertoireItemId()).isEqualTo(firstItemId);
             assertThat(found.getOrderIndex()).isEqualTo(10);
+            assertThat(found.getDurationMinutes()).isEqualTo(4);
+            assertThat(found.getStageRequirements()).isEqualTo("Atriles y sillas");
 
             List<ConcertRepertoire> ordered =
                     repository.findByConcertId(concertId).collectList().block();
@@ -105,6 +111,10 @@ class ConcertRepertoireRepositoryTests {
             assertThat(ordered)
                     .extracting(ConcertRepertoire::getRepertoireItemId)
                     .containsExactly(firstItemId, secondItemId);
+
+            assertThat(repository.findConcertEntries(concertId).collectList().block())
+                    .extracting(entry -> entry.title())
+                    .containsExactly("Obra A " + suffix, "Obra B " + suffix);
 
             assertThat(repository.updateOrderIndex(firstKey, 0).block())
                     .isEqualTo(1L);
