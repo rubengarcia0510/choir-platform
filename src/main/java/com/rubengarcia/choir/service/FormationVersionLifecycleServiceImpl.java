@@ -1,6 +1,6 @@
 package com.rubengarcia.choir.service;
 
-import com.rubengarcia.choir.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.springframework.http.HttpStatus;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;

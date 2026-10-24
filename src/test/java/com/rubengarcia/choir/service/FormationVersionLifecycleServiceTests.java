@@ -1,6 +1,6 @@
 package com.rubengarcia.choir.service;
 
-import com.rubengarcia.choir.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

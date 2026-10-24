@@ -1,6 +1,6 @@
 package com.rubengarcia.choir.service;
 
-import com.rubengarcia.choir.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 

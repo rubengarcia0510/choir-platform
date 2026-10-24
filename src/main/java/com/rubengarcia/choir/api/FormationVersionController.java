@@ -1,6 +1,6 @@
 package com.rubengarcia.choir.api;
 
-import com.rubengarcia.choir.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.FormationVersion;
 import com.rubengarcia.choir.service.FormationVersionLifecycleService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
