@@ -10,6 +10,11 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -134,6 +139,109 @@ class FormationVersionLifecycleServiceTests {
                 JOIN formation_versions fv ON fv.id = fp.formation_version_id
                 WHERE fv.id = ?
                 """, Integer.class, draft.getId())).isZero();
+    }
+
+
+    @Test
+    void publishesConcurrentlyWithoutLeavingMultiplePublishedVersions()
+            throws Exception {
+        Fixture f = fixture("PUBLISHED");
+
+        FormationVersion firstDraft = service.createDraft(
+                f.email(), f.choirId(), f.formationId(), "Publicación concurrente A")
+                .block(TIMEOUT);
+        FormationVersion secondDraft = service.createDraft(
+                f.email(), f.choirId(), f.formationId(), "Publicación concurrente B")
+                .block(TIMEOUT);
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            CompletableFuture<FormationVersion> first = CompletableFuture.supplyAsync(
+                    () -> {
+                        awaitStart(start);
+                        return service.publish(
+                                f.email(), f.choirId(), f.formationId(), firstDraft.getId())
+                                .block(TIMEOUT);
+                    }, executor);
+
+            CompletableFuture<FormationVersion> second = CompletableFuture.supplyAsync(
+                    () -> {
+                        awaitStart(start);
+                        return service.publish(
+                                f.email(), f.choirId(), f.formationId(), secondDraft.getId())
+                                .block(TIMEOUT);
+                    }, executor);
+
+            start.countDown();
+            CompletableFuture.allOf(first, second).get(20, TimeUnit.SECONDS);
+
+            assertThat(first.join().getStatus()).isEqualTo("PUBLISHED");
+            assertThat(second.join().getStatus()).isEqualTo("PUBLISHED");
+
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM formation_versions
+                    WHERE formation_id = ? AND status = 'PUBLISHED'
+                    """, Integer.class, f.formationId())).isEqualTo(1);
+
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM formation_versions
+                    WHERE formation_id = ? AND status = 'ARCHIVED'
+                    """, Integer.class, f.formationId())).isEqualTo(2);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void rollsBackPreviousPublicationWhenPublishingDraftFails() {
+        Fixture f = fixture("PUBLISHED");
+        FormationVersion draft = service.createDraft(
+                f.email(), f.choirId(), f.formationId(), "Fallo intermedio")
+                .block(TIMEOUT);
+
+        String constraintName = "chk_choir31_force_publish_failure";
+
+        try {
+            jdbc.execute("""
+                    ALTER TABLE formation_versions
+                    ADD CONSTRAINT chk_choir31_force_publish_failure
+                    CHECK (
+                        id <> %d
+                        OR status <> 'PUBLISHED'
+                        OR published_at IS NULL
+                    )
+                    """.formatted(draft.getId()));
+
+            assertThatThrownBy(() -> service.publish(
+                    f.email(), f.choirId(), f.formationId(), draft.getId())
+                    .block(TIMEOUT))
+                    .isNotNull();
+
+            assertThat(jdbc.queryForObject("""
+                    SELECT status FROM formation_versions WHERE id = ?
+                    """, String.class, f.versionId())).isEqualTo("PUBLISHED");
+
+            assertThat(jdbc.queryForObject("""
+                    SELECT status FROM formation_versions WHERE id = ?
+                    """, String.class, draft.getId())).isEqualTo("DRAFT");
+        } finally {
+            jdbc.execute("ALTER TABLE formation_versions DROP CONSTRAINT "
+                    + constraintName);
+        }
+    }
+
+    private static void awaitStart(CountDownLatch start) {
+        try {
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("No se liberó la barrera de concurrencia");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrumpido al iniciar la publicación concurrente", exception);
+        }
     }
 
     private Fixture fixture(String status) {
