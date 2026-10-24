@@ -202,6 +202,7 @@ class FormationVersionLifecycleServiceTests {
                 .block(TIMEOUT);
 
         String constraintName = "chk_choir31_force_publish_failure";
+        boolean constraintCreated = false;
 
         try {
             jdbc.execute("""
@@ -213,6 +214,7 @@ class FormationVersionLifecycleServiceTests {
                         OR published_at IS NULL
                     )
                     """.formatted(draft.getId()));
+            constraintCreated = true;
 
             assertThatThrownBy(() -> service.publish(
                     f.email(), f.choirId(), f.formationId(), draft.getId())
@@ -227,8 +229,10 @@ class FormationVersionLifecycleServiceTests {
                     SELECT status FROM formation_versions WHERE id = ?
                     """, String.class, draft.getId())).isEqualTo("DRAFT");
         } finally {
-            jdbc.execute("ALTER TABLE formation_versions DROP CONSTRAINT "
-                    + constraintName);
+            if (constraintCreated) {
+                jdbc.execute("ALTER TABLE formation_versions DROP CONSTRAINT "
+                        + constraintName);
+            }
         }
     }
 
