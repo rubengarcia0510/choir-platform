@@ -8,8 +8,13 @@ import com.rubengarcia.choir.repository.SceneRuleMutationRepository;
 import com.rubengarcia.choir.repository.SceneRuleRepository;
 import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
 import com.rubengarcia.choir.repository.SingerRepository;
+import com.rubengarcia.choir.scene.application.port.out.SceneRuleHistoryPort;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort;
+import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -21,7 +26,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Component
-public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
+public class SceneRulePersistenceAdapter
+        implements SceneRulePersistencePort, SceneRuleHistoryPort {
 
     private static final String CREATE = "CREATE";
     private static final String UPDATE = "UPDATE";
@@ -78,6 +84,62 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
                 .bind("groupId", groupId)
                 .map((row, metadata) -> row.get("singer_id", Long.class))
                 .all();
+    }
+
+    @Override
+    public Flux<SceneRuleRevisionSnapshot> findAllRevisionsByRepertoireItemId(
+            long repertoireItemId) {
+        return databaseClient.sql("""
+                SELECT
+                    revision.id AS revision_id,
+                    revision.scene_rule_id,
+                    revision.revision_number,
+                    revision.repertoire_item_id,
+                    revision.rule_order,
+                    revision.rule_type,
+                    revision.description,
+                    revision.active,
+                    revision.revision_kind,
+                    revision.created_at,
+                    revision_group.group_order,
+                    revision_group.group_label,
+                    revision_group.member_count,
+                    revision_group.composition_mode,
+                    member.singer_id
+                FROM scene_rule_revisions revision
+                LEFT JOIN scene_rule_revision_groups revision_group
+                  ON revision_group.revision_id = revision.id
+                LEFT JOIN scene_rule_revision_group_members member
+                  ON member.revision_id = revision_group.revision_id
+                 AND member.group_order = revision_group.group_order
+                WHERE revision.repertoire_item_id = :repertoireItemId
+                ORDER BY
+                    revision.scene_rule_id,
+                    revision.revision_number,
+                    revision_group.group_order,
+                    member.member_order
+                """)
+                .bind("repertoireItemId", repertoireItemId)
+                .map((row, metadata) -> new RevisionRow(
+                        row.get("revision_id", Long.class),
+                        row.get("scene_rule_id", Long.class),
+                        row.get("revision_number", Integer.class),
+                        row.get("repertoire_item_id", Long.class),
+                        row.get("rule_order", Integer.class),
+                        row.get("rule_type", String.class),
+                        row.get("description", String.class),
+                        row.get("active", Boolean.class),
+                        row.get("revision_kind", String.class),
+                        row.get("created_at", LocalDateTime.class),
+                        row.get("group_order", Integer.class),
+                        row.get("group_label", String.class),
+                        row.get("member_count", Integer.class),
+                        row.get("composition_mode", String.class),
+                        row.get("singer_id", Long.class)))
+                .all()
+                .collectList()
+                .map(this::assembleRevisionSnapshots)
+                .flatMapMany(Flux::fromIterable);
     }
 
     @Override
@@ -358,5 +420,100 @@ public class SceneRulePersistenceAdapter implements SceneRulePersistencePort {
         return new Failure(
                 FailureType.ORDER_LIMIT,
                 "No se puede agregar o reordenar reglas por límite de orden");
+    }
+
+    private List<SceneRuleRevisionSnapshot> assembleRevisionSnapshots(
+            List<RevisionRow> rows) {
+        Map<Long, RevisionAccumulator> revisions = new LinkedHashMap<>();
+        for (RevisionRow row : rows) {
+            RevisionAccumulator revision = revisions.computeIfAbsent(
+                    row.revisionId(),
+                    ignored -> new RevisionAccumulator(row));
+            if (row.groupOrder() != null) {
+                GroupAccumulator group = revision.groups().computeIfAbsent(
+                        row.groupOrder(),
+                        ignored -> new GroupAccumulator(row));
+                if (row.singerId() != null) {
+                    group.singerIds().add(row.singerId());
+                }
+            }
+        }
+        return revisions.values().stream()
+                .map(RevisionAccumulator::snapshot)
+                .toList();
+    }
+
+    private record RevisionRow(
+            Long revisionId,
+            Long sceneRuleId,
+            Integer revisionNumber,
+            Long repertoireItemId,
+            Integer ruleOrder,
+            String ruleType,
+            String description,
+            Boolean active,
+            String revisionKind,
+            LocalDateTime createdAt,
+            Integer groupOrder,
+            String groupLabel,
+            Integer memberCount,
+            String compositionMode,
+            Long singerId) {
+    }
+
+    private static final class RevisionAccumulator {
+
+        private final RevisionRow row;
+        private final Map<Integer, GroupAccumulator> groups = new LinkedHashMap<>();
+
+        private RevisionAccumulator(RevisionRow row) {
+            this.row = row;
+        }
+
+        private Map<Integer, GroupAccumulator> groups() {
+            return groups;
+        }
+
+        private SceneRuleRevisionSnapshot snapshot() {
+            return new SceneRuleRevisionSnapshot(
+                    row.revisionId(),
+                    row.sceneRuleId(),
+                    row.revisionNumber(),
+                    row.repertoireItemId(),
+                    row.ruleOrder(),
+                    row.ruleType(),
+                    row.description(),
+                    row.active(),
+                    row.revisionKind(),
+                    row.createdAt(),
+                    groups.values().stream()
+                            .map(GroupAccumulator::snapshot)
+                            .toList());
+        }
+    }
+
+    private static final class GroupAccumulator {
+
+        private final int groupOrder;
+        private final String label;
+        private final int memberCount;
+        private final String compositionMode;
+        private final List<Long> singerIds = new ArrayList<>();
+
+        private GroupAccumulator(RevisionRow row) {
+            groupOrder = row.groupOrder();
+            label = row.groupLabel();
+            memberCount = row.memberCount();
+            compositionMode = row.compositionMode();
+        }
+
+        private List<Long> singerIds() {
+            return singerIds;
+        }
+
+        private SceneRuleRevisionSnapshot.GroupSnapshot snapshot() {
+            return new SceneRuleRevisionSnapshot.GroupSnapshot(
+                    groupOrder, label, memberCount, compositionMode, singerIds);
+        }
     }
 }

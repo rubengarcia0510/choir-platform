@@ -1,0 +1,60 @@
+package com.rubengarcia.choir.api;
+
+import com.rubengarcia.choir.domain.TransitionVersion;
+import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+@RestController
+@RequestMapping("/api/choirs/{choirId}/transitions/{transitionId}/versions")
+public class TransitionVersionController {
+
+    private final TransitionVersionLifecycleService service;
+
+    public TransitionVersionController(TransitionVersionLifecycleService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public Flux<TransitionVersion> list(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            Authentication authentication) {
+        return service.list(authentication.getName(), choirId, transitionId);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<TransitionVersion> createDraft(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @Valid @RequestBody CreateDraftRequest request,
+            Authentication authentication) {
+        return service.createDraft(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                request.fromFormationVersionId(),
+                request.toFormationVersionId(),
+                request.instructions());
+    }
+
+    public record CreateDraftRequest(
+            @NotNull @Positive Long fromFormationVersionId,
+            @NotNull @Positive Long toFormationVersionId,
+            @Size(max = 4000) String instructions) {
+    }
+}

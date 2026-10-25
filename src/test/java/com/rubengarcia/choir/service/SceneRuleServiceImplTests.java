@@ -4,6 +4,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import com.rubengarcia.choir.domain.SceneRuleRevision;
 import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
+import com.rubengarcia.choir.scene.application.port.out.SceneRuleHistoryPort;
+import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,9 @@ class SceneRuleServiceImplTests {
 
     @Autowired
     private SceneRuleService sceneRuleService;
+
+    @Autowired
+    private SceneRuleHistoryPort sceneRuleHistoryPort;
 
     @MockitoSpyBean
     private SceneRuleRevisionRepository revisionRepository;
@@ -321,6 +326,96 @@ class SceneRuleServiceImplTests {
                 ORDER BY revision.revision_number
                 """, String.class, created.id()))
                 .containsExactly("IDENTIFIED", "IDENTIFIED");
+    }
+
+    @Test
+    void readsCompleteRevisionSnapshotsWithoutUsingCurrentSingerData() {
+        Fixture fixture = createFixture("revision-history-read");
+        long firstSingerId = createSinger(fixture, "Coreuta histórica");
+        long secondSingerId = createSinger(fixture, "Otra coreuta histórica");
+        SceneRuleService.RuleView created = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Entrada histórica",
+                        List.of(new SceneRuleService.GroupData(
+                                "Entrada",
+                                "IDENTIFIED",
+                                null,
+                                List.of(firstSingerId, secondSingerId)))))
+                .block(Duration.ofSeconds(10));
+        SceneRuleService.RuleView withoutGroups = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "EXIT", "Salida sin grupos", List.of()))
+                .block(Duration.ofSeconds(10));
+        sceneRuleService.update(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                created.id(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Entrada actualizada",
+                        List.of(new SceneRuleService.GroupData(
+                                "Elenco",
+                                3))))
+                .block(Duration.ofSeconds(10));
+        sceneRuleService.deactivate(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                created.id())
+                .block(Duration.ofSeconds(10));
+
+        List<SceneRuleRevisionSnapshot> revisions =
+                sceneRuleHistoryPort
+                        .findAllRevisionsByRepertoireItemId(
+                                fixture.repertoireItemId())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+
+        assertThat(revisions)
+                .extracting(SceneRuleRevisionSnapshot::revisionNumber)
+                .containsExactly(1, 2, 3, 1);
+        assertThat(revisions)
+                .extracting(SceneRuleRevisionSnapshot::revisionKind)
+                .containsExactly("CREATE", "UPDATE", "DEACTIVATE", "CREATE");
+        assertThat(revisions).hasSize(4);
+        assertThat(revisions.get(3).sceneRuleId()).isEqualTo(withoutGroups.id());
+        assertThat(revisions.get(3).groups()).isEmpty();
+        assertThat(revisions.get(0).groups()).containsExactly(
+                new SceneRuleRevisionSnapshot.GroupSnapshot(
+                        0,
+                        "Entrada",
+                        2,
+                        "IDENTIFIED",
+                        List.of(firstSingerId, secondSingerId)));
+        assertThat(revisions.get(1).groups()).containsExactly(
+                new SceneRuleRevisionSnapshot.GroupSnapshot(
+                        0, "Elenco", 3, "COUNT", List.of()));
+        assertThat(revisions.get(2).active()).isFalse();
+        assertThat(revisions.get(2).groups())
+                .isEqualTo(revisions.get(1).groups());
+
+        jdbc.update("DELETE FROM singers WHERE id = ?", firstSingerId);
+
+        List<SceneRuleRevisionSnapshot> afterSingerDeletion =
+                sceneRuleHistoryPort
+                        .findAllRevisionsByRepertoireItemId(
+                                fixture.repertoireItemId())
+                        .collectList()
+                        .block(Duration.ofSeconds(10));
+        assertThat(afterSingerDeletion.get(0).groups().get(0).singerIds())
+                .containsExactly(firstSingerId, secondSingerId);
     }
 
     @Test
