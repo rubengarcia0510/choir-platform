@@ -4,6 +4,7 @@ import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -19,6 +20,18 @@ public interface FormationPlanningAuthorizationService {
 
     Flux<TransitionPlanningPosition> positionsForTransitionVersion(
             String email, long choirId, long transitionVersionId);
+
+    Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId);
+
+    Flux<TransitionRuleEvaluationSnapshot> transitionRuleEvaluationHistory(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId);
 
     Mono<Void> updateDraftPosition(
             String email,

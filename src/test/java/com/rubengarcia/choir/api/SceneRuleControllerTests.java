@@ -76,6 +76,55 @@ class SceneRuleControllerTests {
     }
 
     @Test
+    void separationThresholdChangesAreVersionedAndAudited() throws Exception {
+        Fixture fixture = fixture("separation-settings");
+        Session session = login(fixture.email());
+        String settingsPath = "/api/choirs/" + fixture.choirId()
+                + "/scene-rule-settings/separation-threshold";
+        String originalJson = web.get()
+                .uri(settingsPath)
+                .cookie("SESSION", session.id())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult()
+                .getResponseBody();
+        assertThat(originalJson).isNotNull();
+        Map<String, Object> original = objectMapper.readValue(
+                originalJson,
+                new tools.jackson.core.type.TypeReference<>() {});
+
+        web.put()
+                .uri(settingsPath)
+                .cookie("SESSION", session.id())
+                .header("X-CSRF-TOKEN", session.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("threshold", 0.075))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.threshold").isEqualTo(0.075)
+                .jsonPath("$.revision").isEqualTo(
+                        ((Number) original.get("revision")).longValue() + 1);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM scene_rule_separation_setting_revisions
+                WHERE changed_by_email = ? AND new_threshold = 0.075
+                """, Integer.class, fixture.email()))
+                .isEqualTo(1);
+
+        web.put()
+                .uri(settingsPath)
+                .cookie("SESSION", session.id())
+                .header("X-CSRF-TOKEN", session.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("threshold", original.get("threshold")))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
     void directorCanManageRulesThroughHttp() throws Exception {
         Fixture fixture = fixture("crud");
         Session session = login(fixture.email());
@@ -86,6 +135,14 @@ class SceneRuleControllerTests {
         Long singerId = jdbc.queryForObject("""
                 SELECT id FROM singers
                 WHERE choir_id = ? AND display_name = 'Coreuta identificada'
+                """, Long.class, fixture.choirId());
+        jdbc.update("""
+                INSERT INTO singers (choir_id, display_name, voice_part, active)
+                VALUES (?, 'Segunda coreuta', 'ALTO', TRUE)
+                """, fixture.choirId());
+        Long secondSingerId = jdbc.queryForObject("""
+                SELECT id FROM singers
+                WHERE choir_id = ? AND display_name = 'Segunda coreuta'
                 """, Long.class, fixture.choirId());
 
         String base = path(
@@ -102,17 +159,34 @@ class SceneRuleControllerTests {
                         "groups", List.of(Map.of(
                                 "label", "Grupo A",
                                 "compositionMode", "IDENTIFIED",
-                                "singerIds", List.of(singerId))))))
+                                "singerIds", List.of(singerId))),
+                        "condition", Map.of(
+                                "spatialConstraints", List.of(Map.of(
+                                        "relation", "NEAR",
+                                        "stage", "TO",
+                                        "participants", List.of(
+                                                Map.of(
+                                                        "type", "SINGER",
+                                                        "singerId", singerId),
+                                                Map.of(
+                                                        "type", "SINGER",
+                                                        "singerId", secondSingerId)),
+                                        "threshold", 0.2))))))
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody()
                 .jsonPath("$.id").isNumber()
                 .jsonPath("$.order").isEqualTo(0)
                 .jsonPath("$.active").isEqualTo(true)
+                .jsonPath("$.definitionStatus").isEqualTo("DRAFT")
                 .jsonPath("$.groups[0].label").isEqualTo("Grupo A")
                 .jsonPath("$.groups[0].compositionMode").isEqualTo("IDENTIFIED")
                 .jsonPath("$.groups[0].memberCount").isEqualTo(1)
-                .jsonPath("$.groups[0].singerIds[0]").isEqualTo(singerId);
+                .jsonPath("$.groups[0].singerIds[0]").isEqualTo(singerId)
+                .jsonPath("$.condition.spatialConstraints[0].relation")
+                .isEqualTo("NEAR")
+                .jsonPath("$.condition.spatialConstraints[0].participants[1].singerId")
+                .isEqualTo(secondSingerId);
 
         String secondBody = objectMapper.writeValueAsString(Map.of(
                 "ruleType", "EXIT",

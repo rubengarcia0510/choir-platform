@@ -1,10 +1,12 @@
 package com.rubengarcia.choir.transition.adapter.out.persistence;
 
 import com.rubengarcia.choir.transition.application.port.out.TransitionPlanningPositionRepository;
+import com.rubengarcia.choir.transition.domain.TransitionPlanningContext;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 
@@ -77,5 +79,39 @@ public class R2dbcTransitionPlanningPositionRepository
                         row.get("x_coordinate", BigDecimal.class),
                         row.get("y_coordinate", BigDecimal.class)))
                 .all();
+    }
+
+    @Override
+    public Mono<TransitionPlanningContext> findPlanningContext(
+            long transitionVersionId) {
+        return database.sql("""
+                SELECT
+                    tv.id AS transition_version_id,
+                    tv.transition_id,
+                    tv.from_formation_version_id,
+                    tv.to_formation_version_id,
+                    from_formation.repertoire_item_id
+                FROM transition_versions tv
+                JOIN formation_versions from_version
+                  ON from_version.id = tv.from_formation_version_id
+                JOIN formations from_formation
+                  ON from_formation.id = from_version.formation_id
+                JOIN formation_versions to_version
+                  ON to_version.id = tv.to_formation_version_id
+                JOIN formations to_formation
+                  ON to_formation.id = to_version.formation_id
+                 AND to_formation.repertoire_item_id =
+                     from_formation.repertoire_item_id
+                WHERE tv.id = :transitionVersionId
+                  AND from_formation.repertoire_item_id IS NOT NULL
+                """)
+                .bind("transitionVersionId", transitionVersionId)
+                .map((row, metadata) -> new TransitionPlanningContext(
+                        row.get("transition_version_id", Long.class),
+                        row.get("transition_id", Long.class),
+                        row.get("from_formation_version_id", Long.class),
+                        row.get("to_formation_version_id", Long.class),
+                        row.get("repertoire_item_id", Long.class)))
+                .one();
     }
 }

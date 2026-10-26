@@ -1,7 +1,9 @@
 package com.rubengarcia.choir.api;
 
 import com.rubengarcia.choir.domain.TransitionVersion;
+import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -23,9 +25,13 @@ import reactor.core.publisher.Mono;
 public class TransitionVersionController {
 
     private final TransitionVersionLifecycleService service;
+    private final FormationPlanningAuthorizationService planningService;
 
-    public TransitionVersionController(TransitionVersionLifecycleService service) {
+    public TransitionVersionController(
+            TransitionVersionLifecycleService service,
+            FormationPlanningAuthorizationService planningService) {
         this.service = service;
+        this.planningService = planningService;
     }
 
     @GetMapping
@@ -50,6 +56,33 @@ public class TransitionVersionController {
                 request.fromFormationVersionId(),
                 request.toFormationVersionId(),
                 request.instructions());
+    }
+
+    @PostMapping("/{transitionVersionId}/rule-evaluations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<TransitionRuleEvaluationSnapshot> evaluateRules(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @PathVariable long transitionVersionId,
+            Authentication authentication) {
+        return planningService.evaluateTransitionVersion(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                transitionVersionId);
+    }
+
+    @GetMapping("/{transitionVersionId}/rule-evaluations")
+    public Flux<TransitionRuleEvaluationSnapshot> ruleEvaluationHistory(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @PathVariable long transitionVersionId,
+            Authentication authentication) {
+        return planningService.transitionRuleEvaluationHistory(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                transitionVersionId);
     }
 
     public record CreateDraftRequest(
