@@ -14,7 +14,4 @@ public interface TransitionVersionLifecyclePort {
             long fromFormationVersionId,
             long toFormationVersionId,
             String instructions);
-
-    Mono<TransitionVersion> publishAfterRuleEvaluation(
-            long choirId, long transitionId, long versionId);
 }

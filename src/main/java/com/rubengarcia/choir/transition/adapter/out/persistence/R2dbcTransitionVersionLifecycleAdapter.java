@@ -61,39 +61,6 @@ public class R2dbcTransitionVersionLifecycleAdapter
                 .then(latestVersion(transitionId));
     }
 
-    @Override
-    @Transactional(transactionManager = "connectionFactoryTransactionManager")
-    public Mono<TransitionVersion> publishAfterRuleEvaluation(
-            long choirId, long transitionId, long versionId) {
-        return lockTransition(choirId, transitionId)
-                .then(findVersion(transitionId, versionId))
-                .flatMap(version -> {
-                    if (!"DRAFT".equals(version.getStatus())) {
-                        return Mono.error(new ResponseStatusException(
-                                HttpStatus.CONFLICT,
-                                "Solo se pueden publicar versiones en estado DRAFT"));
-                    }
-
-                    return database.sql("""
-                            UPDATE transition_versions
-                            SET status = 'PUBLISHED',
-                                published_at = CURRENT_TIMESTAMP
-                            WHERE id = :versionId
-                              AND transition_id = :transitionId
-                              AND status = 'DRAFT'
-                            """)
-                            .bind("versionId", versionId)
-                            .bind("transitionId", transitionId)
-                            .fetch()
-                            .rowsUpdated()
-                            .flatMap(updated -> updated == 1
-                                    ? findVersion(transitionId, versionId)
-                                    : Mono.error(new ResponseStatusException(
-                                            HttpStatus.CONFLICT,
-                                            "La versión cambió de estado y no pudo publicarse")));
-                });
-    }
-
     private Mono<Void> requireTransition(long choirId, long transitionId) {
         return transitionQuery(choirId, transitionId, false)
                 .then();
@@ -200,26 +167,6 @@ public class R2dbcTransitionVersionLifecycleAdapter
                 .bind("transitionId", transitionId)
                 .map((row, metadata) -> mapVersion(row))
                 .one();
-    }
-
-    private Mono<TransitionVersion> findVersion(
-            long transitionId, long versionId) {
-        return database.sql("""
-                SELECT id, transition_id, version_number,
-                       from_formation_version_id,
-                       to_formation_version_id, status, instructions,
-                       created_at, published_at
-                FROM transition_versions
-                WHERE transition_id = :transitionId
-                  AND id = :versionId
-                """)
-                .bind("transitionId", transitionId)
-                .bind("versionId", versionId)
-                .map((row, metadata) -> mapVersion(row))
-                .one()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Versión inexistente o fuera de la transición")));
     }
 
     private TransitionVersion mapVersion(io.r2dbc.spi.Row row) {

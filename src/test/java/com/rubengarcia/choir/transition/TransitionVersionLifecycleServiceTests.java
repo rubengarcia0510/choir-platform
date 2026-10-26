@@ -1,7 +1,6 @@
 package com.rubengarcia.choir.transition;
 
 import com.rubengarcia.choir.domain.TransitionVersion;
-import com.rubengarcia.choir.transition.application.port.out.TransitionVersionLifecyclePort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
 import java.time.Duration;
 import java.util.UUID;
@@ -29,9 +28,6 @@ class TransitionVersionLifecycleServiceTests {
 
     @Autowired
     private TransitionVersionLifecycleService service;
-
-    @Autowired
-    private TransitionVersionLifecyclePort lifecyclePort;
 
     @Test
     void createsAndListsDraftsWithIncreasingVersionNumbers() {
@@ -110,61 +106,6 @@ class TransitionVersionLifecycleServiceTests {
                 SELECT COUNT(*) FROM transition_versions
                 WHERE transition_id = ?
                 """, Integer.class, fixture.transitionId())).isZero();
-    }
-
-    @Test
-    void publishesDraftWithoutChangingPreviouslyPublishedVersions() {
-        Fixture fixture = fixture();
-        jdbc.update("""
-                INSERT INTO transition_versions
-                    (transition_id, version_number,
-                     from_formation_version_id, to_formation_version_id,
-                     status, instructions, published_at)
-                VALUES (?, 1, ?, ?, 'PUBLISHED', 'Histórica',
-                        TIMESTAMP '2025-01-02 03:04:05')
-                """,
-                fixture.transitionId(),
-                fixture.fromFormationVersionId(),
-                fixture.toFormationVersionId());
-        long previousVersionId = jdbc.queryForObject("""
-                SELECT id FROM transition_versions
-                WHERE transition_id = ? AND version_number = 1
-                """, Long.class, fixture.transitionId());
-        Object previousPublishedAt = jdbc.queryForObject("""
-                SELECT published_at FROM transition_versions WHERE id = ?
-                """, Object.class, previousVersionId);
-
-        TransitionVersion draft = service.createDraft(
-                fixture.email(),
-                fixture.choirId(),
-                fixture.transitionId(),
-                fixture.fromFormationVersionId(),
-                fixture.toFormationVersionId(),
-                "Nueva versión")
-                .block(TIMEOUT);
-        TransitionVersion published = lifecyclePort.publishAfterRuleEvaluation(
-                fixture.choirId(),
-                fixture.transitionId(),
-                draft.getId())
-                .block(TIMEOUT);
-
-        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
-        assertThat(published.getPublishedAt()).isNotNull();
-        assertThat(jdbc.queryForMap("""
-                SELECT status, instructions, published_at
-                FROM transition_versions WHERE id = ?
-                """, previousVersionId))
-                .containsEntry("STATUS", "PUBLISHED")
-                .containsEntry("INSTRUCTIONS", "Histórica")
-                .containsEntry("PUBLISHED_AT", previousPublishedAt);
-
-        assertThatThrownBy(() -> lifecyclePort.publishAfterRuleEvaluation(
-                fixture.choirId(),
-                fixture.transitionId(),
-                draft.getId())
-                .block(TIMEOUT))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("estado DRAFT");
     }
 
     @Test
