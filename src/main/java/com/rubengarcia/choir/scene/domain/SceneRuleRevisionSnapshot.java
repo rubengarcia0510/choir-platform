@@ -12,9 +12,11 @@ public record SceneRuleRevisionSnapshot(
         String ruleType,
         String description,
         boolean active,
+        String definitionStatus,
         String revisionKind,
         LocalDateTime createdAt,
-        List<GroupSnapshot> groups) {
+        List<GroupSnapshot> groups,
+        SceneRuleCondition condition) {
 
     public SceneRuleRevisionSnapshot {
         groups = List.copyOf(groups);

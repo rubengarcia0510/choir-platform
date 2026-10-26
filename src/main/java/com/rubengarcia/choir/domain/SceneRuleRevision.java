@@ -31,6 +31,12 @@ public class SceneRuleRevision {
     @Column("revision_kind")
     private String revisionKind;
 
+    @Column("condition_json")
+    private String conditionJson;
+
+    @Column("definition_status")
+    private String definitionStatus;
+
     public SceneRuleRevision() {
     }
 
@@ -100,5 +106,21 @@ public class SceneRuleRevision {
 
     public void setRevisionKind(String revisionKind) {
         this.revisionKind = revisionKind;
+    }
+
+    public String getConditionJson() {
+        return conditionJson;
+    }
+
+    public void setConditionJson(String conditionJson) {
+        this.conditionJson = conditionJson;
+    }
+
+    public String getDefinitionStatus() {
+        return definitionStatus;
+    }
+
+    public void setDefinitionStatus(String definitionStatus) {
+        this.definitionStatus = definitionStatus;
     }
 }

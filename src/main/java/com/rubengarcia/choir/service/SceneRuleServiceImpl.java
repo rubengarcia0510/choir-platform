@@ -5,6 +5,11 @@ import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.Failure;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.GroupDefinition;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.RuleDefinition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.SpatialConstraint;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -150,7 +155,9 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                         rule.getRuleType(),
                         rule.getDescription(),
                         rule.isActive(),
-                        groups));
+                        groups,
+                        rule.getCondition(),
+                        rule.getDefinitionStatus()));
     }
 
     private Mono<Void> validate(RuleData data) {
@@ -177,7 +184,139 @@ public class SceneRuleServiceImpl implements SceneRuleService {
             return Mono.error(badRequest(
                     "Una regla de división del elenco requiere al menos dos grupos"));
         }
+        if (data.condition() != null && !validCondition(
+                normalizeType(data.ruleType()), data.condition(), data.groups().size())) {
+            return Mono.error(badRequest(
+                    "La condición estructurada contiene parámetros inválidos"));
+        }
+        if (Boolean.FALSE.equals(data.draft())
+                && !completeCondition(
+                        normalizeType(data.ruleType()), data.condition())) {
+            return Mono.error(badRequest(
+                    "Una regla no borrador requiere una condición completa"));
+        }
         return Mono.empty();
+    }
+
+    private boolean validCondition(
+            String ruleType, SceneRuleCondition condition, int groupCount) {
+        if (condition.spatialConstraints() != null
+                && condition.spatialConstraints().stream().anyMatch(constraint ->
+                        !validConstraint(constraint, groupCount))) {
+            return false;
+        }
+        if ("EXIT".equals(ruleType)) {
+            return condition.exitParticipants() == null
+                    || condition.exitParticipants().stream()
+                            .allMatch(participant -> validParticipant(
+                                    participant, groupCount));
+        }
+        return condition.exitParticipants() == null
+                || condition.exitParticipants().isEmpty();
+    }
+
+    private boolean validConstraint(SpatialConstraint constraint, int groupCount) {
+        if (constraint == null) {
+            return false;
+        }
+        List<ParticipantRef> participants = constraint.participants();
+        List<ParticipantRef> compared = constraint.comparedParticipants();
+        if (participants != null && participants.stream().anyMatch(
+                participant -> !validParticipant(participant, groupCount))) {
+            return false;
+        }
+        if (compared != null && compared.stream().anyMatch(
+                participant -> !validParticipant(participant, groupCount))) {
+            return false;
+        }
+        boolean validThreshold = constraint.threshold() == null
+                || constraint.threshold().signum() > 0
+                        && constraint.threshold().multiply(constraint.threshold())
+                                .compareTo(java.math.BigDecimal.valueOf(2)) <= 0;
+        if (!validThreshold) {
+            return false;
+        }
+        if (constraint.relation() == Relation.SEPARATED
+                && constraint.direction() != null) {
+            return false;
+        }
+        if ((constraint.relation() == Relation.TOGETHER
+                        || constraint.relation() == Relation.NEAR)
+                && constraint.direction() != null) {
+            return false;
+        }
+        if (constraint.relation() != null
+                && constraint.relation() != Relation.SEPARATED
+                && compared != null && !compared.isEmpty()) {
+            return false;
+        }
+        if (constraint.relation() == Relation.RELATIVE_ORDER
+                && (constraint.threshold() != null
+                        || participants != null && participants.size() > 2)) {
+            return false;
+        }
+        if (constraint.relation() == Relation.NEAR
+                && participants != null && participants.size() > 2) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validParticipant(ParticipantRef participant, int groupCount) {
+        if (participant == null || participant.type() == null) {
+            return false;
+        }
+        if (participant.type() == ParticipantType.SINGER) {
+            return participant.singerId() != null && participant.singerId() > 0
+                    && participant.groupOrder() == null;
+        }
+        return participant.singerId() == null
+                && participant.groupOrder() != null
+                && participant.groupOrder() >= 0
+                && participant.groupOrder() < groupCount;
+    }
+
+    private boolean completeCondition(
+            String ruleType, SceneRuleCondition condition) {
+        if (condition == null) {
+            return false;
+        }
+        if ("EXIT".equals(ruleType)) {
+            return condition.exitParticipants() != null
+                    && !condition.exitParticipants().isEmpty();
+        }
+        List<SpatialConstraint> constraints = condition.spatialConstraints();
+        if (constraints == null || constraints.isEmpty()
+                || constraints.stream().anyMatch(
+                        constraint -> !completeConstraint(constraint))) {
+            return false;
+        }
+        if ("MOVEMENT".equals(ruleType)) {
+            return constraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.FROM)
+                    && constraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.TO);
+        }
+        return true;
+    }
+
+    private boolean completeConstraint(SpatialConstraint constraint) {
+        if (constraint == null || constraint.relation() == null
+                || constraint.stage() == null || constraint.participants() == null) {
+            return false;
+        }
+        return switch (constraint.relation()) {
+            case TOGETHER -> constraint.participants().size() >= 2
+                    && constraint.threshold() != null;
+            case NEAR -> constraint.participants().size() == 2
+                    && constraint.threshold() != null;
+            case RELATIVE_ORDER -> constraint.participants().size() == 2
+                    && constraint.direction() != null;
+            case SEPARATED -> !constraint.participants().isEmpty()
+                    && constraint.comparedParticipants() != null
+                    && !constraint.comparedParticipants().isEmpty()
+                    && constraint.threshold() != null;
+        };
     }
 
     private String normalizeType(String ruleType) {
@@ -204,7 +343,13 @@ public class SceneRuleServiceImpl implements SceneRuleService {
                                     memberCount,
                                     singerIds);
                         })
-                        .toList());
+                        .toList(),
+                data.condition(),
+                Boolean.TRUE.equals(data.draft())
+                        || !completeCondition(
+                                normalizeType(data.ruleType()), data.condition())
+                        ? "DRAFT"
+                        : "READY");
     }
 
     private boolean validGroup(GroupData group) {

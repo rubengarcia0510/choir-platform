@@ -5,8 +5,15 @@ import org.junit.jupiter.api.Test;
 import com.rubengarcia.choir.domain.SceneRuleRevision;
 import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
 import com.rubengarcia.choir.scene.application.port.out.SceneRuleHistoryPort;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.SpatialConstraint;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Stage;
 import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
 import java.time.Duration;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -326,6 +333,124 @@ class SceneRuleServiceImplTests {
                 ORDER BY revision.revision_number
                 """, String.class, created.id()))
                 .containsExactly("IDENTIFIED", "IDENTIFIED");
+    }
+
+    @Test
+    void persistsStructuredConditionsInCurrentRulesAndImmutableRevisions() {
+        Fixture fixture = createFixture("structured-condition");
+        long firstSingerId = createSinger(fixture, "Primera coreuta");
+        long secondSingerId = createSinger(fixture, "Segunda coreuta");
+        SceneRuleCondition condition = new SceneRuleCondition(
+                null,
+                List.of(new SpatialConstraint(
+                        Relation.NEAR,
+                        Stage.TO,
+                        List.of(
+                                new ParticipantRef(
+                                        ParticipantType.SINGER, firstSingerId, null),
+                                new ParticipantRef(
+                                        ParticipantType.SINGER, secondSingerId, null)),
+                        null,
+                        new BigDecimal("0.20"),
+                        null)),
+                null);
+
+        SceneRuleService.RuleView created = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "CAST_DIVISION",
+                        "Separación de individuos",
+                        List.of(
+                                new SceneRuleService.GroupData("A", 1),
+                                new SceneRuleService.GroupData("B", 1)),
+                        condition))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(created).isNotNull();
+        assertThat(created.condition()).isEqualTo(condition);
+        assertThat(created.definitionStatus()).isEqualTo("READY");
+        assertThat(jdbc.queryForObject(
+                "SELECT condition_json FROM scene_rules WHERE id = ?",
+                String.class,
+                created.id()))
+                .contains("\"NEAR\"");
+        assertThat(jdbc.queryForObject(
+                "SELECT condition_json FROM scene_rule_revisions "
+                        + "WHERE scene_rule_id = ? AND revision_number = 1",
+                String.class,
+                created.id()))
+                .isEqualTo(jdbc.queryForObject(
+                        "SELECT condition_json FROM scene_rules WHERE id = ?",
+                        String.class,
+                        created.id()));
+
+        SceneRuleRevisionSnapshot revision = sceneRuleHistoryPort
+                .findAllRevisionsByRepertoireItemId(fixture.repertoireItemId())
+                .filter(snapshot -> snapshot.sceneRuleId() == created.id())
+                .single()
+                .block(Duration.ofSeconds(10));
+        assertThat(revision).isNotNull();
+        assertThat(revision.condition()).isEqualTo(condition);
+    }
+
+    @Test
+    void storesIncompleteConditionsAsDraftsAndRejectsForcedReadyState() {
+        Fixture fixture = createFixture("incomplete-condition");
+        SceneRuleCondition incomplete = new SceneRuleCondition(
+                null,
+                List.of(new SpatialConstraint(
+                        Relation.NEAR,
+                        SceneRuleCondition.Stage.TO,
+                        List.of(
+                                new ParticipantRef(
+                                        ParticipantType.GROUP, null, 0),
+                                new ParticipantRef(
+                                        ParticipantType.GROUP, null, 1)),
+                        null,
+                        null,
+                        null)),
+                null);
+        List<SceneRuleService.GroupData> groups = List.of(
+                new SceneRuleService.GroupData("A", 2),
+                new SceneRuleService.GroupData("B", 2));
+
+        SceneRuleService.RuleView draft = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Condición incompleta",
+                        groups,
+                        incomplete))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(draft.definitionStatus()).isEqualTo("DRAFT");
+        assertThat(jdbc.queryForObject(
+                "SELECT definition_status FROM scene_rule_revisions "
+                        + "WHERE scene_rule_id = ? AND revision_number = 1",
+                String.class,
+                draft.id()))
+                .isEqualTo("DRAFT");
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Borrador forzado a ready",
+                        groups,
+                        incomplete,
+                        false))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("condición completa");
     }
 
     @Test

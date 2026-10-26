@@ -10,6 +10,7 @@ import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
 import com.rubengarcia.choir.repository.SingerRepository;
 import com.rubengarcia.choir.scene.application.port.out.SceneRuleHistoryPort;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
 import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -22,6 +23,8 @@ import java.util.stream.Collectors;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -40,6 +43,7 @@ public class SceneRulePersistenceAdapter
     private final SceneRuleRevisionRepository revisionRepository;
     private final SingerRepository singerRepository;
     private final DatabaseClient databaseClient;
+    private final ObjectMapper objectMapper;
 
     public SceneRulePersistenceAdapter(
             SceneRuleMutationRepository mutationRepository,
@@ -47,25 +51,60 @@ public class SceneRulePersistenceAdapter
             SceneRuleGroupRepository groupRepository,
             SceneRuleRevisionRepository revisionRepository,
             SingerRepository singerRepository,
-            DatabaseClient databaseClient) {
+            DatabaseClient databaseClient,
+            ObjectMapper objectMapper) {
         this.mutationRepository = mutationRepository;
         this.ruleRepository = ruleRepository;
         this.groupRepository = groupRepository;
         this.revisionRepository = revisionRepository;
         this.singerRepository = singerRepository;
         this.databaseClient = databaseClient;
+        this.objectMapper = objectMapper;
+    }
+
+    private SceneRule hydrateCondition(SceneRule rule) {
+        rule.setCondition(readCondition(rule.getConditionJson()));
+        return rule;
+    }
+
+    private String writeCondition(SceneRuleCondition condition) {
+        if (condition == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(condition);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException(
+                    "No se pudo serializar la condición estructurada de la regla",
+                    exception);
+        }
+    }
+
+    private SceneRuleCondition readCondition(String conditionJson) {
+        if (conditionJson == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(conditionJson, SceneRuleCondition.class);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException(
+                    "No se pudo leer la condición estructurada de una revisión",
+                    exception);
+        }
     }
 
     @Override
     public Flux<SceneRule> findByRepertoireItemId(long repertoireItemId) {
         return ruleRepository.findByRepertoireItemIdOrderByRuleOrderAsc(
-                repertoireItemId);
+                        repertoireItemId)
+                .map(this::hydrateCondition);
     }
 
     @Override
     public Mono<SceneRule> findByIdAndRepertoireItemId(
             long ruleId, long repertoireItemId) {
-        return ruleRepository.findByIdAndRepertoireItemId(ruleId, repertoireItemId);
+        return ruleRepository.findByIdAndRepertoireItemId(ruleId, repertoireItemId)
+                .map(this::hydrateCondition);
     }
 
     @Override
@@ -101,6 +140,8 @@ public class SceneRulePersistenceAdapter
                     revision.active,
                     revision.revision_kind,
                     revision.created_at,
+                    revision.condition_json,
+                    revision.definition_status,
                     revision_group.group_order,
                     revision_group.group_label,
                     revision_group.member_count,
@@ -131,6 +172,8 @@ public class SceneRulePersistenceAdapter
                         row.get("active", Boolean.class),
                         row.get("revision_kind", String.class),
                         row.get("created_at", LocalDateTime.class),
+                        row.get("condition_json", String.class),
+                        row.get("definition_status", String.class),
                         row.get("group_order", Integer.class),
                         row.get("group_label", String.class),
                         row.get("member_count", Integer.class),
@@ -146,7 +189,8 @@ public class SceneRulePersistenceAdapter
     @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<SceneRule> create(
             long choirId, long repertoireItemId, RuleDefinition definition) {
-        return validateGroupMembers(choirId, definition.groups())
+        return validateGroupMembers(
+                        choirId, definition.groups(), definition.condition())
                 .then(lockRepertoireItem(repertoireItemId))
                 .then(ruleRepository
                         .findByRepertoireItemIdOrderByRuleOrderDesc(repertoireItemId)
@@ -163,6 +207,9 @@ public class SceneRulePersistenceAdapter
                     rule.setRuleType(definition.ruleType());
                     rule.setDescription(definition.description());
                     rule.setActive(true);
+                    rule.setCondition(definition.condition());
+                    rule.setConditionJson(writeCondition(definition.condition()));
+                    rule.setDefinitionStatus(definition.definitionStatus());
                     return ruleRepository.save(rule)
                             .flatMap(saved -> replaceGroups(
                                             saved.getId(), definition.groups())
@@ -178,12 +225,16 @@ public class SceneRulePersistenceAdapter
             long repertoireItemId,
             long ruleId,
             RuleDefinition definition) {
-        return validateGroupMembers(choirId, definition.groups())
+        return validateGroupMembers(
+                        choirId, definition.groups(), definition.condition())
                 .then(lockRepertoireItem(repertoireItemId))
                 .then(findRule(repertoireItemId, ruleId))
                 .flatMap(rule -> {
                     rule.setRuleType(definition.ruleType());
                     rule.setDescription(definition.description());
+                    rule.setCondition(definition.condition());
+                    rule.setConditionJson(writeCondition(definition.condition()));
+                    rule.setDefinitionStatus(definition.definitionStatus());
                     return ruleRepository.save(rule)
                             .flatMap(saved -> replaceGroups(
                                             ruleId, definition.groups())
@@ -282,6 +333,8 @@ public class SceneRulePersistenceAdapter
                     revision.setDescription(rule.getDescription());
                     revision.setActive(rule.isActive());
                     revision.setRevisionKind(revisionKind);
+                    revision.setConditionJson(rule.getConditionJson());
+                    revision.setDefinitionStatus(rule.getDefinitionStatus());
                     return revisionRepository.save(revision);
                 })
                 .flatMap(savedRevision -> findGroupsBySceneRuleId(rule.getId())
@@ -346,9 +399,15 @@ public class SceneRulePersistenceAdapter
     }
 
     private Mono<Void> validateGroupMembers(
-            long choirId, List<GroupDefinition> groups) {
-        return Flux.fromIterable(groups)
-                .concatMap(group -> Flux.fromIterable(group.singerIds()))
+            long choirId,
+            List<GroupDefinition> groups,
+            SceneRuleCondition condition) {
+        List<Long> referencedSingerIds = conditionSingerIds(condition);
+        return Flux.concat(
+                Flux.fromIterable(groups)
+                        .concatMap(group -> Flux.fromIterable(
+                                group.singerIds())),
+                Flux.fromIterable(referencedSingerIds))
                 .distinct()
                 .concatMap(singerId -> singerRepository
                         .findByIdAndChoirId(singerId, choirId)
@@ -356,6 +415,36 @@ public class SceneRulePersistenceAdapter
                                 FailureType.INVALID_GROUP_MEMBERS,
                                 "Los coreutas de un grupo deben pertenecer al coro"))))
                 .then();
+    }
+
+    private List<Long> conditionSingerIds(SceneRuleCondition condition) {
+        if (condition == null) {
+            return List.of();
+        }
+        List<SceneRuleCondition.ParticipantRef> participants = new ArrayList<>();
+        if (condition.exitParticipants() != null) {
+            participants.addAll(condition.exitParticipants());
+        }
+        if (condition.spatialConstraints() != null) {
+            condition.spatialConstraints().stream()
+                    .filter(constraint -> constraint != null)
+                    .forEach(constraint -> {
+                        if (constraint.participants() != null) {
+                            participants.addAll(constraint.participants());
+                        }
+                        if (constraint.comparedParticipants() != null) {
+                            participants.addAll(constraint.comparedParticipants());
+                        }
+                    });
+        }
+        return participants.stream()
+                .filter(participant -> participant != null
+                        && participant.type()
+                                == SceneRuleCondition.ParticipantType.SINGER)
+                .map(SceneRuleCondition.ParticipantRef::singerId)
+                .filter(singerId -> singerId != null)
+                .distinct()
+                .toList();
     }
 
     private Mono<Void> saveGroupMember(
@@ -454,6 +543,8 @@ public class SceneRulePersistenceAdapter
             Boolean active,
             String revisionKind,
             LocalDateTime createdAt,
+            String conditionJson,
+            String definitionStatus,
             Integer groupOrder,
             String groupLabel,
             Integer memberCount,
@@ -461,7 +552,7 @@ public class SceneRulePersistenceAdapter
             Long singerId) {
     }
 
-    private static final class RevisionAccumulator {
+    private final class RevisionAccumulator {
 
         private final RevisionRow row;
         private final Map<Integer, GroupAccumulator> groups = new LinkedHashMap<>();
@@ -484,11 +575,13 @@ public class SceneRulePersistenceAdapter
                     row.ruleType(),
                     row.description(),
                     row.active(),
+                    row.definitionStatus(),
                     row.revisionKind(),
                     row.createdAt(),
                     groups.values().stream()
                             .map(GroupAccumulator::snapshot)
-                            .toList());
+                            .toList(),
+                    readCondition(row.conditionJson()));
         }
     }
 

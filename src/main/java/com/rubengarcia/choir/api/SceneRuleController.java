@@ -4,6 +4,7 @@ import com.rubengarcia.choir.service.SceneRuleService;
 import com.rubengarcia.choir.service.SceneRuleService.GroupData;
 import com.rubengarcia.choir.service.SceneRuleService.RuleData;
 import com.rubengarcia.choir.service.SceneRuleService.RuleView;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -129,7 +130,16 @@ public class SceneRuleController {
     public record RuleRequest(
             @NotBlank @Size(max = 30) String ruleType,
             @NotBlank @Size(max = 1000) String description,
-            @NotNull List<@NotNull @Valid GroupRequest> groups) {
+            @NotNull List<@NotNull @Valid GroupRequest> groups,
+            SceneRuleCondition condition,
+            Boolean draft) {
+
+        public RuleRequest(
+                String ruleType,
+                String description,
+                List<GroupRequest> groups) {
+            this(ruleType, description, groups, null, null);
+        }
 
         RuleData toData() {
             return new RuleData(
@@ -145,7 +155,9 @@ public class SceneRuleController {
                                     group.singerIds() == null
                                             ? List.of()
                                             : group.singerIds()))
-                            .toList());
+                            .toList(),
+                    condition,
+                    draft);
         }
     }
 

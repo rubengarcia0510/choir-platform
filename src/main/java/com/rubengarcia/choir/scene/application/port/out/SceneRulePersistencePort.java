@@ -2,6 +2,7 @@ package com.rubengarcia.choir.scene.application.port.out;
 
 import com.rubengarcia.choir.domain.SceneRule;
 import com.rubengarcia.choir.domain.SceneRuleGroup;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
 import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,7 +33,9 @@ public interface SceneRulePersistencePort {
     record RuleDefinition(
             String ruleType,
             String description,
-            List<GroupDefinition> groups) {
+            List<GroupDefinition> groups,
+            SceneRuleCondition condition,
+            String definitionStatus) {
     }
 
     record GroupDefinition(

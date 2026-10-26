@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.service;
 
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -52,7 +53,21 @@ public interface SceneRuleService {
     record RuleData(
             String ruleType,
             String description,
-            List<GroupData> groups) {
+            List<GroupData> groups,
+            SceneRuleCondition condition,
+            Boolean draft) {
+        public RuleData(
+                String ruleType, String description, List<GroupData> groups) {
+            this(ruleType, description, groups, null, null);
+        }
+
+        public RuleData(
+                String ruleType,
+                String description,
+                List<GroupData> groups,
+                SceneRuleCondition condition) {
+            this(ruleType, description, groups, condition, null);
+        }
     }
 
     record GroupData(
@@ -79,6 +94,8 @@ public interface SceneRuleService {
             String ruleType,
             String description,
             boolean active,
-            List<GroupView> groups) {
+            List<GroupView> groups,
+            SceneRuleCondition condition,
+            String definitionStatus) {
     }
 }
