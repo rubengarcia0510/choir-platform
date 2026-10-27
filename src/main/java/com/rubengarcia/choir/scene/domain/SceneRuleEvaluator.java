@@ -248,21 +248,22 @@ public final class SceneRuleEvaluator {
                     "PARTICIPANT_POSITION_MISSING",
                     "No se pudo determinar el centro de un participante");
         }
-        if (constraint.direction() == Direction.FRONT
-                || constraint.direction() == Direction.BACK) {
-            return Check.notEvaluable(
-                    "FRONT_BACK_AXIS_UNDEFINED",
-                    "La orientación del eje delantero/trasero no está definida");
-        }
-        int comparison = first.xCoordinate().compareTo(second.xCoordinate());
+        boolean vertical = constraint.direction() == Direction.FRONT
+                || constraint.direction() == Direction.BACK;
+        int comparison = vertical
+                ? first.yCoordinate().compareTo(second.yCoordinate())
+                : first.xCoordinate().compareTo(second.xCoordinate());
         if (comparison == 0) {
             return Check.violated(
-                    "RELATIVE_ORDER_ALIGNED",
-                    "Los participantes están alineados en el eje de orden");
+                    vertical ? "RELATIVE_ORDER_ALIGNED_VERTICAL" : "RELATIVE_ORDER_ALIGNED",
+                    vertical
+                            ? "Los participantes están alineados en el eje delantero/trasero"
+                            : "Los participantes están alineados en el eje de orden");
         }
-        boolean satisfied = constraint.direction() == Direction.LEFT
-                ? comparison < 0
-                : comparison > 0;
+        boolean satisfied = switch (constraint.direction()) {
+            case LEFT, BACK -> comparison < 0;
+            case RIGHT, FRONT -> comparison > 0;
+        };
         return satisfied
                 ? Check.satisfied(
                         "RELATIVE_ORDER_SATISFIED",

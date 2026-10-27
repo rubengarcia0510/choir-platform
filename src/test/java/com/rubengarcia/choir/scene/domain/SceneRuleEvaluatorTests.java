@@ -94,41 +94,42 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void evaluatesStrictHorizontalOrderAndLeavesFrontBackUndefined() {
+    void evaluatesRelativeOrderOnHorizontalAndVerticalAxes() {
         SpatialConstraint left = constraint(
-                Relation.RELATIVE_ORDER,
-                Stage.TO,
-                List.of(singer(1), singer(2)),
-                null,
-                null,
-                Direction.LEFT);
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.LEFT);
         SpatialConstraint front = constraint(
-                Relation.RELATIVE_ORDER,
-                Stage.TO,
-                List.of(singer(1), singer(2)),
-                null,
-                null,
-                Direction.FRONT);
-        List<Position> positions = positions(
-                position(1, "0.20", "0.70"),
-                position(2, "0.80", "0.20"));
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.FRONT);
+        SpatialConstraint back = constraint(
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.BACK);
 
-        assertThat(evaluate(
-                "CAST_DIVISION",
-                condition(List.of(left), null),
-                positions,
-                null,
-                null,
-                null).status()).isEqualTo(Status.SATISFIED);
-        assertThat(evaluate(
-                "CAST_DIVISION",
-                condition(List.of(front), null),
-                positions,
-                null,
-                null,
-                null).warnings())
+        List<Position> firstInFront = positions(
+                position(1, "0.20", "0.70"), position(2, "0.80", "0.20"));
+        List<Position> firstBehind = positions(
+                position(1, "0.20", "0.20"), position(2, "0.80", "0.70"));
+        List<Position> verticallyAligned = positions(
+                position(1, "0.20", "0.50"), position(2, "0.80", "0.50"));
+
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(left), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(front), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(back), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.VIOLATED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(back), null),
+                firstBehind, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(front), null),
+                firstBehind, null, null, null).status()).isEqualTo(Status.VIOLATED);
+
+        Evaluation aligned = evaluate(
+                "CAST_DIVISION", condition(List.of(front), null),
+                verticallyAligned, null, null, null);
+        assertThat(aligned.status()).isEqualTo(Status.VIOLATED);
+        assertThat(aligned.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("FRONT_BACK_AXIS_UNDEFINED");
+                .containsExactly("RELATIVE_ORDER_ALIGNED_VERTICAL");
     }
 
     @Test
