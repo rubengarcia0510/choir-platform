@@ -47,7 +47,30 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void returnsNotEvaluableAtAnUndefinedDistanceBoundary() {
+    void togetherConnectsParticipantsAtExactThreshold() {
+        SpatialConstraint together = constraint(
+                Relation.TOGETHER,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                condition(List.of(together), null),
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.35", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+    }
+
+    @Test
+    void nearAtExactMaximumThresholdIsSatisfied() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
                 Stage.TO,
@@ -65,11 +88,9 @@ class SceneRuleEvaluatorTests {
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
-        assertThat(result.warnings())
-                .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("DISTANCE_BOUNDARY_UNDEFINED");
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(result.warnings()).isEmpty();
     }
 
     @Test
@@ -163,6 +184,29 @@ class SceneRuleEvaluatorTests {
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("SEPARATION_MINIMUM_NOT_MET");
+    }
+
+    @Test
+    void separatedAcceptsPairsAtExactEffectiveMinimum() {
+        SpatialConstraint separated = constraint(
+                Relation.SEPARATED,
+                Stage.TO,
+                List.of(singer(1)),
+                List.of(singer(3)),
+                "0.20",
+                null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                condition(List.of(separated), null),
+                positions(position(1, "0.10", "0.10"),
+                        position(3, "0.35", "0.10")),
+                null,
+                null,
+                decimal("0.25"));
+
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
     }
 
     @Test

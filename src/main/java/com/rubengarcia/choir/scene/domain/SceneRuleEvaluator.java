@@ -181,12 +181,7 @@ public final class SceneRuleEvaluator {
                 int comparison = compareDistance(
                         vertices.get(current), vertices.get(candidate),
                         constraint.threshold());
-                if (comparison == 0) {
-                    return Check.notEvaluable(
-                            "DISTANCE_BOUNDARY_UNDEFINED",
-                            "La distancia coincide exactamente con el umbral");
-                }
-                if (comparison < 0) {
+                if (comparison <= 0) {
                     visited[candidate] = true;
                     queue.add(candidate);
                 }
@@ -230,13 +225,8 @@ public final class SceneRuleEvaluator {
                     "NEAR requiere dos participantes distintos con posición disponible");
         }
         int comparison = compareDistance(first, second, constraint.threshold());
-        if (comparison == 0) {
-            return Check.notEvaluable(
-                    "DISTANCE_BOUNDARY_UNDEFINED",
-                    "La distancia coincide exactamente con el umbral");
-        }
-        return comparison < 0
-                ? Check.satisfied("NEAR_WITHIN_THRESHOLD", "La distancia es menor al umbral")
+        return comparison <= 0
+                ? Check.satisfied("NEAR_WITHIN_THRESHOLD", "La distancia está dentro del máximo permitido")
                 : Check.violated("NEAR_THRESHOLD_EXCEEDED", "La distancia supera el umbral");
     }
 
@@ -320,11 +310,6 @@ public final class SceneRuleEvaluator {
         for (Position left : first) {
             for (Position right : second) {
                 int comparison = compareDistance(left, right, effectiveThreshold);
-                if (comparison == 0) {
-                    return Check.notEvaluable(
-                            "DISTANCE_BOUNDARY_UNDEFINED",
-                            "La distancia coincide exactamente con el mínimo efectivo");
-                }
                 if (comparison < 0) {
                     return Check.violated(
                             "SEPARATION_MINIMUM_NOT_MET",
@@ -334,7 +319,7 @@ public final class SceneRuleEvaluator {
         }
         return Check.satisfied(
                 "SEPARATION_MINIMUM_MET",
-                "Todos los pares cruzados superan la separación mínima efectiva");
+                "Todos los pares cruzados alcanzan la separación mínima efectiva");
     }
 
     private List<Position> resolvePositions(
