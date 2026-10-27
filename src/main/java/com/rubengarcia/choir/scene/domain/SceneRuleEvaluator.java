@@ -27,6 +27,16 @@ public final class SceneRuleEvaluator {
             return notEvaluable("EVALUATION_INPUT_MISSING", "Faltan datos de evaluación");
         }
         SceneRuleRevisionSnapshot revision = input.revision();
+        if (!revision.active()) {
+            return notEvaluable(revision,
+                    "RULE_INACTIVE",
+                    "Una regla inactiva no se puede evaluar");
+        }
+        if (!isSupportedRuleType(revision.ruleType())) {
+            return notEvaluable(revision,
+                    "RULE_TYPE_UNSUPPORTED",
+                    "El tipo de regla no está soportado");
+        }
         SceneRuleCondition condition = revision.condition();
         if (condition == null) {
             return notEvaluable(
@@ -35,6 +45,7 @@ public final class SceneRuleEvaluator {
         }
         if (!"READY".equals(revision.definitionStatus())) {
             return notEvaluable(
+                    revision,
                     "RULE_DEFINITION_DRAFT",
                     "La regla está guardada como borrador y no se puede evaluar");
         }
@@ -49,16 +60,21 @@ public final class SceneRuleEvaluator {
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
         }
-        if (condition.orderingMode() != null) {
+        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
             return notEvaluable(
+                    revision,
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",
                     "Los snapshots no incluyen datos para verificar una secuencia temporal");
         }
 
-        List<Check> checks = new ArrayList<>();
         if ("EXIT".equals(revision.ruleType())) {
-            checks.add(evaluateExit(input, condition.exitParticipants()));
-        } else if (condition.exitParticipants() != null
+            return aggregate(
+                    revision,
+                    List.of(evaluateExit(input, condition.exitParticipants())));
+        }
+
+        List<Check> checks = new ArrayList<>();
+        if (condition.exitParticipants() != null
                 && !condition.exitParticipants().isEmpty()) {
             checks.add(Check.notEvaluable(
                     "EXIT_CONDITION_TYPE_MISMATCH",
@@ -79,36 +95,16 @@ public final class SceneRuleEvaluator {
         return aggregate(revision, checks);
     }
 
+    private boolean isSupportedRuleType(String ruleType) {
+        return "MOVEMENT".equals(ruleType)
+                || "EXIT".equals(ruleType)
+                || "CAST_DIVISION".equals(ruleType);
+    }
+
     private Check evaluateExit(Input input, List<ParticipantRef> participants) {
-        if (participants == null || participants.isEmpty()) {
-            return Check.notEvaluable(
-                    "EXIT_PARTICIPANTS_MISSING",
-                    "La salida no identifica participantes explícitos");
-        }
-        Map<Long, Position> from = positionsBySinger(input.fromPositions());
-        Map<Long, Position> to = positionsBySinger(input.toPositions());
-        if (from == null || to == null) {
-            return Check.notEvaluable(
-                    "FORMATION_POSITIONS_INVALID",
-                    "Los snapshots contienen posiciones inválidas o duplicadas");
-        }
-        for (ParticipantRef participant : participants) {
-            Resolution resolved = resolveMembers(
-                    input.revision(), participant, input.resolvedGroupMembers());
-            if (!resolved.evaluable()) {
-                return Check.notEvaluable(resolved.code(), resolved.explanation());
-            }
-            for (Long singerId : resolved.singerIds()) {
-                if (!from.containsKey(singerId) || to.containsKey(singerId)) {
-                    return Check.violated(
-                            "EXIT_REQUIREMENT_VIOLATED",
-                            "Un participante requerido no está presente en FROM o continúa en TO");
-                }
-            }
-        }
-        return Check.satisfied(
-                "EXIT_REQUIREMENT_SATISFIED",
-                "Todos los participantes explícitos salen entre FROM y TO");
+        return Check.notEvaluable(
+                "EXIT_CONDITION_NOT_DEFINED",
+                "La regla EXIT requiere una condición de salida estructurada explícita");
     }
 
     private Check evaluateConstraint(Input input, SpatialConstraint constraint) {
@@ -549,6 +545,18 @@ public final class SceneRuleEvaluator {
                 "RULE_SATISFIED",
                 "Todos los criterios de la regla se cumplen",
                 List.of());
+    }
+
+    private Evaluation notEvaluable(
+            SceneRuleRevisionSnapshot revision, String code, String explanation) {
+        return new Evaluation(
+                revision.sceneRuleId(),
+                revision.id(),
+                revision.ruleType(),
+                Status.NOT_EVALUABLE,
+                code,
+                explanation,
+                List.of(new Warning(code, explanation, Status.NOT_EVALUABLE)));
     }
 
     private Evaluation notEvaluable(String code, String explanation) {
