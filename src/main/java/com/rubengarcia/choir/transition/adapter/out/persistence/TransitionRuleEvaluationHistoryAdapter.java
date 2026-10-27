@@ -77,6 +77,32 @@ public class TransitionRuleEvaluationHistoryAdapter
                 .concatMap(this::loadEvaluation);
     }
 
+    @Override
+    public Mono<TransitionRuleEvaluationSnapshot> findById(long evaluationId) {
+        return database.sql("""
+                SELECT id, transition_version_id, transition_id,
+                       from_formation_version_id, to_formation_version_id,
+                       repertoire_item_id, separation_settings_revision,
+                       global_separation_threshold, status, evaluated_at
+                FROM transition_rule_evaluations
+                WHERE id = :evaluationId
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new EvaluationRow(
+                        row.get("id", Long.class),
+                        row.get("transition_version_id", Long.class),
+                        row.get("transition_id", Long.class),
+                        row.get("from_formation_version_id", Long.class),
+                        row.get("to_formation_version_id", Long.class),
+                        row.get("repertoire_item_id", Long.class),
+                        row.get("separation_settings_revision", Long.class),
+                        row.get("global_separation_threshold", BigDecimal.class),
+                        Status.valueOf(row.get("status", String.class)),
+                        row.get("evaluated_at", LocalDateTime.class)))
+                .one()
+                .flatMap(this::loadEvaluation);
+    }
+
     private Mono<TransitionRuleEvaluationSnapshot> loadEvaluation(
             EvaluationRow evaluation) {
         return Mono.zip(

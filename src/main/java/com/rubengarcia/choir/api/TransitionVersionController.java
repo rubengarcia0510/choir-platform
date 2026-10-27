@@ -2,12 +2,16 @@ package com.rubengarcia.choir.api;
 
 import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
+import com.rubengarcia.choir.transition.application.port.out.TransitionVersionPublicationPort.WarningAcceptance;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -85,9 +89,49 @@ public class TransitionVersionController {
                 transitionVersionId);
     }
 
+    @PostMapping("/{transitionVersionId}/publication")
+    public Mono<TransitionVersion> publish(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @PathVariable long transitionVersionId,
+            @Valid @RequestBody PublishRequest request,
+            Authentication authentication) {
+        return service.publish(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                transitionVersionId,
+                request.evaluationId(),
+                request.acceptedWarningCommands());
+    }
+
     public record CreateDraftRequest(
             @NotNull @Positive Long fromFormationVersionId,
             @NotNull @Positive Long toFormationVersionId,
             @Size(max = 4000) String instructions) {
+    }
+
+    public record PublishRequest(
+            @NotNull @Positive Long evaluationId,
+            @Size(max = 100)
+            List<@Valid WarningAcceptanceRequest> acceptedWarnings) {
+
+        public List<WarningAcceptance> acceptedWarningCommands() {
+            if (acceptedWarnings == null) {
+                return List.of();
+            }
+            return acceptedWarnings.stream()
+                    .map(warning -> new WarningAcceptance(
+                            warning.resultOrder(),
+                            warning.warningOrder(),
+                            warning.reason()))
+                    .toList();
+        }
+    }
+
+    public record WarningAcceptanceRequest(
+            int resultOrder,
+            @PositiveOrZero int warningOrder,
+            @NotBlank @Size(max = 1000) String reason) {
     }
 }

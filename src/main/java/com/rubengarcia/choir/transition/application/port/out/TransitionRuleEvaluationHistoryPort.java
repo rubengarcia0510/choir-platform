@@ -9,6 +9,8 @@ public interface TransitionRuleEvaluationHistoryPort {
     Mono<TransitionRuleEvaluationSnapshot> save(
             TransitionRuleEvaluationSnapshot snapshot);
 
+    Mono<TransitionRuleEvaluationSnapshot> findById(long evaluationId);
+
     Flux<TransitionRuleEvaluationSnapshot> findAllByTransitionVersionId(
             long transitionVersionId);
 }

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.List;
@@ -21,6 +22,11 @@ class TransitionRuleEvaluationTests {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private TransitionRuleEvaluationHistoryPort evaluationHistoryPort;
+
+
 
     @Autowired
     private FormationPlanningAuthorizationService authorizedPlanningService;
@@ -176,6 +182,21 @@ class TransitionRuleEvaluationTests {
         assertThat(history.getFirst().warnings())
                 .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
                 .containsExactly("DIRECTOR_VISIBILITY_NOT_EVALUABLE");
+
+        TransitionRuleEvaluationSnapshot recovered =
+                evaluationHistoryPort.findById(first.id()).block();
+        assertThat(recovered).isNotNull();
+        assertThat(recovered.id()).isEqualTo(first.id());
+        assertThat(recovered.transitionVersionId()).isEqualTo(transitionVersionId);
+        assertThat(recovered.results())
+                .extracting(TransitionRuleEvaluationSnapshot.RuleResult::ruleRevisionId)
+                .containsExactly(ruleRevisionId);
+        assertThat(recovered.warnings())
+                .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
+                .containsExactly("DIRECTOR_VISIBILITY_NOT_EVALUABLE");
+
+        assertThat(evaluationHistoryPort.findById(Long.MAX_VALUE).block())
+                .isNull();
         assertThatThrownBy(() -> authorizedPlanningService.evaluateTransitionVersion(
                 "not-the-owner@example.test",
                 choirId,
