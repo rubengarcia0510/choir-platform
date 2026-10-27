@@ -3,6 +3,7 @@ package com.rubengarcia.choir.scene.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Direction;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.OrderingMode;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
@@ -227,8 +228,11 @@ class SceneRuleEvaluatorTests {
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.SATISFIED);
-        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("EXIT_CONDITION_NOT_DEFINED");
 
         Evaluation missingCondition = evaluate(
                 "EXIT", null, List.of(), null, null, null);
@@ -258,6 +262,31 @@ class SceneRuleEvaluatorTests {
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("MOVEMENT_SNAPSHOTS_INCOMPLETE");
+    }
+
+    @Test
+    void evaluatesSimultaneousRulesWithoutRequiringTemporalSequence() {
+        SpatialConstraint near = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+        SceneRuleCondition simultaneous = new SceneRuleCondition(
+                OrderingMode.SIMULTANEOUS, List.of(near), null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                simultaneous,
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.20", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
     }
 
     private Evaluation evaluate(

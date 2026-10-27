@@ -49,7 +49,8 @@ public final class SceneRuleEvaluator {
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
         }
-        if (condition.orderingMode() != null) {
+        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL
+                && !"CAST_DIVISION".equals(revision.ruleType())) {
             return notEvaluable(
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",
                     "Los snapshots no incluyen datos para verificar una secuencia temporal");
@@ -80,35 +81,9 @@ public final class SceneRuleEvaluator {
     }
 
     private Check evaluateExit(Input input, List<ParticipantRef> participants) {
-        if (participants == null || participants.isEmpty()) {
-            return Check.notEvaluable(
-                    "EXIT_PARTICIPANTS_MISSING",
-                    "La salida no identifica participantes explícitos");
-        }
-        Map<Long, Position> from = positionsBySinger(input.fromPositions());
-        Map<Long, Position> to = positionsBySinger(input.toPositions());
-        if (from == null || to == null) {
-            return Check.notEvaluable(
-                    "FORMATION_POSITIONS_INVALID",
-                    "Los snapshots contienen posiciones inválidas o duplicadas");
-        }
-        for (ParticipantRef participant : participants) {
-            Resolution resolved = resolveMembers(
-                    input.revision(), participant, input.resolvedGroupMembers());
-            if (!resolved.evaluable()) {
-                return Check.notEvaluable(resolved.code(), resolved.explanation());
-            }
-            for (Long singerId : resolved.singerIds()) {
-                if (!from.containsKey(singerId) || to.containsKey(singerId)) {
-                    return Check.violated(
-                            "EXIT_REQUIREMENT_VIOLATED",
-                            "Un participante requerido no está presente en FROM o continúa en TO");
-                }
-            }
-        }
-        return Check.satisfied(
-                "EXIT_REQUIREMENT_SATISFIED",
-                "Todos los participantes explícitos salen entre FROM y TO");
+        return Check.notEvaluable(
+                "EXIT_CONDITION_NOT_DEFINED",
+                "La regla EXIT requiere una condición de salida estructurada explícita");
     }
 
     private Check evaluateConstraint(Input input, SpatialConstraint constraint) {
