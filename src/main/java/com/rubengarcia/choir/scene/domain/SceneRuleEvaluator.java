@@ -28,12 +28,12 @@ public final class SceneRuleEvaluator {
         }
         SceneRuleRevisionSnapshot revision = input.revision();
         if (!revision.active()) {
-            return notEvaluable(
+            return notEvaluable(revision,
                     "RULE_INACTIVE",
                     "Una regla inactiva no se puede evaluar");
         }
         if (!isSupportedRuleType(revision.ruleType())) {
-            return notEvaluable(
+            return notEvaluable(revision,
                     "RULE_TYPE_UNSUPPORTED",
                     "El tipo de regla no está soportado");
         }
@@ -59,8 +59,7 @@ public final class SceneRuleEvaluator {
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
         }
-        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL
-                && !"CAST_DIVISION".equals(revision.ruleType())) {
+        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
             return notEvaluable(
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",
                     "Los snapshots no incluyen datos para verificar una secuencia temporal");
@@ -540,6 +539,18 @@ public final class SceneRuleEvaluator {
                 "RULE_SATISFIED",
                 "Todos los criterios de la regla se cumplen",
                 List.of());
+    }
+
+    private Evaluation notEvaluable(
+            SceneRuleRevisionSnapshot revision, String code, String explanation) {
+        return new Evaluation(
+                revision.sceneRuleId(),
+                revision.id(),
+                revision.ruleType(),
+                Status.NOT_EVALUABLE,
+                code,
+                explanation,
+                List.of(new Warning(code, explanation, Status.NOT_EVALUABLE)));
     }
 
     private Evaluation notEvaluable(String code, String explanation) {

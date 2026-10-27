@@ -310,6 +310,9 @@ class SceneRuleEvaluatorTests {
 
         assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
         assertThat(result.code()).isEqualTo("RULE_INACTIVE");
+        assertThat(result.sceneRuleId()).isEqualTo(9L);
+        assertThat(result.ruleRevisionId()).isEqualTo(99L);
+        assertThat(result.ruleType()).isEqualTo("CAST_DIVISION");
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("RULE_INACTIVE");
@@ -332,10 +335,41 @@ class SceneRuleEvaluatorTests {
 
             assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
             assertThat(result.code()).isEqualTo("RULE_TYPE_UNSUPPORTED");
+            assertThat(result.sceneRuleId()).isEqualTo(9L);
+            assertThat(result.ruleRevisionId()).isEqualTo(99L);
+            assertThat(result.ruleType()).isEqualTo(ruleType);
             assertThat(result.warnings())
                     .extracting(SceneRuleEvaluator.Warning::code)
                     .containsExactly("RULE_TYPE_UNSUPPORTED");
         }
+    }
+
+    @Test
+    void sequentialCastDivisionIsNotEvaluableWithoutTemporalData() {
+        SpatialConstraint near = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+        SceneRuleCondition sequential = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL, List.of(near), null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                sequential,
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.20", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.code()).isEqualTo("TEMPORAL_SEQUENCE_UNAVAILABLE");
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
     }
 
     private Evaluation evaluate(
