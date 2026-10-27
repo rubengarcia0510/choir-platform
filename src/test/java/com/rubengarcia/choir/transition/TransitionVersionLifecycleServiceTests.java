@@ -660,6 +660,60 @@ class TransitionVersionLifecycleServiceTests {
         assertPublicationAuditAbsent(draft.getId());
     }
 
+    @Test
+    void rejectsNullWarningAcceptanceAsBadRequestWithoutWritingAudit() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                fixture.fromFormationVersionId(), fixture.toFormationVersionId(),
+                "Aceptación nula")
+                .block(TIMEOUT);
+        Long evaluationId = insertLifecycleEvaluation(fixture, draft, "SATISFIED");
+
+        assertThatThrownBy(() -> service.publish(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                draft.getId(), evaluationId,
+                java.util.Arrays.asList(
+                        (com.rubengarcia.choir.transition.application.port.out
+                                .TransitionVersionPublicationPort.WarningAcceptance) null))
+                .block(TIMEOUT))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Cada aceptación");
+
+        assertPublicationAuditAbsent(draft.getId());
+    }
+
+    @Test
+    void rejectsVisibilityWarningAcceptanceWithoutWritingPublicationAudit() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                fixture.fromFormationVersionId(), fixture.toFormationVersionId(),
+                "Visibilidad no aceptable")
+                .block(TIMEOUT);
+        Long evaluationId = insertLifecycleEvaluation(fixture, draft, "SATISFIED");
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluation_warnings (
+                    evaluation_id, result_order, warning_order,
+                    code, explanation, status
+                ) VALUES (?, NULL, 0, 'VISIBILITY_UNVERIFIED',
+                          'No se puede comprobar la visibilidad', 'VIOLATED')
+                """, evaluationId);
+
+        assertThatThrownBy(() -> service.publish(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                draft.getId(), evaluationId,
+                java.util.List.of(
+                        new com.rubengarcia.choir.transition.application.port.out
+                                .TransitionVersionPublicationPort.WarningAcceptance(
+                                        -1, 0, "Aceptación que debe rechazarse")))
+                .block(TIMEOUT))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertPublicationAuditAbsent(draft.getId());
+    }
+
     private Long insertLifecycleEvaluation(
             Fixture fixture, TransitionVersion draft, String status) {
         String title = "CHOIR-97 evaluación " + UUID.randomUUID();
