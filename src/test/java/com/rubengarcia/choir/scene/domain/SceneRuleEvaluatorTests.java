@@ -290,6 +290,7 @@ class SceneRuleEvaluatorTests {
     }
 
 
+    @Test
     void inactiveRuleIsNotEvaluatedEvenWhenSpatialConditionIsSatisfied() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
@@ -308,13 +309,14 @@ class SceneRuleEvaluatorTests {
                 null));
 
         assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
+        assertThat(result.code()).isEqualTo("RULE_INACTIVE");
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("RULE_INACTIVE");
     }
 
 
+    @Test
     void unsupportedAndNullRuleTypesAreNotEvaluated() {
         for (String ruleType : java.util.Arrays.asList("UNKNOWN", null)) {
             Evaluation result = evaluator.evaluate(new Input(
@@ -329,7 +331,7 @@ class SceneRuleEvaluatorTests {
                     null));
 
             assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-            assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
+            assertThat(result.code()).isEqualTo("RULE_TYPE_UNSUPPORTED");
             assertThat(result.warnings())
                     .extracting(SceneRuleEvaluator.Warning::code)
                     .containsExactly("RULE_TYPE_UNSUPPORTED");
