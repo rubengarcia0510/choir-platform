@@ -158,7 +158,7 @@ public class R2dbcTransitionVersionPublicationAdapter
             List<Warning> warnings,
             List<RuleResult> results) {
         List<WarningAcceptance> acceptances =
-                requested == null ? List.of() : List.copyOf(requested);
+                requested == null ? List.of() : new ArrayList<>(requested);
         Set<String> acceptedKeys = new HashSet<>();
 
         for (WarningAcceptance acceptance : acceptances) {
@@ -181,7 +181,7 @@ public class R2dbcTransitionVersionPublicationAdapter
             Warning matched = findWarning(
                     warnings, acceptance.resultOrder(), acceptance.warningOrder());
 
-            if (matched == null || matched.status() != Status.VIOLATED) {
+            if (matched == null || matched.status() != Status.VIOLATED || "VISIBILITY_UNVERIFIED".equals(matched.code())) {
                 return Mono.error(badRequest(
                         "La aceptación debe referenciar una advertencia VIOLATED existente"));
             }

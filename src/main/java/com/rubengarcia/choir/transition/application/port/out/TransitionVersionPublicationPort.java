@@ -2,6 +2,8 @@ package com.rubengarcia.choir.transition.application.port.out;
 
 import com.rubengarcia.choir.domain.TransitionVersion;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import reactor.core.publisher.Mono;
 
 public interface TransitionVersionPublicationPort {
@@ -19,7 +21,7 @@ public interface TransitionVersionPublicationPort {
         public PublicationCommand {
             acceptedWarnings = acceptedWarnings == null
                     ? List.of()
-                    : List.copyOf(acceptedWarnings);
+                    : Collections.unmodifiableList(new ArrayList<>(acceptedWarnings));
         }
     }
 
