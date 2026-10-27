@@ -114,6 +114,13 @@ public class R2dbcTransitionVersionPublicationAdapter
 
         List<Warning> warnings = collectWarnings(evaluation);
 
+        if (evaluation.status() == Status.VIOLATED
+                && warnings.stream().noneMatch(warning ->
+                        warning.status() == Status.VIOLATED)) {
+            return Mono.error(conflict(
+                    "Una evaluación VIOLATED requiere advertencias VIOLATED aceptables"));
+        }
+
         if (warnings.stream().anyMatch(warning ->
                 warning.status() == Status.NOT_EVALUABLE)) {
             return Mono.error(conflict(

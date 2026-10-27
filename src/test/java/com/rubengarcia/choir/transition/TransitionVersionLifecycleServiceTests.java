@@ -179,6 +179,292 @@ class TransitionVersionLifecycleServiceTests {
         }
     }
 
+    @Test
+    void rejectsViolatedEvaluationWithoutAcceptableWarnings() {
+        Fixture fixture = fixture();
+
+        TransitionVersion draft = service.createDraft(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                "Prueba de publicación")
+                .block(TIMEOUT);
+
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, fixture.choirId(), "Repertorio publicación " + UUID.randomUUID());
+
+        long repertoireItemId = jdbc.queryForObject("""
+                SELECT id FROM repertoire_items
+                WHERE choir_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, fixture.choirId());
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    repertoire_item_id, separation_settings_revision,
+                    global_separation_threshold, status
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'VIOLATED')
+                """,
+                draft.getId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                repertoireItemId);
+
+        long evaluationId = jdbc.queryForObject("""
+                SELECT id FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, draft.getId());
+
+        assertThatThrownBy(() -> service.publish(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                draft.getId(),
+                evaluationId,
+                java.util.List.of())
+                .block(TIMEOUT))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("VIOLATED");
+
+        assertThat(jdbc.queryForObject("""
+                SELECT status FROM transition_versions WHERE id = ?
+                """, String.class, draft.getId()))
+                .isEqualTo("DRAFT");
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_evidence
+                WHERE transition_version_id = ?
+                """, Integer.class, draft.getId()))
+                .isZero();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE transition_version_id = ?
+                """, Integer.class, draft.getId()))
+                .isZero();
+    }
+
+     @Test
+    void publishesSatisfiedEvaluationAndPersistsEvidenceWithoutDecisions() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                "Publicación de prueba")
+                .block(TIMEOUT);
+
+        String title = "Repertorio " + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, fixture.choirId(), title);
+
+        long repertoireItemId = jdbc.queryForObject("""
+                SELECT id FROM repertoire_items
+                WHERE choir_id = ? AND title = ?
+                """, Long.class, fixture.choirId(), title);
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    repertoire_item_id, separation_settings_revision,
+                    global_separation_threshold, status
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'SATISFIED')
+                """,
+                draft.getId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                repertoireItemId);
+
+        long evaluationId = jdbc.queryForObject("""
+                SELECT id FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                """, Long.class, draft.getId());
+
+        TransitionVersion published = service.publish(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                draft.getId(),
+                evaluationId,
+                java.util.List.of())
+                .block(TIMEOUT);
+
+        assertThat(published).isNotNull();
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(published.getPublishedAt()).isNotNull();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_evidence
+                WHERE transition_version_id = ?
+                  AND evaluation_id = ?
+                  AND transition_id = ?
+                  AND from_formation_version_id = ?
+                  AND to_formation_version_id = ?
+                  AND separation_settings_revision = 1
+                  AND global_separation_threshold = 0.0500000
+                  AND published_by_email = ?
+                  AND published_at IS NOT NULL
+                """, Integer.class,
+                draft.getId(),
+                evaluationId,
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                fixture.email())).isEqualTo(1);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE transition_version_id = ?
+                  AND evaluation_id = ?
+                """, Integer.class, draft.getId(), evaluationId)).isZero();
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_versions
+                WHERE id = ? AND status = 'PUBLISHED'
+                  AND published_at IS NOT NULL
+                """, Integer.class, draft.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsRepeatedPublicationWithoutChangingHistoricalEvidence() {
+        Fixture fixture = fixture();
+
+        TransitionVersion draft = service.createDraft(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                "CHOIR-97 publicación repetida")
+                .block(TIMEOUT);
+
+        String suffix = UUID.randomUUID().toString();
+        String repertoireTitle = "CHOIR-97 repeated publication " + suffix;
+        jdbc.update("""
+                INSERT INTO concerts (choir_id, title, status)
+                VALUES (?, ?, 'PLANNED')
+                """, fixture.choirId(), "Concierto " + suffix);
+        Long concertId = jdbc.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, fixture.choirId(), "Concierto " + suffix);
+
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, fixture.choirId(), repertoireTitle);
+        Long repertoireItemId = jdbc.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, fixture.choirId(), repertoireTitle);
+
+        jdbc.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id,
+                    transition_id,
+                    from_formation_version_id,
+                    to_formation_version_id,
+                    repertoire_item_id,
+                    separation_settings_revision,
+                    global_separation_threshold,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'SATISFIED')
+                """,
+                draft.getId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                repertoireItemId);
+
+        Long evaluationId = jdbc.queryForObject(
+                """
+                SELECT MAX(id) FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                """,
+                Long.class, draft.getId());
+
+        TransitionVersion published = service.publish(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                draft.getId(),
+                evaluationId,
+                java.util.List.of())
+                .block(TIMEOUT);
+
+        assertThat(published).isNotNull();
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+
+        Long evidenceBefore = jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM transition_publication_evidence
+                WHERE transition_version_id = ? AND evaluation_id = ?
+                """,
+                Long.class, draft.getId(), evaluationId);
+
+        Long decisionsBefore = jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE transition_version_id = ? AND evaluation_id = ?
+                """,
+                Long.class, draft.getId(), evaluationId);
+
+        assertThat(evidenceBefore).isEqualTo(1L);
+        assertThat(decisionsBefore).isZero();
+
+        assertThatThrownBy(() -> service.publish(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                draft.getId(),
+                evaluationId,
+                java.util.List.of()).block(TIMEOUT))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM transition_versions WHERE id = ?",
+                String.class, draft.getId()))
+                .isEqualTo("PUBLISHED");
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM transition_publication_evidence
+                WHERE transition_version_id = ? AND evaluation_id = ?
+                """,
+                Long.class, draft.getId(), evaluationId))
+                .isEqualTo(evidenceBefore);
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE transition_version_id = ? AND evaluation_id = ?
+                """,
+                Long.class, draft.getId(), evaluationId))
+                .isEqualTo(decisionsBefore);
+    }
+
+
     private TransitionVersion createAfter(CountDownLatch start, Fixture fixture) {
         try {
             if (!start.await(10, TimeUnit.SECONDS)) {
