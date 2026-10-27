@@ -234,6 +234,29 @@ class SceneRuleEvaluatorTests {
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("EXIT_CONDITION_NOT_DEFINED");
 
+        SpatialConstraint violatedSpatialConstraint = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.05",
+                null);
+
+        Evaluation exitWithSpatialViolation = evaluate(
+                "EXIT",
+                condition(List.of(violatedSpatialConstraint), List.of(singer(7))),
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.80", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(exitWithSpatialViolation.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(exitWithSpatialViolation.code()).isEqualTo("RULE_NOT_EVALUABLE");
+        assertThat(exitWithSpatialViolation.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("EXIT_CONDITION_NOT_DEFINED");
+
         Evaluation missingCondition = evaluate(
                 "EXIT", null, List.of(), null, null, null);
         assertThat(missingCondition.status()).isEqualTo(Status.NOT_EVALUABLE);
@@ -287,6 +310,40 @@ class SceneRuleEvaluatorTests {
 
         assertThat(result.status()).isEqualTo(Status.SATISFIED);
         assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+    }
+
+
+    @Test
+    void draftRulePreservesRevisionIdentityWhenNotEvaluable() {
+        SceneRuleRevisionSnapshot draftRevision = new SceneRuleRevisionSnapshot(
+                99,
+                9,
+                3,
+                5,
+                0,
+                "CAST_DIVISION",
+                "texto informativo que no debe evaluarse",
+                true,
+                "DRAFT",
+                "UPDATE",
+                LocalDateTime.parse("2026-01-01T00:00:00"),
+                List.of(),
+                condition(List.of(), null));
+
+        Evaluation result = evaluator.evaluate(new Input(
+                draftRevision,
+                100,
+                positions(position(1, "0.10", "0.10")),
+                200,
+                positions(position(1, "0.10", "0.10")),
+                null,
+                null));
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.code()).isEqualTo("RULE_DEFINITION_DRAFT");
+        assertThat(result.sceneRuleId()).isEqualTo(9L);
+        assertThat(result.ruleRevisionId()).isEqualTo(99L);
+        assertThat(result.ruleType()).isEqualTo("CAST_DIVISION");
     }
 
 
@@ -370,6 +427,9 @@ class SceneRuleEvaluatorTests {
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
+        assertThat(result.sceneRuleId()).isEqualTo(9L);
+        assertThat(result.ruleRevisionId()).isEqualTo(99L);
+        assertThat(result.ruleType()).isEqualTo("CAST_DIVISION");
     }
 
     private Evaluation evaluate(

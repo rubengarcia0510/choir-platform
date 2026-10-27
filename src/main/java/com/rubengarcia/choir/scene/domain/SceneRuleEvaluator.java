@@ -45,6 +45,7 @@ public final class SceneRuleEvaluator {
         }
         if (!"READY".equals(revision.definitionStatus())) {
             return notEvaluable(
+                    revision,
                     "RULE_DEFINITION_DRAFT",
                     "La regla está guardada como borrador y no se puede evaluar");
         }
@@ -61,14 +62,19 @@ public final class SceneRuleEvaluator {
         }
         if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
             return notEvaluable(
+                    revision,
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",
                     "Los snapshots no incluyen datos para verificar una secuencia temporal");
         }
 
-        List<Check> checks = new ArrayList<>();
         if ("EXIT".equals(revision.ruleType())) {
-            checks.add(evaluateExit(input, condition.exitParticipants()));
-        } else if (condition.exitParticipants() != null
+            return aggregate(
+                    revision,
+                    List.of(evaluateExit(input, condition.exitParticipants())));
+        }
+
+        List<Check> checks = new ArrayList<>();
+        if (condition.exitParticipants() != null
                 && !condition.exitParticipants().isEmpty()) {
             checks.add(Check.notEvaluable(
                     "EXIT_CONDITION_TYPE_MISMATCH",
