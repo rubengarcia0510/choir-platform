@@ -289,6 +289,53 @@ class SceneRuleEvaluatorTests {
         assertThat(result.code()).isEqualTo("RULE_SATISFIED");
     }
 
+
+    void inactiveRuleIsNotEvaluatedEvenWhenSpatialConditionIsSatisfied() {
+        SpatialConstraint near = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+        Evaluation result = evaluator.evaluate(new Input(
+                revision("CAST_DIVISION", condition(List.of(near), null), null, false),
+                100,
+                positions(position(1, "0.10", "0.10"), position(2, "0.20", "0.10")),
+                200,
+                positions(position(1, "0.10", "0.10"), position(2, "0.20", "0.10")),
+                null,
+                null));
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("RULE_INACTIVE");
+    }
+
+
+    void unsupportedAndNullRuleTypesAreNotEvaluated() {
+        for (String ruleType : java.util.Arrays.asList("UNKNOWN", null)) {
+            Evaluation result = evaluator.evaluate(new Input(
+                    revision(ruleType, condition(List.of(constraint(
+                            Relation.NEAR, Stage.TO, List.of(singer(1), singer(2)),
+                            null, "0.25", null)), null), null),
+                    100,
+                    positions(position(1, "0.10", "0.10"), position(2, "0.20", "0.10")),
+                    200,
+                    positions(position(1, "0.10", "0.10"), position(2, "0.20", "0.10")),
+                    null,
+                    null));
+
+            assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+            assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
+            assertThat(result.warnings())
+                    .extracting(SceneRuleEvaluator.Warning::code)
+                    .containsExactly("RULE_TYPE_UNSUPPORTED");
+        }
+    }
+
     private Evaluation evaluate(
             String ruleType,
             SceneRuleCondition condition,
@@ -313,6 +360,14 @@ class SceneRuleEvaluatorTests {
             String ruleType,
             SceneRuleCondition condition,
             List<SceneRuleRevisionSnapshot.GroupSnapshot> groups) {
+        return revision(ruleType, condition, groups, true);
+    }
+
+    private SceneRuleRevisionSnapshot revision(
+            String ruleType,
+            SceneRuleCondition condition,
+            List<SceneRuleRevisionSnapshot.GroupSnapshot> groups,
+            boolean active) {
         return new SceneRuleRevisionSnapshot(
                 99,
                 9,
@@ -321,7 +376,7 @@ class SceneRuleEvaluatorTests {
                 0,
                 ruleType,
                 "texto informativo que no debe evaluarse",
-                true,
+                active,
                 "READY",
                 "UPDATE",
                 LocalDateTime.parse("2026-01-01T00:00:00"),

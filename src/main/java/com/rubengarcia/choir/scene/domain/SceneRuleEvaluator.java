@@ -27,6 +27,16 @@ public final class SceneRuleEvaluator {
             return notEvaluable("EVALUATION_INPUT_MISSING", "Faltan datos de evaluación");
         }
         SceneRuleRevisionSnapshot revision = input.revision();
+        if (!revision.active()) {
+            return notEvaluable(
+                    "RULE_INACTIVE",
+                    "Una regla inactiva no se puede evaluar");
+        }
+        if (!isSupportedRuleType(revision.ruleType())) {
+            return notEvaluable(
+                    "RULE_TYPE_UNSUPPORTED",
+                    "El tipo de regla no está soportado");
+        }
         SceneRuleCondition condition = revision.condition();
         if (condition == null) {
             return notEvaluable(
@@ -78,6 +88,12 @@ public final class SceneRuleEvaluator {
                     "La condición no contiene criterios evaluables");
         }
         return aggregate(revision, checks);
+    }
+
+    private boolean isSupportedRuleType(String ruleType) {
+        return "MOVEMENT".equals(ruleType)
+                || "EXIT".equals(ruleType)
+                || "CAST_DIVISION".equals(ruleType);
     }
 
     private Check evaluateExit(Input input, List<ParticipantRef> participants) {
