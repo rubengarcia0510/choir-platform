@@ -47,7 +47,30 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void returnsNotEvaluableAtAnUndefinedDistanceBoundary() {
+    void togetherConnectsParticipantsAtExactThreshold() {
+        SpatialConstraint together = constraint(
+                Relation.TOGETHER,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                condition(List.of(together), null),
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.35", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+    }
+
+    @Test
+    void nearAtExactMaximumThresholdIsSatisfied() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
                 Stage.TO,
@@ -65,49 +88,48 @@ class SceneRuleEvaluatorTests {
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
-        assertThat(result.warnings())
-                .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("DISTANCE_BOUNDARY_UNDEFINED");
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(result.warnings()).isEmpty();
     }
 
     @Test
-    void evaluatesStrictHorizontalOrderAndLeavesFrontBackUndefined() {
+    void evaluatesRelativeOrderOnHorizontalAndVerticalAxes() {
         SpatialConstraint left = constraint(
-                Relation.RELATIVE_ORDER,
-                Stage.TO,
-                List.of(singer(1), singer(2)),
-                null,
-                null,
-                Direction.LEFT);
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.LEFT);
         SpatialConstraint front = constraint(
-                Relation.RELATIVE_ORDER,
-                Stage.TO,
-                List.of(singer(1), singer(2)),
-                null,
-                null,
-                Direction.FRONT);
-        List<Position> positions = positions(
-                position(1, "0.20", "0.70"),
-                position(2, "0.80", "0.20"));
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.FRONT);
+        SpatialConstraint back = constraint(
+                Relation.RELATIVE_ORDER, Stage.TO, List.of(singer(1), singer(2)),
+                null, null, Direction.BACK);
 
-        assertThat(evaluate(
-                "CAST_DIVISION",
-                condition(List.of(left), null),
-                positions,
-                null,
-                null,
-                null).status()).isEqualTo(Status.SATISFIED);
-        assertThat(evaluate(
-                "CAST_DIVISION",
-                condition(List.of(front), null),
-                positions,
-                null,
-                null,
-                null).warnings())
+        List<Position> firstInFront = positions(
+                position(1, "0.20", "0.70"), position(2, "0.80", "0.20"));
+        List<Position> firstBehind = positions(
+                position(1, "0.20", "0.20"), position(2, "0.80", "0.70"));
+        List<Position> verticallyAligned = positions(
+                position(1, "0.20", "0.50"), position(2, "0.80", "0.50"));
+
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(left), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(front), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(back), null),
+                firstInFront, null, null, null).status()).isEqualTo(Status.VIOLATED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(back), null),
+                firstBehind, null, null, null).status()).isEqualTo(Status.SATISFIED);
+        assertThat(evaluate("CAST_DIVISION", condition(List.of(front), null),
+                firstBehind, null, null, null).status()).isEqualTo(Status.VIOLATED);
+
+        Evaluation aligned = evaluate(
+                "CAST_DIVISION", condition(List.of(front), null),
+                verticallyAligned, null, null, null);
+        assertThat(aligned.status()).isEqualTo(Status.VIOLATED);
+        assertThat(aligned.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("FRONT_BACK_AXIS_UNDEFINED");
+                .containsExactly("RELATIVE_ORDER_ALIGNED_VERTICAL");
     }
 
     @Test
@@ -163,6 +185,29 @@ class SceneRuleEvaluatorTests {
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
                 .containsExactly("SEPARATION_MINIMUM_NOT_MET");
+    }
+
+    @Test
+    void separatedAcceptsPairsAtExactEffectiveMinimum() {
+        SpatialConstraint separated = constraint(
+                Relation.SEPARATED,
+                Stage.TO,
+                List.of(singer(1)),
+                List.of(singer(3)),
+                "0.20",
+                null);
+
+        Evaluation result = evaluate(
+                "CAST_DIVISION",
+                condition(List.of(separated), null),
+                positions(position(1, "0.10", "0.10"),
+                        position(3, "0.35", "0.10")),
+                null,
+                null,
+                decimal("0.25"));
+
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
     }
 
     @Test
