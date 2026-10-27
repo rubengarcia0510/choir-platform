@@ -66,11 +66,11 @@ class TransitionRuleEvaluationTests {
         if (transitionId != null) {
             jdbc.update("DELETE FROM transitions WHERE id = ?", transitionId);
         }
-        if (ruleRevisionId != null) {
-            jdbc.update(
-                    "DELETE FROM scene_rule_revisions WHERE id = ?", ruleRevisionId);
-        }
         if (sceneRuleId != null) {
+            jdbc.update("""
+                    DELETE FROM scene_rule_revisions
+                    WHERE scene_rule_id = ?
+                    """, sceneRuleId);
             jdbc.update("DELETE FROM scene_rules WHERE id = ?", sceneRuleId);
         }
         if (fromVersionId != null) {
@@ -195,6 +195,41 @@ class TransitionRuleEvaluationTests {
                 WHERE transition_version_id = ?
                 """, Integer.class, transitionVersionId))
                 .isEqualTo(2);
+    }
+
+    @Test
+    void inactiveLatestRevisionDoesNotFallBackToEarlierActiveRevision() {
+        createFixture();
+
+        jdbc.update("""
+                INSERT INTO scene_rule_revisions (
+                    scene_rule_id, revision_number, repertoire_item_id,
+                    rule_order, rule_type, description, active, revision_kind,
+                    condition_json, definition_status
+                )
+                SELECT scene_rule_id, 2, repertoire_item_id, rule_order,
+                       rule_type, description, FALSE, 'DEACTIVATE',
+                       condition_json, definition_status
+                FROM scene_rule_revisions
+                WHERE id = ?
+                """, ruleRevisionId);
+
+        TransitionRuleEvaluationSnapshot evaluation = authorizedPlanningService
+                .evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                .block();
+
+        assertThat(evaluation).isNotNull();
+        assertThat(evaluation.results()).isEmpty();
+        assertThat(evaluation.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(evaluation.warnings())
+                .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
+                .containsExactly("DIRECTOR_VISIBILITY_NOT_EVALUABLE");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_rule_evaluation_results
+                WHERE evaluation_id = ?
+                """, Integer.class, evaluation.id()))
+                .isZero();
     }
 
     private void createFixture() {
