@@ -747,7 +747,7 @@ class TransitionVersionLifecycleServiceTests {
                                     .TransitionVersionPublicationPort.WarningAcceptance(
                                             -1, 0, "Aceptación para probar rollback")))
                     .block(TIMEOUT))
-                    .isInstanceOf(RuntimeException.class);
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
             assertPublicationAuditAbsent(draft.getId());
         } finally {
