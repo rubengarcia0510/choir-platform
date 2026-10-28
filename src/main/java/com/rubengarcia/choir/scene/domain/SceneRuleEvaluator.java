@@ -60,7 +60,8 @@ public final class SceneRuleEvaluator {
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
         }
-        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
+        if ("MOVEMENT".equals(revision.ruleType())
+                && condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
             return notEvaluable(
                     revision,
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",

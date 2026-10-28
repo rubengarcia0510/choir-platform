@@ -447,7 +447,7 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void sequentialCastDivisionIsNotEvaluableWithoutTemporalData() {
+    void sequentialCastDivisionIsEvaluableWithoutTemporalData() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
                 Stage.TO,
@@ -467,11 +467,9 @@ class SceneRuleEvaluatorTests {
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("TEMPORAL_SEQUENCE_UNAVAILABLE");
-        assertThat(result.warnings())
-                .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(result.warnings()).isEmpty();
         assertThat(result.sceneRuleId()).isEqualTo(9L);
         assertThat(result.ruleRevisionId()).isEqualTo(99L);
         assertThat(result.ruleType()).isEqualTo("CAST_DIVISION");
