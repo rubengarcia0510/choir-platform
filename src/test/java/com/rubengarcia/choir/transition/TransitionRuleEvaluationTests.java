@@ -220,7 +220,7 @@ class TransitionRuleEvaluationTests {
                     from_formation_version_id, to_formation_version_id,
                     repertoire_item_id, separation_settings_revision,
                     global_separation_threshold, status
-                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 0027VIOLATED0027)
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'VIOLATED')
                 """, draft.getId(), transitionId, fromVersionId, toVersionId, repertoireId);
         Long publicationEvaluationId = jdbc.queryForObject("""
                 SELECT MAX(id) FROM transition_rule_evaluations
@@ -230,8 +230,8 @@ class TransitionRuleEvaluationTests {
                 INSERT INTO transition_rule_evaluation_warnings (
                     evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, 0, 0027STAGE_SEPARATION0027,
-                          0027Excepción documentada para probar el historial0027, 0027VIOLATED0027)
+                ) VALUES (?, NULL, 0, 'STAGE_SEPARATION',
+                          'Excepción documentada para probar el historial', 'VIOLATED')
                 """, publicationEvaluationId);
         lifecycleService.publish(email, choirId, transitionId, draft.getId(),
                 publicationEvaluationId,
