@@ -714,6 +714,51 @@ class TransitionVersionLifecycleServiceTests {
         assertPublicationAuditAbsent(draft.getId());
     }
 
+    @Test
+    void rollsBackPublicationDecisionsWhenEvidencePersistenceFails() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                fixture.fromFormationVersionId(), fixture.toFormationVersionId(),
+                "Prueba de rollback")
+                .block(TIMEOUT);
+        Long evaluationId = insertLifecycleEvaluation(fixture, draft, "VIOLATED");
+
+        String explanation = "Advertencia para probar rollback";
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluation_warnings (
+                    evaluation_id, result_order, warning_order,
+                    code, explanation, status
+                ) VALUES (?, NULL, 0, 'STAGE_SEPARATION', ?, 'VIOLATED')
+                """, evaluationId, explanation);
+
+        jdbc.execute("""
+                ALTER TABLE transition_publication_evidence
+                ADD CONSTRAINT ck_test_fail_publication_evidence
+                CHECK (global_separation_threshold < 0)
+                """);
+
+        try {
+            assertThatThrownBy(() -> service.publish(
+                    fixture.email(), fixture.choirId(), fixture.transitionId(),
+                    draft.getId(), evaluationId,
+                    java.util.List.of(
+                            new com.rubengarcia.choir.transition.application.port.out
+                                    .TransitionVersionPublicationPort.WarningAcceptance(
+                                            -1, 0, "Aceptación para probar rollback")))
+                    .block(TIMEOUT))
+                    .isInstanceOf(RuntimeException.class);
+
+            assertPublicationAuditAbsent(draft.getId());
+        } finally {
+            jdbc.execute("""
+                    ALTER TABLE transition_publication_evidence
+                    DROP CONSTRAINT ck_test_fail_publication_evidence
+                    """);
+        }
+    }
+
+
     private Long insertLifecycleEvaluation(
             Fixture fixture, TransitionVersion draft, String status) {
         String title = "CHOIR-97 evaluación " + UUID.randomUUID();
