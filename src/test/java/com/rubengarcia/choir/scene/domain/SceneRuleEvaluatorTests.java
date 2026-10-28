@@ -309,6 +309,33 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
+    void sequentialMovementIsNotEvaluableWithoutTemporalData() {
+        SpatialConstraint near = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+        SceneRuleCondition sequential = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL, List.of(near), null);
+
+        Evaluation result = evaluate(
+                "MOVEMENT",
+                sequential,
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.20", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
+    }
+
+    @Test
     void movementMustDeclareCriteriaForBothExactSnapshots() {
         SpatialConstraint onlyTo = constraint(
                 Relation.NEAR,
