@@ -118,6 +118,12 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
 
     @AfterEach
     void cleanup() throws Exception {
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            if (connection.getMetaData().getDatabaseProductName()
+                    .contains("PostgreSQL")) {
+                return;
+            }
+        }
 
         if (transitionVersionId != null) {
             jdbc.update("""
