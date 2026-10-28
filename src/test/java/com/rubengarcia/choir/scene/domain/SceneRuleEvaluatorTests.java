@@ -264,20 +264,19 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void exitRequiresExplicitParticipantsAndExactFromToSnapshots() {
-        Evaluation result = evaluate(
+    void exitRequiresExplicitParticipantsAndEvaluatesTheEffectiveDeparture() {
+        Evaluation incomplete = evaluate(
                 "EXIT",
-                condition(null, List.of(singer(7))),
-                List.of(),
+                condition(null, null),
+                positions(position(1, "0.10", "0.10")),
                 null,
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("RULE_NOT_EVALUABLE");
-        assertThat(result.warnings())
+        assertThat(incomplete.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(incomplete.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("EXIT_CONDITION_NOT_DEFINED");
+                .containsExactly("EXIT_CONDITION_INCOMPLETE");
 
         SpatialConstraint violatedSpatialConstraint = constraint(
                 Relation.NEAR,
@@ -287,25 +286,74 @@ class SceneRuleEvaluatorTests {
                 "0.05",
                 null);
 
-        Evaluation exitWithSpatialViolation = evaluate(
+        Evaluation departed = evaluate(
                 "EXIT",
                 condition(List.of(violatedSpatialConstraint), List.of(singer(7))),
-                positions(position(1, "0.10", "0.10"),
+                positions(
+                        position(1, "0.10", "0.10"),
                         position(2, "0.80", "0.10")),
                 null,
                 null,
                 null);
 
-        assertThat(exitWithSpatialViolation.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(exitWithSpatialViolation.code()).isEqualTo("RULE_NOT_EVALUABLE");
-        assertThat(exitWithSpatialViolation.warnings())
+        assertThat(departed.status()).isEqualTo(Status.SATISFIED);
+        assertThat(departed.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(departed.sceneRuleId()).isEqualTo(9L);
+        assertThat(departed.ruleRevisionId()).isEqualTo(99L);
+        assertThat(departed.ruleType()).isEqualTo("EXIT");
+
+        Evaluation stillPresent = evaluate(
+                "EXIT",
+                condition(null, List.of(singer(7))),
+                positions(
+                        position(1, "0.10", "0.10"),
+                        position(7, "0.10", "0.20")),
+                null,
+                null,
+                null);
+
+        assertThat(stillPresent.status()).isEqualTo(Status.VIOLATED);
+        assertThat(stillPresent.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("EXIT_CONDITION_NOT_DEFINED");
+                .containsExactly("EXIT_PARTICIPANT_PRESENT_TO");
 
         Evaluation missingCondition = evaluate(
-                "EXIT", null, List.of(), null, null, null);
+                "EXIT",
+                null,
+                List.of(),
+                null,
+                null,
+                null);
+
         assertThat(missingCondition.status()).isEqualTo(Status.NOT_EVALUABLE);
         assertThat(missingCondition.code()).isEqualTo("STRUCTURED_CONDITION_MISSING");
+    }
+
+    @Test
+    void sequentialMovementIsNotEvaluableWithoutTemporalData() {
+        SpatialConstraint near = constraint(
+                Relation.NEAR,
+                Stage.TO,
+                List.of(singer(1), singer(2)),
+                null,
+                "0.25",
+                null);
+        SceneRuleCondition sequential = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL, List.of(near), null);
+
+        Evaluation result = evaluate(
+                "MOVEMENT",
+                sequential,
+                positions(position(1, "0.10", "0.10"),
+                        position(2, "0.20", "0.10")),
+                null,
+                null,
+                null);
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
     }
 
     @Test
@@ -447,7 +495,7 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void sequentialCastDivisionIsNotEvaluableWithoutTemporalData() {
+    void sequentialCastDivisionIsEvaluableWithoutTemporalData() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
                 Stage.TO,
@@ -467,11 +515,9 @@ class SceneRuleEvaluatorTests {
                 null,
                 null);
 
-        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
-        assertThat(result.code()).isEqualTo("TEMPORAL_SEQUENCE_UNAVAILABLE");
-        assertThat(result.warnings())
-                .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
+        assertThat(result.status()).isEqualTo(Status.SATISFIED);
+        assertThat(result.code()).isEqualTo("RULE_SATISFIED");
+        assertThat(result.warnings()).isEmpty();
         assertThat(result.sceneRuleId()).isEqualTo(9L);
         assertThat(result.ruleRevisionId()).isEqualTo(99L);
         assertThat(result.ruleType()).isEqualTo("CAST_DIVISION");

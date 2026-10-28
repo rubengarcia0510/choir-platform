@@ -60,7 +60,8 @@ public final class SceneRuleEvaluator {
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
         }
-        if (condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
+        if ("MOVEMENT".equals(revision.ruleType())
+                && condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
             return notEvaluable(
                     revision,
                     "TEMPORAL_SEQUENCE_UNAVAILABLE",
@@ -102,9 +103,53 @@ public final class SceneRuleEvaluator {
     }
 
     private Check evaluateExit(Input input, List<ParticipantRef> participants) {
-        return Check.notEvaluable(
-                "EXIT_CONDITION_NOT_DEFINED",
-                "La regla EXIT requiere una condición de salida estructurada explícita");
+        if (participants == null || participants.isEmpty()) {
+            return Check.notEvaluable(
+                    "EXIT_CONDITION_INCOMPLETE",
+                    "EXIT requiere una lista explícita y no vacía de participantes");
+        }
+
+        Map<Long, Position> from = positionsBySinger(input.fromPositions());
+        Map<Long, Position> to = positionsBySinger(input.toPositions());
+        if (from == null || to == null) {
+            return Check.notEvaluable(
+                    "FORMATION_POSITIONS_INVALID",
+                    "Los snapshots FROM o TO contienen posiciones inválidas o duplicadas");
+        }
+
+        Set<Long> selected = new HashSet<>();
+        for (ParticipantRef participant : participants) {
+            Resolution resolution = resolveMembers(
+                    input.revision(), participant, input.resolvedGroupMembers());
+            if (!resolution.evaluable()) {
+                return Check.notEvaluable(resolution.code(), resolution.explanation());
+            }
+            for (Long singerId : resolution.singerIds()) {
+                if (!selected.add(singerId)) {
+                    return Check.notEvaluable(
+                            "PARTICIPANT_REFERENCE_INVALID",
+                            "EXIT contiene participantes duplicados");
+                }
+            }
+        }
+
+        for (Long singerId : selected) {
+            if (!from.containsKey(singerId)) {
+                return Check.notEvaluable(
+                        "EXIT_PARTICIPANT_MISSING_FROM",
+                        "Un participante seleccionado no estaba presente en FROM");
+            }
+        }
+        for (Long singerId : selected) {
+            if (to.containsKey(singerId)) {
+                return Check.violated(
+                        "EXIT_PARTICIPANT_PRESENT_TO",
+                        "Un participante seleccionado continúa presente en TO");
+            }
+        }
+        return Check.satisfied(
+                "EXIT_CONFIRMED",
+                "Todos los participantes seleccionados salieron de la formación");
     }
 
     private Check evaluateConstraint(Input input, SpatialConstraint constraint) {
