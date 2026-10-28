@@ -10,7 +10,7 @@ import java.util.List;
 
 public record CountGroupAssignment(
         @Positive long ruleRevisionId,
-        @PositiveOrZero int groupOrder,
+        @NotNull @PositiveOrZero Integer groupOrder,
         @NotNull @Size(min = 1)
         List<@NotNull @Positive Long> singerIds) {
 
