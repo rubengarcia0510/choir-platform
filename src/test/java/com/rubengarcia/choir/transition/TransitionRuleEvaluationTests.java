@@ -49,80 +49,8 @@ class TransitionRuleEvaluationTests {
 
     @AfterEach
     void cleanup() {
-        if (transitionVersionId != null) {
-            jdbc.update("""
-                    DELETE FROM transition_rule_evaluation_warnings
-                    WHERE evaluation_id IN (
-                        SELECT id FROM transition_rule_evaluations
-                        WHERE transition_version_id = ?)
-                    """, transitionVersionId);
-            jdbc.update("""
-                    DELETE FROM transition_rule_evaluation_results
-                    WHERE evaluation_id IN (
-                        SELECT id FROM transition_rule_evaluations
-                        WHERE transition_version_id = ?)
-                    """, transitionVersionId);
-            jdbc.update(
-                    "DELETE FROM transition_rule_evaluations WHERE transition_version_id = ?",
-                    transitionVersionId);
-            jdbc.update(
-                    "DELETE FROM transition_versions WHERE id = ?",
-                    transitionVersionId);
-        }
-        if (transitionId != null) {
-            jdbc.update("DELETE FROM transitions WHERE id = ?", transitionId);
-        }
-        if (sceneRuleId != null) {
-            jdbc.update("""
-                    DELETE FROM scene_rule_revisions
-                    WHERE scene_rule_id = ?
-                    """, sceneRuleId);
-            jdbc.update("DELETE FROM scene_rules WHERE id = ?", sceneRuleId);
-        }
-        if (fromVersionId != null) {
-            jdbc.update(
-                    "DELETE FROM formation_positions WHERE formation_version_id = ?",
-                    fromVersionId);
-            jdbc.update(
-                    "DELETE FROM formation_versions WHERE id = ?", fromVersionId);
-        }
-        if (toVersionId != null) {
-            jdbc.update(
-                    "DELETE FROM formation_positions WHERE formation_version_id = ?",
-                    toVersionId);
-            jdbc.update(
-                    "DELETE FROM formation_versions WHERE id = ?", toVersionId);
-        }
-        if (fromFormationId != null) {
-            jdbc.update("DELETE FROM formations WHERE id = ?", fromFormationId);
-        }
-        if (toFormationId != null) {
-            jdbc.update("DELETE FROM formations WHERE id = ?", toFormationId);
-        }
-        if (concertId != null && repertoireItemId != null) {
-            jdbc.update("""
-                    DELETE FROM concert_repertoire
-                    WHERE concert_id = ? AND repertoire_item_id = ?
-                    """, concertId, repertoireItemId);
-        }
-        if (concertId != null) {
-            jdbc.update("DELETE FROM concerts WHERE id = ?", concertId);
-        }
-        if (repertoireItemId != null) {
-            jdbc.update("DELETE FROM repertoire_items WHERE id = ?", repertoireItemId);
-        }
-        if (singerOneId != null) {
-            jdbc.update("DELETE FROM singers WHERE id = ?", singerOneId);
-        }
-        if (singerTwoId != null) {
-            jdbc.update("DELETE FROM singers WHERE id = ?", singerTwoId);
-        }
-        if (choirId != null) {
-            jdbc.update("DELETE FROM choirs WHERE id = ?", choirId);
-        }
-        if (directorId != null) {
-            jdbc.update("DELETE FROM directors WHERE id = ?", directorId);
-        }
+        // CHOIR-94: evaluation history is immutable. Keep the UUID-isolated fixture
+        // because deleting its parent entities would violate history foreign keys.
     }
 
     @Test
