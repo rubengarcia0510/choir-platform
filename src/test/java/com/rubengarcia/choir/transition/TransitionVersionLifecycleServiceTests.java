@@ -735,8 +735,8 @@ class TransitionVersionLifecycleServiceTests {
         jdbc.execute("""
                 ALTER TABLE transition_publication_evidence
                 ADD CONSTRAINT ck_test_fail_publication_evidence
-                CHECK (global_separation_threshold < 0)
-                """);
+                CHECK (transition_version_id <> %d OR global_separation_threshold < 0)
+                """.formatted(draft.getId()));
 
         try {
             assertThatThrownBy(() -> service.publish(
