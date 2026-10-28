@@ -2,6 +2,7 @@ package com.rubengarcia.choir.api;
 
 import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
+import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
 import com.rubengarcia.choir.transition.application.port.out.TransitionVersionPublicationPort.WarningAcceptance;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
@@ -68,12 +69,19 @@ public class TransitionVersionController {
             @PathVariable long choirId,
             @PathVariable long transitionId,
             @PathVariable long transitionVersionId,
+            @Valid @RequestBody(required = false) RuleEvaluationRequest request,
             Authentication authentication) {
+        List<CountGroupAssignment> assignments =
+                request == null || request.assignments() == null
+                        ? List.of()
+                        : request.assignments();
+
         return planningService.evaluateTransitionVersion(
                 authentication.getName(),
                 choirId,
                 transitionId,
-                transitionVersionId);
+                transitionVersionId,
+                assignments);
     }
 
     @GetMapping("/{transitionVersionId}/rule-evaluations")
@@ -109,6 +117,10 @@ public class TransitionVersionController {
             @NotNull @Positive Long fromFormationVersionId,
             @NotNull @Positive Long toFormationVersionId,
             @Size(max = 4000) String instructions) {
+    }
+
+    public record RuleEvaluationRequest(
+            @Size(max = 1000) List<@NotNull @Valid CountGroupAssignment> assignments) {
     }
 
     public record PublishRequest(

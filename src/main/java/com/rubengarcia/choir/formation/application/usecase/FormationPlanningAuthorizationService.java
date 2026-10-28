@@ -2,13 +2,13 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
-
+import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import java.math.BigDecimal;
+import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.math.BigDecimal;
 
 public interface FormationPlanningAuthorizationService {
 
@@ -26,6 +26,13 @@ public interface FormationPlanningAuthorizationService {
             long choirId,
             long transitionId,
             long transitionVersionId);
+
+    Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId,
+            List<CountGroupAssignment> assignments);
 
     Flux<TransitionRuleEvaluationSnapshot> transitionRuleEvaluationHistory(
             String email,
