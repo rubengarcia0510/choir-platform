@@ -66,7 +66,7 @@ spring:
     username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
   flyway:
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/migration-postgresql
 
 server:
   reactive:

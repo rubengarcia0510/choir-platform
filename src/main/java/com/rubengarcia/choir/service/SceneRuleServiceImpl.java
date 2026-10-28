@@ -1,0 +1,398 @@
+package com.rubengarcia.choir.service;
+
+import com.rubengarcia.choir.domain.SceneRule;
+import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort;
+import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.Failure;
+import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.GroupDefinition;
+import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.RuleDefinition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.SpatialConstraint;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+@Service
+public class SceneRuleServiceImpl implements SceneRuleService {
+
+    private static final String COUNT = "COUNT";
+    private static final String IDENTIFIED = "IDENTIFIED";
+    private static final Set<String> RULE_TYPES =
+            Set.of("MOVEMENT", "EXIT", "CAST_DIVISION");
+
+    private final ResourceAuthorizationService authorizationService;
+    private final SceneRulePersistencePort persistencePort;
+
+    public SceneRuleServiceImpl(
+            ResourceAuthorizationService authorizationService,
+            SceneRulePersistencePort persistencePort) {
+        this.authorizationService = authorizationService;
+        this.persistencePort = persistencePort;
+    }
+
+    @Override
+    public Flux<RuleView> list(
+            String email, long choirId, long concertId, long repertoireItemId) {
+        return authorizeOccurrence(email, choirId, concertId, repertoireItemId)
+                .thenMany(persistencePort.findByRepertoireItemId(repertoireItemId)
+                        .concatMap(this::toView));
+    }
+
+    @Override
+    public Mono<RuleView> get(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long ruleId) {
+        return authorizeOccurrence(email, choirId, concertId, repertoireItemId)
+                .then(findRule(repertoireItemId, ruleId))
+                .flatMap(this::toView);
+    }
+
+    @Override
+    public Mono<RuleView> create(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            RuleData data) {
+        return validate(data)
+                .then(authorizeOccurrence(
+                        email, choirId, concertId, repertoireItemId))
+                .then(Mono.defer(() ->
+                        persistencePort.create(
+                                choirId, repertoireItemId, toDefinition(data))))
+                .onErrorMap(Failure.class, this::mapPersistenceFailure)
+                .flatMap(this::toView);
+    }
+
+    @Override
+    public Mono<RuleView> update(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long ruleId,
+            RuleData data) {
+        return validate(data)
+                .then(authorizeOccurrence(
+                        email, choirId, concertId, repertoireItemId))
+                .then(Mono.defer(() -> persistencePort.update(
+                        choirId, repertoireItemId, ruleId, toDefinition(data))))
+                .onErrorMap(Failure.class, this::mapPersistenceFailure)
+                .flatMap(this::toView);
+    }
+
+    @Override
+    public Mono<Void> reorder(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            List<Long> ruleIds) {
+        if (ruleIds == null || ruleIds.stream().anyMatch(id -> id == null)
+                || new HashSet<>(ruleIds).size() != ruleIds.size()) {
+            return Mono.error(badRequest(
+                    "El orden debe incluir IDs de regla únicos y no nulos"));
+        }
+        return authorizeOccurrence(email, choirId, concertId, repertoireItemId)
+                .then(Mono.defer(() -> persistencePort.reorder(
+                        repertoireItemId, ruleIds)))
+                .onErrorMap(Failure.class, this::mapPersistenceFailure);
+    }
+
+    @Override
+    public Mono<Void> deactivate(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long ruleId) {
+        return authorizeOccurrence(email, choirId, concertId, repertoireItemId)
+                .then(Mono.defer(() -> persistencePort.deactivate(
+                        repertoireItemId, ruleId)))
+                .onErrorMap(Failure.class, this::mapPersistenceFailure);
+    }
+
+    private Mono<Void> authorizeOccurrence(
+            String email, long choirId, long concertId, long repertoireItemId) {
+        return authorizationService.requireOwnedConcertWork(
+                email, choirId, concertId, repertoireItemId);
+    }
+
+    private Mono<SceneRule> findRule(long repertoireItemId, long ruleId) {
+        return persistencePort.findByIdAndRepertoireItemId(ruleId, repertoireItemId)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Regla inexistente para esta canción")));
+    }
+
+    private Mono<RuleView> toView(SceneRule rule) {
+        return persistencePort.findGroupsBySceneRuleId(rule.getId())
+                .concatMap(group -> persistencePort
+                        .findSingerIdsByGroupId(group.getId())
+                        .collectList()
+                        .map(singerIds -> new GroupView(
+                                group.getGroupOrder(),
+                                group.getGroupLabel(),
+                                group.getCompositionMode(),
+                                group.getMemberCount(),
+                                singerIds)))
+                .collectList()
+                .map(groups -> new RuleView(
+                        rule.getId(),
+                        rule.getRuleOrder(),
+                        rule.getRuleType(),
+                        rule.getDescription(),
+                        rule.isActive(),
+                        groups,
+                        rule.getCondition(),
+                        rule.getDefinitionStatus()));
+    }
+
+    private Mono<Void> validate(RuleData data) {
+        if (data == null || data.ruleType() == null
+                || data.description() == null || data.groups() == null) {
+            return Mono.error(badRequest(
+                    "Tipo, descripción y grupos de la regla son obligatorios"));
+        }
+        if (!RULE_TYPES.contains(normalizeType(data.ruleType()))) {
+            return Mono.error(badRequest("El tipo de regla no está permitido"));
+        }
+        if (data.description().isBlank() || data.description().length() > 1000) {
+            return Mono.error(badRequest(
+                    "La descripción debe tener entre 1 y 1000 caracteres"));
+        }
+        if (data.groups().stream().anyMatch(group -> group == null
+                || group.label() == null || group.label().isBlank()
+                || group.label().length() > 100 || !validGroup(group))) {
+            return Mono.error(badRequest(
+                    "Cada grupo debe definir una composición válida de coreutas"));
+        }
+        if ("CAST_DIVISION".equals(normalizeType(data.ruleType()))
+                && data.groups().size() < 2) {
+            return Mono.error(badRequest(
+                    "Una regla de división del elenco requiere al menos dos grupos"));
+        }
+        if (data.condition() != null && !validCondition(
+                normalizeType(data.ruleType()), data.condition(), data.groups().size())) {
+            return Mono.error(badRequest(
+                    "La condición estructurada contiene parámetros inválidos"));
+        }
+        if (Boolean.FALSE.equals(data.draft())
+                && !completeCondition(
+                        normalizeType(data.ruleType()), data.condition())) {
+            return Mono.error(badRequest(
+                    "Una regla no borrador requiere una condición completa"));
+        }
+        return Mono.empty();
+    }
+
+    private boolean validCondition(
+            String ruleType, SceneRuleCondition condition, int groupCount) {
+        if (condition.spatialConstraints() != null
+                && condition.spatialConstraints().stream().anyMatch(constraint ->
+                        !validConstraint(constraint, groupCount))) {
+            return false;
+        }
+        if ("EXIT".equals(ruleType)) {
+            return condition.exitParticipants() == null
+                    || condition.exitParticipants().stream()
+                            .allMatch(participant -> validParticipant(
+                                    participant, groupCount));
+        }
+        return condition.exitParticipants() == null
+                || condition.exitParticipants().isEmpty();
+    }
+
+    private boolean validConstraint(SpatialConstraint constraint, int groupCount) {
+        if (constraint == null) {
+            return false;
+        }
+        List<ParticipantRef> participants = constraint.participants();
+        List<ParticipantRef> compared = constraint.comparedParticipants();
+        if (participants != null && participants.stream().anyMatch(
+                participant -> !validParticipant(participant, groupCount))) {
+            return false;
+        }
+        if (compared != null && compared.stream().anyMatch(
+                participant -> !validParticipant(participant, groupCount))) {
+            return false;
+        }
+        boolean validThreshold = constraint.threshold() == null
+                || constraint.threshold().signum() > 0
+                        && constraint.threshold().multiply(constraint.threshold())
+                                .compareTo(java.math.BigDecimal.valueOf(2)) <= 0;
+        if (!validThreshold) {
+            return false;
+        }
+        if (constraint.relation() == Relation.SEPARATED
+                && constraint.direction() != null) {
+            return false;
+        }
+        if ((constraint.relation() == Relation.TOGETHER
+                        || constraint.relation() == Relation.NEAR)
+                && constraint.direction() != null) {
+            return false;
+        }
+        if (constraint.relation() != null
+                && constraint.relation() != Relation.SEPARATED
+                && compared != null && !compared.isEmpty()) {
+            return false;
+        }
+        if (constraint.relation() == Relation.RELATIVE_ORDER
+                && (constraint.threshold() != null
+                        || participants != null && participants.size() > 2)) {
+            return false;
+        }
+        if (constraint.relation() == Relation.NEAR
+                && participants != null && participants.size() > 2) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validParticipant(ParticipantRef participant, int groupCount) {
+        if (participant == null || participant.type() == null) {
+            return false;
+        }
+        if (participant.type() == ParticipantType.SINGER) {
+            return participant.singerId() != null && participant.singerId() > 0
+                    && participant.groupOrder() == null;
+        }
+        return participant.singerId() == null
+                && participant.groupOrder() != null
+                && participant.groupOrder() >= 0
+                && participant.groupOrder() < groupCount;
+    }
+
+    private boolean completeCondition(
+            String ruleType, SceneRuleCondition condition) {
+        if (condition == null) {
+            return false;
+        }
+        if ("EXIT".equals(ruleType)) {
+            return condition.exitParticipants() != null
+                    && !condition.exitParticipants().isEmpty();
+        }
+        List<SpatialConstraint> constraints = condition.spatialConstraints();
+        if (constraints == null || constraints.isEmpty()
+                || constraints.stream().anyMatch(
+                        constraint -> !completeConstraint(constraint))) {
+            return false;
+        }
+        if ("MOVEMENT".equals(ruleType)) {
+            return constraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.FROM)
+                    && constraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.TO);
+        }
+        return true;
+    }
+
+    private boolean completeConstraint(SpatialConstraint constraint) {
+        if (constraint == null || constraint.relation() == null
+                || constraint.stage() == null || constraint.participants() == null) {
+            return false;
+        }
+        return switch (constraint.relation()) {
+            case TOGETHER -> constraint.participants().size() >= 2
+                    && constraint.threshold() != null;
+            case NEAR -> constraint.participants().size() == 2
+                    && constraint.threshold() != null;
+            case RELATIVE_ORDER -> constraint.participants().size() == 2
+                    && constraint.direction() != null;
+            case SEPARATED -> !constraint.participants().isEmpty()
+                    && constraint.comparedParticipants() != null
+                    && !constraint.comparedParticipants().isEmpty()
+                    && constraint.threshold() != null;
+        };
+    }
+
+    private String normalizeType(String ruleType) {
+        return ruleType.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private RuleDefinition toDefinition(RuleData data) {
+        return new RuleDefinition(
+                normalizeType(data.ruleType()),
+                data.description().trim(),
+                data.groups().stream()
+                        .map(group -> {
+                            String compositionMode =
+                                    normalizeCompositionMode(group.compositionMode());
+                            List<Long> singerIds = group.singerIds() == null
+                                    ? List.of()
+                                    : List.copyOf(group.singerIds());
+                            int memberCount = IDENTIFIED.equals(compositionMode)
+                                    ? singerIds.size()
+                                    : group.memberCount();
+                            return new GroupDefinition(
+                                    group.label().trim(),
+                                    compositionMode,
+                                    memberCount,
+                                    singerIds);
+                        })
+                        .toList(),
+                data.condition(),
+                Boolean.TRUE.equals(data.draft())
+                        || !completeCondition(
+                                normalizeType(data.ruleType()), data.condition())
+                        ? "DRAFT"
+                        : "READY");
+    }
+
+    private boolean validGroup(GroupData group) {
+        if (group.compositionMode() == null) {
+            return false;
+        }
+        String compositionMode = normalizeCompositionMode(group.compositionMode());
+        List<Long> singerIds = group.singerIds();
+        if (COUNT.equals(compositionMode)) {
+            return group.memberCount() != null
+                    && group.memberCount() > 0
+                    && (singerIds == null || singerIds.isEmpty());
+        }
+        if (IDENTIFIED.equals(compositionMode)) {
+            return singerIds != null
+                    && !singerIds.isEmpty()
+                    && singerIds.stream().allMatch(id -> id != null && id > 0)
+                    && new HashSet<>(singerIds).size() == singerIds.size()
+                    && (group.memberCount() == null
+                            || group.memberCount() == singerIds.size());
+        }
+        return false;
+    }
+
+    private String normalizeCompositionMode(String compositionMode) {
+        return compositionMode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private ResponseStatusException mapPersistenceFailure(Failure failure) {
+        return switch (failure.type()) {
+            case NOT_FOUND -> new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, failure.getMessage(), failure);
+            case INVALID_ORDER -> new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, failure.getMessage(), failure);
+            case ORDER_LIMIT -> new ResponseStatusException(
+                    HttpStatus.CONFLICT, failure.getMessage(), failure);
+            case INVALID_GROUP_MEMBERS -> new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, failure.getMessage(), failure);
+        };
+    }
+
+    private ResponseStatusException badRequest(String message) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+}

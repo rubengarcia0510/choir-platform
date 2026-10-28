@@ -5,6 +5,7 @@ import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningResourceAuthorizationPort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -60,6 +61,31 @@ public class FormationPlanningAuthorizationServiceImpl
                 .thenMany(Flux.defer(() ->
                         transitionPlanningService.positionsForTransitionVersion(
                                 transitionVersionId)));
+    }
+
+    @Override
+    public Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId) {
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
+                .then(Mono.defer(() -> transitionPlanningService
+                        .evaluateTransitionVersion(
+                                transitionId, transitionVersionId)));
+    }
+
+    @Override
+    public Flux<TransitionRuleEvaluationSnapshot> transitionRuleEvaluationHistory(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId) {
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
+                .thenMany(Flux.defer(() -> transitionPlanningService
+                        .evaluationHistory(transitionId, transitionVersionId)));
     }
 
     @Override

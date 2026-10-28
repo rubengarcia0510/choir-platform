@@ -2,16 +2,12 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
-import com.rubengarcia.choir.transition.adapter.out.persistence.R2dbcTransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
-import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningServiceImpl;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.r2dbc.core.DatabaseClient;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -27,18 +23,10 @@ class FormationPlanningServiceTests {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private DatabaseClient database;
-
-    @Autowired
     private FormationPlanningService service;
 
+    @Autowired
     private TransitionPlanningService transitionPlanningService;
-
-    @BeforeEach
-    void setUpPlanningService() {
-        transitionPlanningService = new TransitionPlanningServiceImpl(
-                new R2dbcTransitionPlanningPositionRepository(database));
-    }
 
     @Test
     void readsHistoricalVoiceDivisionFromFormationPosition() {
