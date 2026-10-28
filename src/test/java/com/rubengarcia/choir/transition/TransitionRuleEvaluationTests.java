@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import com.rubengarcia.choir.domain.TransitionVersion;
+import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import org.springframework.dao.DataAccessException;
+import org.junit.jupiter.api.Assumptions;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -30,6 +34,9 @@ class TransitionRuleEvaluationTests {
 
     @Autowired
     private FormationPlanningAuthorizationService authorizedPlanningService;
+
+    @Autowired
+    private TransitionVersionLifecycleService lifecycleService;
 
     private Long directorId;
     private Long choirId;
@@ -179,6 +186,86 @@ class TransitionRuleEvaluationTests {
                 WHERE evaluation_id = ?
                 """, Integer.class, evaluation.id()))
                 .isZero();
+    }
+
+    @Test
+    void postgresPublicationHistoryRejectsUpdatesAndDeletes() throws Exception {
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            Assumptions.assumeTrue(
+                    connection.getMetaData().getDatabaseProductName().contains("PostgreSQL"),
+                    "Esta prueba requiere PostgreSQL para validar los triggers de V25");
+        }
+
+        createFixture();
+        TransitionRuleEvaluationSnapshot evaluation = authorizedPlanningService
+                .evaluateTransitionVersion(email, choirId, transitionId, transitionVersionId)
+                .block();
+        assertThat(evaluation).isNotNull();
+        assertThat(evaluation.results()).isNotEmpty();
+        assertThat(evaluation.warnings()).isNotEmpty();
+
+        TransitionVersion draft = lifecycleService.createDraft(
+                email, choirId, transitionId, fromVersionId, toVersionId,
+                "CHOIR-94 validación de inmutabilidad PostgreSQL")
+                .block(java.time.Duration.ofSeconds(10));
+        String title = "CHOIR-94 immutable history " + UUID.randomUUID();
+        jdbc.update("INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+                choirId, title);
+        Long repertoireId = jdbc.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, title);
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    repertoire_item_id, separation_settings_revision,
+                    global_separation_threshold, status
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 0027VIOLATED0027)
+                """, draft.getId(), transitionId, fromVersionId, toVersionId, repertoireId);
+        Long publicationEvaluationId = jdbc.queryForObject("""
+                SELECT MAX(id) FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                """, Long.class, draft.getId());
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluation_warnings (
+                    evaluation_id, result_order, warning_order,
+                    code, explanation, status
+                ) VALUES (?, NULL, 0, 0027STAGE_SEPARATION0027,
+                          0027Excepción documentada para probar el historial0027, 0027VIOLATED0027)
+                """, publicationEvaluationId);
+        lifecycleService.publish(email, choirId, transitionId, draft.getId(),
+                publicationEvaluationId,
+                java.util.List.of(new com.rubengarcia.choir.transition.application.port.out
+                        .TransitionVersionPublicationPort.WarningAcceptance(
+                                -1, 0, "Aceptación explícita para prueba de inmutabilidad")))
+                .block(java.time.Duration.ofSeconds(10));
+
+        Object[][] mutations = {
+            {"transition_rule_evaluations", "id", evaluation.id()},
+            {"transition_rule_evaluation_results", "evaluation_id", evaluation.id()},
+            {"transition_rule_evaluation_warnings", "evaluation_id", evaluation.id()},
+            {"transition_publication_evidence", "transition_version_id", draft.getId()},
+            {"transition_publication_decisions", "transition_version_id", draft.getId()}
+        };
+        for (Object[] mutation : mutations) {
+            String table = (String) mutation[0];
+            String keyColumn = (String) mutation[1];
+            Object key = mutation[2];
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM " + table + " WHERE " + keyColumn + " = ?",
+                    Integer.class, key))
+                    .as("Debe existir una fila de prueba en %s", table)
+                    .isPositive();
+            assertThatThrownBy(() -> jdbc.update(
+                    "UPDATE " + table + " SET " + keyColumn + " = " + keyColumn
+                            + " WHERE " + keyColumn + " = ?", key))
+                    .as("PostgreSQL debe rechazar UPDATE en %s", table)
+                    .isInstanceOf(DataAccessException.class);
+            assertThatThrownBy(() -> jdbc.update(
+                    "DELETE FROM " + table + " WHERE " + keyColumn + " = ?", key))
+                    .as("PostgreSQL debe rechazar DELETE en %s", table)
+                    .isInstanceOf(DataAccessException.class);
+        }
     }
 
     private void createFixture() {
