@@ -715,6 +715,37 @@ class TransitionVersionLifecycleServiceTests {
     }
 
     @Test
+    void rejectsDirectorVisibilityNotEvaluableWarningAcceptanceWithoutWritingPublicationAudit() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                fixture.fromFormationVersionId(), fixture.toFormationVersionId(),
+                "CHOIR-94 visibilidad no evaluable")
+                .block(TIMEOUT);
+        Long evaluationId = insertLifecycleEvaluation(fixture, draft, "VIOLATED");
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluation_warnings (
+                    evaluation_id, result_order, warning_order,
+                    code, explanation, status
+                ) VALUES (?, NULL, 0, 'DIRECTOR_VISIBILITY_NOT_EVALUABLE',
+                          'No se puede comprobar la visibilidad del director', 'VIOLATED')
+                """, evaluationId);
+
+        assertThatThrownBy(() -> service.publish(
+                fixture.email(), fixture.choirId(), fixture.transitionId(),
+                draft.getId(), evaluationId,
+                java.util.List.of(
+                        new com.rubengarcia.choir.transition.application.port.out
+                                .TransitionVersionPublicationPort.WarningAcceptance(
+                                        -1, 0, "No debe aceptarse la visibilidad no verificable")))
+                .block(TIMEOUT))
+                .isInstanceOf(ResponseStatusException.class);
+
+        assertPublicationAuditAbsent(draft.getId());
+    }
+
+    @Test
     void rollsBackPublicationDecisionsWhenEvidencePersistenceFails() {
         Fixture fixture = fixture();
         TransitionVersion draft = service.createDraft(
