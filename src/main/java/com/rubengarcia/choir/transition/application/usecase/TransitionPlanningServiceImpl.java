@@ -7,6 +7,7 @@ import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Input;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Position;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
+import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
 import com.rubengarcia.choir.transition.application.port.out.SceneRuleSeparationSettingsPort;
 import com.rubengarcia.choir.transition.application.port.out.TransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
@@ -19,8 +20,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.IntStream;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -58,7 +61,22 @@ public class TransitionPlanningServiceImpl
 
     @Override
     public Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
-            long transitionId, long transitionVersionId) {
+            long transitionId,
+            long transitionVersionId) {
+        return evaluateTransitionVersion(
+                transitionId,
+                transitionVersionId,
+                List.of());
+    }
+
+    @Override
+    public Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
+            long transitionId,
+            long transitionVersionId,
+            List<CountGroupAssignment> assignments) {
+        List<CountGroupAssignment> safeAssignments =
+                assignments == null ? List.of() : new ArrayList<>(assignments);
+
         return positionRepository.findPlanningContext(transitionVersionId)
                 .filter(context -> context.transitionId() == transitionId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
@@ -73,12 +91,16 @@ public class TransitionPlanningServiceImpl
                                                 context.repertoireItemId())
                                         .collectList(),
                                 settingsPort.getCurrent())
-                        .flatMap(data -> evaluateAndSave(context, data)));
+                        .flatMap(data -> evaluateAndSave(
+                                context,
+                                data,
+                                safeAssignments)));
     }
 
     @Override
     public Flux<TransitionRuleEvaluationSnapshot> evaluationHistory(
-            long transitionId, long transitionVersionId) {
+            long transitionId,
+            long transitionVersionId) {
         return positionRepository.findPlanningContext(transitionVersionId)
                 .filter(context -> context.transitionId() == transitionId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
@@ -94,43 +116,61 @@ public class TransitionPlanningServiceImpl
             Tuple3<
                     List<TransitionPlanningPosition>,
                     List<SceneRuleRevisionSnapshot>,
-                    SceneRuleSeparationSettingsPort.Setting> data) {
+                    SceneRuleSeparationSettingsPort.Setting> data,
+            List<CountGroupAssignment> assignments) {
+
         List<SceneRuleRevisionSnapshot> activeRevisions =
                 latestActiveRevisions(data.getT2());
+
         List<Position> fromPositions = positionsAt(
-                data.getT1(), "FROM", context.fromFormationVersionId());
+                data.getT1(),
+                "FROM",
+                context.fromFormationVersionId());
+
         List<Position> toPositions = positionsAt(
-                data.getT1(), "TO", context.toFormationVersionId());
-        Map<Integer, List<Long>> noCountAssignments = Map.of();
+                data.getT1(),
+                "TO",
+                context.toFormationVersionId());
+
         List<RuleResult> results = new ArrayList<>();
+
         List<Warning> globalWarnings = List.of(new Warning(
                 null,
                 0,
                 "DIRECTOR_VISIBILITY_NOT_EVALUABLE",
                 "La visibilidad física del director no puede verificarse con la geometría relativa",
                 Status.NOT_EVALUABLE));
+
         for (int order = 0; order < activeRevisions.size(); order++) {
             SceneRuleRevisionSnapshot revision = activeRevisions.get(order);
+
+            Map<Integer, List<Long>> revisionAssignments =
+                    assignmentsForRevision(revision, assignments);
+
             Evaluation result = evaluator.evaluate(new Input(
                     revision,
                     context.fromFormationVersionId(),
                     fromPositions,
                     context.toFormationVersionId(),
                     toPositions,
-                    noCountAssignments,
+                    revisionAssignments,
                     data.getT3().threshold()));
+
             int resultOrder = order;
-            List<Warning> warnings = IntStream.range(0, result.warnings().size())
+
+            List<Warning> warnings = IntStream
+                    .range(0, result.warnings().size())
                     .mapToObj(warningOrder -> {
                         var warning = result.warnings().get(warningOrder);
                         return new Warning(
-                            resultOrder,
-                            warningOrder,
-                            warning.code(),
-                            warning.explanation(),
-                            warning.status());
+                                resultOrder,
+                                warningOrder,
+                                warning.code(),
+                                warning.explanation(),
+                                warning.status());
                     })
                     .toList();
+
             results.add(new RuleResult(
                     order,
                     revision.sceneRuleId(),
@@ -141,7 +181,9 @@ public class TransitionPlanningServiceImpl
                     result.explanation(),
                     warnings));
         }
+
         Status overallStatus = overallStatus(results, globalWarnings);
+
         TransitionRuleEvaluationSnapshot snapshot =
                 new TransitionRuleEvaluationSnapshot(
                         null,
@@ -156,12 +198,43 @@ public class TransitionPlanningServiceImpl
                         LocalDateTime.now(),
                         results,
                         globalWarnings);
+
         return evaluationHistoryPort.save(snapshot);
+    }
+
+    private Map<Integer, List<Long>> assignmentsForRevision(
+            SceneRuleRevisionSnapshot revision,
+            List<CountGroupAssignment> assignments) {
+
+        Map<Integer, List<Long>> resolved = new HashMap<>();
+        Set<Integer> duplicateGroupOrders = new HashSet<>();
+
+        for (CountGroupAssignment assignment : assignments) {
+            if (assignment == null
+                    || assignment.ruleRevisionId() != revision.id()) {
+                continue;
+            }
+
+            int groupOrder = assignment.groupOrder();
+
+            if (resolved.containsKey(groupOrder)) {
+                resolved.remove(groupOrder);
+                duplicateGroupOrders.add(groupOrder);
+                continue;
+            }
+
+            if (!duplicateGroupOrders.contains(groupOrder)) {
+                resolved.put(groupOrder, assignment.singerIds());
+            }
+        }
+
+        return resolved;
     }
 
     private List<SceneRuleRevisionSnapshot> latestActiveRevisions(
             List<SceneRuleRevisionSnapshot> revisions) {
         Map<Long, SceneRuleRevisionSnapshot> latestByRule = new HashMap<>();
+
         for (SceneRuleRevisionSnapshot revision : revisions) {
             latestByRule.merge(
                     revision.sceneRuleId(),
@@ -171,6 +244,7 @@ public class TransitionPlanningServiceImpl
                             ? candidate
                             : current);
         }
+
         return latestByRule.values().stream()
                 .filter(SceneRuleRevisionSnapshot::active)
                 .sorted(Comparator.comparingInt(
@@ -195,15 +269,19 @@ public class TransitionPlanningServiceImpl
     }
 
     private Status overallStatus(
-            List<RuleResult> results, List<Warning> globalWarnings) {
-        if (results.stream().anyMatch(result -> result.status() == Status.VIOLATED)) {
+            List<RuleResult> results,
+            List<Warning> globalWarnings) {
+        if (results.stream().anyMatch(
+                result -> result.status() == Status.VIOLATED)) {
             return Status.VIOLATED;
         }
+
         if (!globalWarnings.isEmpty()
                 || results.stream().anyMatch(
                         result -> result.status() == Status.NOT_EVALUABLE)) {
             return Status.NOT_EVALUABLE;
         }
+
         return Status.SATISFIED;
     }
 }

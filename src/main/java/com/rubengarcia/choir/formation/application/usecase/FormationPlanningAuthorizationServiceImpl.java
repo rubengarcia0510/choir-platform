@@ -3,14 +3,15 @@ package com.rubengarcia.choir.formation.application.usecase;
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningResourceAuthorizationPort;
+import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.math.BigDecimal;
 
 @Service
 public class FormationPlanningAuthorizationServiceImpl
@@ -74,6 +75,22 @@ public class FormationPlanningAuthorizationServiceImpl
                 .then(Mono.defer(() -> transitionPlanningService
                         .evaluateTransitionVersion(
                                 transitionId, transitionVersionId)));
+    }
+
+    @Override
+    public Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId,
+            List<CountGroupAssignment> assignments) {
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
+                .then(Mono.defer(() -> transitionPlanningService
+                        .evaluateTransitionVersion(
+                                transitionId,
+                                transitionVersionId,
+                                assignments)));
     }
 
     @Override
