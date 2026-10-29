@@ -99,6 +99,68 @@ class FormationVersionLifecycleIntegrationTests {
     }
 
     @Test
+    void publishingKeepsPreviousVersionPublishedWhenStillSelected() {
+        Fixture f = fixture("PUBLISHED");
+        String suffix = UUID.randomUUID().toString();
+
+        jdbc.update("""
+                INSERT INTO concerts (choir_id, title, status)
+                VALUES (?, ?, 'PLANNED')
+                """, f.choirId(), "Concierto " + suffix);
+        long concertId = jdbc.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, f.choirId(), "Concierto " + suffix);
+
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, f.choirId(), "Obra " + suffix);
+        long repertoireItemId = jdbc.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, f.choirId(), "Obra " + suffix);
+
+        jdbc.update("""
+                INSERT INTO concert_repertoire (
+                    concert_id, repertoire_item_id, order_index
+                )
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+
+        jdbc.update("""
+                UPDATE formations
+                SET concert_id = ?, repertoire_item_id = ?
+                WHERE id = ?
+                """, concertId, repertoireItemId, f.formationId());
+
+        jdbc.update("""
+                UPDATE concert_repertoire
+                SET selected_formation_id = ?,
+                    selected_formation_version_id = ?
+                WHERE concert_id = ? AND repertoire_item_id = ?
+                """, f.formationId(), f.versionId(), concertId, repertoireItemId);
+
+        FormationVersion draft = service.createDraft(
+                f.email(), f.choirId(), f.formationId(), "Nueva versión")
+                .block(TIMEOUT);
+        assertThat(draft).isNotNull();
+
+        FormationVersion published = service.publish(
+                f.email(), f.choirId(), f.formationId(), draft.getId())
+                .block(TIMEOUT);
+
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(jdbc.queryForObject("""
+                SELECT status FROM formation_versions WHERE id = ?
+                """, String.class, f.versionId())).isEqualTo("PUBLISHED");
+        assertThat(jdbc.queryForObject("""
+                SELECT selected_formation_version_id
+                FROM concert_repertoire
+                WHERE concert_id = ? AND repertoire_item_id = ?
+                """, Long.class, concertId, repertoireItemId))
+                .isEqualTo(f.versionId());
+    }
+
+    @Test
     void rejectsPublishingVersionThatIsNotDraft() {
         Fixture f = fixture("PUBLISHED");
 

@@ -99,6 +99,12 @@ public class FormationVersionLifecyclePersistenceAdapter
                             SET status = 'ARCHIVED'
                             WHERE formation_id = :formationId
                               AND status = 'PUBLISHED'
+                              AND NOT EXISTS (
+                                  SELECT 1
+                                  FROM concert_repertoire cr
+                                  WHERE cr.selected_formation_id = :formationId
+                                    AND cr.selected_formation_version_id = formation_versions.id
+                              )
                             """)
                             .bind("formationId", formationId)
                             .fetch()
