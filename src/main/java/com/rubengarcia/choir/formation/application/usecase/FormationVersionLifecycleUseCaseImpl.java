@@ -25,27 +25,33 @@ public class FormationVersionLifecycleUseCaseImpl
     public Flux<FormationVersion> list(
             String email, long choirId, long formationId) {
         return authorizationPort.requireOwnedChoir(email, choirId)
-                .thenMany(lifecyclePort.list(choirId, formationId));
+                .thenMany(Flux.defer(
+                        () -> lifecyclePort.list(choirId, formationId)));
     }
 
     @Override
     public Mono<FormationVersion> createDraft(
             String email, long choirId, long formationId, String notes) {
         return authorizationPort.requireOwnedChoir(email, choirId)
-                .then(lifecyclePort.createDraft(choirId, formationId, notes));
+                .then(Mono.defer(
+                        () -> lifecyclePort.createDraft(
+                                choirId, formationId, notes)));
     }
 
     @Override
     public Mono<FormationVersion> published(
             String email, long choirId, long formationId) {
         return authorizationPort.requireOwnedChoir(email, choirId)
-                .then(lifecyclePort.published(choirId, formationId));
+                .then(Mono.defer(
+                        () -> lifecyclePort.published(choirId, formationId)));
     }
 
     @Override
     public Mono<FormationVersion> publish(
             String email, long choirId, long formationId, long versionId) {
         return authorizationPort.requireOwnedChoir(email, choirId)
-                .then(lifecyclePort.publish(choirId, formationId, versionId));
+                .then(Mono.defer(
+                        () -> lifecyclePort.publish(
+                                choirId, formationId, versionId)));
     }
 }
