@@ -65,9 +65,9 @@ public class FormationVersionSelectionPersistenceAdapter
             long formationVersionId,
             String actorEmail) {
 
-        return lockOccurrence(concertId, repertoireItemId)
-                .then(requireFormationForOccurrence(
-                        concertId, repertoireItemId, formationId))
+        return lockFormationForOccurrence(
+                        concertId, repertoireItemId, formationId)
+                .then(lockOccurrence(concertId, repertoireItemId))
                 .then(requirePublishedVersion(formationId, formationVersionId))
                 .then(findSelection(concertId, repertoireItemId))
                 .flatMap(current -> {
@@ -126,6 +126,29 @@ public class FormationVersionSelectionPersistenceAdapter
                 .all();
     }
 
+    private Mono<Void> lockFormationForOccurrence(
+            long concertId,
+            long repertoireItemId,
+            long formationId) {
+        return database.sql("""
+                SELECT id
+                FROM formations
+                WHERE id = :formationId
+                  AND concert_id = :concertId
+                  AND repertoire_item_id = :repertoireItemId
+                FOR UPDATE
+                """)
+                .bind("formationId", formationId)
+                .bind("concertId", concertId)
+                .bind("repertoireItemId", repertoireItemId)
+                .fetch()
+                .first()
+                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "La formación no pertenece a esta ocurrencia de repertorio")))
+                .then();
+    }
+
     private Mono<Void> lockOccurrence(
             long concertId,
             long repertoireItemId) {
@@ -143,28 +166,6 @@ public class FormationVersionSelectionPersistenceAdapter
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "La ocurrencia de repertorio no existe")))
-                .then();
-    }
-
-    private Mono<Void> requireFormationForOccurrence(
-            long concertId,
-            long repertoireItemId,
-            long formationId) {
-        return database.sql("""
-                SELECT id
-                FROM formations
-                WHERE id = :formationId
-                  AND concert_id = :concertId
-                  AND repertoire_item_id = :repertoireItemId
-                """)
-                .bind("formationId", formationId)
-                .bind("concertId", concertId)
-                .bind("repertoireItemId", repertoireItemId)
-                .fetch()
-                .first()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La formación no pertenece a esta ocurrencia de repertorio")))
                 .then();
     }
 
