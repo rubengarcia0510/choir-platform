@@ -1,12 +1,12 @@
 package com.rubengarcia.choir.service;
 
+import com.rubengarcia.choir.formation.application.exception.FormationVersionPublicationException;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.UUID;
@@ -104,7 +104,7 @@ class FormationVersionLifecycleServiceTests {
         assertThatThrownBy(() -> service.publish(
                 f.email(), f.choirId(), f.formationId(), f.versionId())
                 .block(TIMEOUT))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(FormationVersionPublicationException.class)
                 .hasMessageContaining("Solo se pueden publicar versiones");
     }
 
@@ -141,18 +141,18 @@ class FormationVersionLifecycleServiceTests {
                 """, Integer.class, draft.getId())).isZero();
     }
 
-
     @Test
     void publishesConcurrentlyWithoutLeavingMultiplePublishedVersions()
             throws Exception {
         Fixture f = fixture("PUBLISHED");
 
         FormationVersion firstDraft = service.createDraft(
-                f.email(), f.choirId(), f.formationId(), "Publicación concurrente A")
-                .block(TIMEOUT);
+                f.email(), f.choirId(), f.formationId(),
+                "Publicación concurrente A").block(TIMEOUT);
+
         FormationVersion secondDraft = service.createDraft(
-                f.email(), f.choirId(), f.formationId(), "Publicación concurrente B")
-                .block(TIMEOUT);
+                f.email(), f.choirId(), f.formationId(),
+                "Publicación concurrente B").block(TIMEOUT);
 
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -162,16 +162,16 @@ class FormationVersionLifecycleServiceTests {
                     () -> {
                         awaitStart(start);
                         return service.publish(
-                                f.email(), f.choirId(), f.formationId(), firstDraft.getId())
-                                .block(TIMEOUT);
+                                f.email(), f.choirId(), f.formationId(),
+                                firstDraft.getId()).block(TIMEOUT);
                     }, executor);
 
             CompletableFuture<FormationVersion> second = CompletableFuture.supplyAsync(
                     () -> {
                         awaitStart(start);
                         return service.publish(
-                                f.email(), f.choirId(), f.formationId(), secondDraft.getId())
-                                .block(TIMEOUT);
+                                f.email(), f.choirId(), f.formationId(),
+                                secondDraft.getId()).block(TIMEOUT);
                     }, executor);
 
             start.countDown();
@@ -197,6 +197,7 @@ class FormationVersionLifecycleServiceTests {
     @Test
     void rollsBackPreviousPublicationWhenPublishingDraftFails() {
         Fixture f = fixture("PUBLISHED");
+
         FormationVersion draft = service.createDraft(
                 f.email(), f.choirId(), f.formationId(), "Fallo intermedio")
                 .block(TIMEOUT);
@@ -239,22 +240,26 @@ class FormationVersionLifecycleServiceTests {
     private static void awaitStart(CountDownLatch start) {
         try {
             if (!start.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException("No se liberó la barrera de concurrencia");
+                throw new IllegalStateException(
+                        "No se liberó la barrera de concurrencia");
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(
-                    "Interrumpido al iniciar la publicación concurrente", exception);
+                    "Interrumpido al iniciar la publicación concurrente",
+                    exception);
         }
     }
 
     private Fixture fixture(String status) {
         Fixture f = baseFixture();
+
         jdbc.update("""
                 INSERT INTO formation_versions
                     (formation_id, version_number, status, notes)
                 VALUES (?, 1, ?, 'Versión inicial')
                 """, f.formationId(), status);
+
         long versionId = jdbc.queryForObject("""
                 SELECT id FROM formation_versions
                 WHERE formation_id = ? AND version_number = 1
@@ -270,7 +275,8 @@ class FormationVersionLifecycleServiceTests {
                         'Sopranos', 2, 'Posición original', 1.000, 2.000)
                 """, versionId, f.singerId(), f.sectionId());
 
-        return new Fixture(f.email(), f.choirId(), f.formationId(),
+        return new Fixture(
+                f.email(), f.choirId(), f.formationId(),
                 f.sectionId(), f.singerId(), versionId);
     }
 
@@ -286,6 +292,7 @@ class FormationVersionLifecycleServiceTests {
                 INSERT INTO directors (display_name, email)
                 VALUES ('Director de prueba', ?)
                 """, email);
+
         long directorId = jdbc.queryForObject(
                 "SELECT id FROM directors WHERE email = ?",
                 Long.class, email);
@@ -294,6 +301,7 @@ class FormationVersionLifecycleServiceTests {
                 INSERT INTO choirs (director_id, name)
                 VALUES (?, ?)
                 """, directorId, "Coro " + suffix);
+
         long choirId = jdbc.queryForObject(
                 "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
                 Long.class, directorId, "Coro " + suffix);
@@ -302,6 +310,7 @@ class FormationVersionLifecycleServiceTests {
                 INSERT INTO vocal_sections (choir_id, name)
                 VALUES (?, 'Sopranos')
                 """, choirId);
+
         long sectionId = jdbc.queryForObject(
                 "SELECT id FROM vocal_sections WHERE choir_id = ?",
                 Long.class, choirId);
@@ -311,6 +320,7 @@ class FormationVersionLifecycleServiceTests {
                     (choir_id, display_name, voice_part, voice_section_id)
                 VALUES (?, 'Nombre histórico', 'SOPRANO', ?)
                 """, choirId, sectionId);
+
         long singerId = jdbc.queryForObject("""
                 SELECT id FROM singers
                 WHERE choir_id = ? AND display_name = 'Nombre histórico'
@@ -320,12 +330,13 @@ class FormationVersionLifecycleServiceTests {
                 INSERT INTO formations (choir_id, name)
                 VALUES (?, ?)
                 """, choirId, "Formación " + suffix);
+
         long formationId = jdbc.queryForObject(
                 "SELECT id FROM formations WHERE choir_id = ? AND name = ?",
                 Long.class, choirId, "Formación " + suffix);
 
-        return new Fixture(email, choirId, formationId,
-                sectionId, singerId, null);
+        return new Fixture(
+                email, choirId, formationId, sectionId, singerId, null);
     }
 
     private record Fixture(
