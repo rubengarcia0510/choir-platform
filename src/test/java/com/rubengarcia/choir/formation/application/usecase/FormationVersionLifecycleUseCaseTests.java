@@ -1,5 +1,6 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-class FormationVersionLifecycleServiceTests {
+class FormationVersionLifecycleUseCaseTests {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
@@ -28,7 +29,7 @@ class FormationVersionLifecycleServiceTests {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private FormationVersionLifecycleService service;
+    private FormationVersionLifecycleUseCase service;
 
     @Test
     void createsDraftByCopyingPublishedPositionsAndSnapshots() {

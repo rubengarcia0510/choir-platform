@@ -1,7 +1,7 @@
 package com.rubengarcia.choir.api;
 
+import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
-import com.rubengarcia.choir.service.FormationVersionLifecycleService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -20,10 +20,11 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/api/choirs/{choirId}/formations/{formationId}/versions")
 public class FormationVersionController {
 
-    private final FormationVersionLifecycleService service;
+    private final FormationVersionLifecycleUseCase useCase;
 
-    public FormationVersionController(FormationVersionLifecycleService service) {
-        this.service = service;
+    public FormationVersionController(
+            FormationVersionLifecycleUseCase useCase) {
+        this.useCase = useCase;
     }
 
     @GetMapping
@@ -31,7 +32,7 @@ public class FormationVersionController {
             @PathVariable long choirId,
             @PathVariable long formationId,
             Authentication authentication) {
-        return service.list(authentication.getName(), choirId, formationId);
+        return useCase.list(authentication.getName(), choirId, formationId);
     }
 
     @PostMapping
@@ -41,7 +42,7 @@ public class FormationVersionController {
             @PathVariable long formationId,
             @Valid @RequestBody(required = false) CreateDraftRequest request,
             Authentication authentication) {
-        return service.createDraft(
+        return useCase.createDraft(
                 authentication.getName(),
                 choirId,
                 formationId,
@@ -53,7 +54,8 @@ public class FormationVersionController {
             @PathVariable long choirId,
             @PathVariable long formationId,
             Authentication authentication) {
-        return service.published(authentication.getName(), choirId, formationId);
+        return useCase.published(
+                authentication.getName(), choirId, formationId);
     }
 
     @PostMapping("/{versionId}/publish")
@@ -62,7 +64,7 @@ public class FormationVersionController {
             @PathVariable long formationId,
             @PathVariable long versionId,
             Authentication authentication) {
-        return service.publish(
+        return useCase.publish(
                 authentication.getName(), choirId, formationId, versionId);
     }
 
