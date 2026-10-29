@@ -1,4 +1,6 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
+
+import com.rubengarcia.choir.formation.domain.FormationVersion;
 
 import com.rubengarcia.choir.formation.application.exception.FormationVersionPublicationException;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
@@ -28,7 +30,7 @@ class FormationVersionLifecycleServiceTests {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private FormationVersionLifecycleService service;
+    private com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleService service;
 
     @Test
     void createsDraftByCopyingPublishedPositionsAndSnapshots() {

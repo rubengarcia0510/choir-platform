@@ -1,4 +1,4 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import reactor.core.publisher.Flux;

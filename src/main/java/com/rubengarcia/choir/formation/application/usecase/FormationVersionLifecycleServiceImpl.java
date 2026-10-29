@@ -1,5 +1,6 @@
-package com.rubengarcia.choir.service;
+package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.port.out.FormationVersionLifecycleAuthorizationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionLifecyclePort;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.springframework.stereotype.Service;
@@ -11,40 +12,40 @@ public class FormationVersionLifecycleServiceImpl
         implements FormationVersionLifecycleService {
 
     private final FormationVersionLifecyclePort lifecyclePort;
-    private final ResourceAuthorizationService authorizationService;
+    private final FormationVersionLifecycleAuthorizationPort authorizationPort;
 
     public FormationVersionLifecycleServiceImpl(
             FormationVersionLifecyclePort lifecyclePort,
-            ResourceAuthorizationService authorizationService) {
+            FormationVersionLifecycleAuthorizationPort authorizationPort) {
         this.lifecyclePort = lifecyclePort;
-        this.authorizationService = authorizationService;
+        this.authorizationPort = authorizationPort;
     }
 
     @Override
     public Flux<FormationVersion> list(
             String email, long choirId, long formationId) {
-        return authorizationService.requireOwnedChoir(email, choirId)
+        return authorizationPort.requireOwnedChoir(email, choirId)
                 .thenMany(lifecyclePort.list(choirId, formationId));
     }
 
     @Override
     public Mono<FormationVersion> createDraft(
             String email, long choirId, long formationId, String notes) {
-        return authorizationService.requireOwnedChoir(email, choirId)
+        return authorizationPort.requireOwnedChoir(email, choirId)
                 .then(lifecyclePort.createDraft(choirId, formationId, notes));
     }
 
     @Override
     public Mono<FormationVersion> published(
             String email, long choirId, long formationId) {
-        return authorizationService.requireOwnedChoir(email, choirId)
+        return authorizationPort.requireOwnedChoir(email, choirId)
                 .then(lifecyclePort.published(choirId, formationId));
     }
 
     @Override
     public Mono<FormationVersion> publish(
             String email, long choirId, long formationId, long versionId) {
-        return authorizationService.requireOwnedChoir(email, choirId)
+        return authorizationPort.requireOwnedChoir(email, choirId)
                 .then(lifecyclePort.publish(choirId, formationId, versionId));
     }
 }
