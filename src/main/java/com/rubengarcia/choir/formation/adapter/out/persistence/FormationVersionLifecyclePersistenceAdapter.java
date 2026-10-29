@@ -70,6 +70,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                         FROM formation_versions
                         WHERE formation_id = :formationId
                           AND status = 'PUBLISHED'
+                        ORDER BY version_number DESC
+                        LIMIT 1
                         """)
                         .bind("formationId", formationId)
                         .map((row, metadata) -> mapVersion(row))
@@ -209,8 +211,14 @@ public class FormationVersionLifecyclePersistenceAdapter
                 FROM formation_positions fp
                 JOIN formation_versions source
                   ON source.id = fp.formation_version_id
-                WHERE source.formation_id = :formationId
-                  AND source.status = 'PUBLISHED'
+                WHERE source.id = (
+                    SELECT id
+                    FROM formation_versions
+                    WHERE formation_id = :formationId
+                      AND status = 'PUBLISHED'
+                    ORDER BY version_number DESC
+                    LIMIT 1
+                )
                 """)
                 .bind("draftVersionId", draftVersionId)
                 .bind("formationId", formationId)
