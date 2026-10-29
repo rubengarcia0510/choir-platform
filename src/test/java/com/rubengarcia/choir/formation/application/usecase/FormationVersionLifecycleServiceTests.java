@@ -1,8 +1,8 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
-import com.rubengarcia.choir.formation.domain.FormationVersion;
 
 import com.rubengarcia.choir.formation.application.exception.FormationVersionPublicationException;
+import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleService;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +30,7 @@ class FormationVersionLifecycleServiceTests {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleService service;
+    private FormationVersionLifecycleService service;
 
     @Test
     void createsDraftByCopyingPublishedPositionsAndSnapshots() {
