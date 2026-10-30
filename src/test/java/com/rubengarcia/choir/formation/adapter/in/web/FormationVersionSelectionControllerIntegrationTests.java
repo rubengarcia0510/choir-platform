@@ -56,10 +56,18 @@ class FormationVersionSelectionControllerIntegrationTests {
             return;
         }
 
-        jdbc.update("""
-                DELETE FROM formation_version_selection_history
+        Integer historyEntries = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM formation_version_selection_history
                 WHERE concert_id = ? AND repertoire_item_id = ?
-                """, fixture.concertId(), fixture.repertoireItemId());
+                """, Integer.class, fixture.concertId(), fixture.repertoireItemId());
+
+        // El historial es inmutable en PostgreSQL. Si ya existe auditoría,
+        // conservamos también sus entidades relacionadas.
+        if (historyEntries != null && historyEntries > 0) {
+            fixture = null;
+            return;
+        }
 
         jdbc.update("""
                 UPDATE concert_repertoire
