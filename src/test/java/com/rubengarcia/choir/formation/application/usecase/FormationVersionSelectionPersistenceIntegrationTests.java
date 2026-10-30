@@ -2,14 +2,18 @@ package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionSelectionPersistencePort;
 import com.rubengarcia.choir.formation.domain.FormationVersionSelection;
+import java.sql.Connection;
 import java.time.Duration;
 import java.util.UUID;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class FormationVersionSelectionPersistenceIntegrationTests {
@@ -107,7 +111,7 @@ class FormationVersionSelectionPersistenceIntegrationTests {
                 WHERE formation_id = ? AND version_number = 2
                 """, Long.class, f.formationId());
 
-        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+        assertThatThrownBy(() ->
                 persistencePort.selectPublishedVersion(
                         f.concertId(), f.repertoireItemId(), f.formationId(),
                         draftVersionId, f.email()).block(TIMEOUT))
@@ -126,6 +130,61 @@ class FormationVersionSelectionPersistenceIntegrationTests {
                 WHERE concert_id = ? AND repertoire_item_id = ?
                 """, Integer.class, f.concertId(), f.repertoireItemId()))
                 .isZero();
+    }
+
+    @Test
+    void selectionHistoryRejectsUpdatesAndDeletesInPostgresql() throws Exception {
+        try (Connection connection = jdbc.getDataSource().getConnection()) {
+            Assumptions.assumeTrue(
+                    "PostgreSQL".equalsIgnoreCase(
+                            connection.getMetaData().getDatabaseProductName()),
+                    "La inmutabilidad mediante trigger se verifica solamente en PostgreSQL");
+        }
+
+        Fixture f = fixture();
+
+        persistencePort.selectPublishedVersion(
+                f.concertId(),
+                f.repertoireItemId(),
+                f.formationId(),
+                f.versionId(),
+                f.email())
+                .block(TIMEOUT);
+
+        Long historyId = jdbc.queryForObject("""
+                SELECT id
+                FROM formation_version_selection_history
+                WHERE concert_id = ? AND repertoire_item_id = ?
+                """, Long.class, f.concertId(), f.repertoireItemId());
+
+        assertThat(historyId).isNotNull();
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE formation_version_selection_history
+                SET actor_email = ?
+                WHERE id = ?
+                """, "modified-" + f.email(), historyId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM formation_version_selection_history
+                WHERE id = ?
+                """, historyId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM formation_version_selection_history
+                WHERE id = ?
+                """, Integer.class, historyId))
+                .isEqualTo(1);
+
+        assertThat(jdbc.queryForObject("""
+                SELECT actor_email
+                FROM formation_version_selection_history
+                WHERE id = ?
+                """, String.class, historyId))
+                .isEqualTo(f.email());
     }
 
     private Fixture fixture() {
