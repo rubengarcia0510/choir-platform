@@ -93,6 +93,80 @@ class FormationVersionSelectionValidationIntegrationTests {
     }
 
     @Test
+    void publishedVersionFromAnotherOccurrenceIsRejectedWithoutChangingSelectionOrHistory() {
+        Fixture f = fixture();
+        selectInitialVersion(f);
+
+        String suffix = UUID.randomUUID().toString();
+
+        jdbc.update("""
+                INSERT INTO concerts (choir_id, title, status)
+                VALUES (?, ?, 'PLANNED')
+                """, f.choirId(), "Otro concierto " + suffix);
+
+        long otherConcertId = jdbc.queryForObject("""
+                SELECT id
+                FROM concerts
+                WHERE choir_id = ? AND title = ?
+                """, Long.class, f.choirId(), "Otro concierto " + suffix);
+
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, f.choirId(), "Otra obra " + suffix);
+
+        long otherRepertoireItemId = jdbc.queryForObject("""
+                SELECT id
+                FROM repertoire_items
+                WHERE choir_id = ? AND title = ?
+                """, Long.class, f.choirId(), "Otra obra " + suffix);
+
+        jdbc.update("""
+                INSERT INTO concert_repertoire (
+                    concert_id, repertoire_item_id, order_index
+                )
+                VALUES (?, ?, 0)
+                """, otherConcertId, otherRepertoireItemId);
+
+        jdbc.update("""
+                INSERT INTO formations (
+                    choir_id, name, concert_id, repertoire_item_id
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                f.choirId(),
+                "Formación de otra ocurrencia " + suffix,
+                otherConcertId,
+                otherRepertoireItemId);
+
+        long otherFormationId = jdbc.queryForObject("""
+                SELECT id
+                FROM formations
+                WHERE choir_id = ? AND name = ?
+                """, Long.class, f.choirId(),
+                "Formación de otra ocurrencia " + suffix);
+
+        jdbc.update("""
+                INSERT INTO formation_versions (
+                    formation_id, version_number, status, notes
+                )
+                VALUES (?, 1, 'PUBLISHED', 'Versión publicada de otra ocurrencia')
+                """, otherFormationId);
+
+        long otherVersionId = jdbc.queryForObject("""
+                SELECT id
+                FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, otherFormationId);
+
+        assertRejected(
+                f,
+                otherFormationId,
+                otherVersionId,
+                HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void nonexistentVersionIsRejectedWithoutChangingSelectionOrHistory() {
         Fixture f = fixture();
         selectInitialVersion(f);
