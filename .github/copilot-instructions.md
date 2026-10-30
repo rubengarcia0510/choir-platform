@@ -1,5 +1,9 @@
 # Instrucciones de desarrollo para CHOIR
 
+## Ramas por ticket
+
+- Al comenzar un ticket nuevo, creá una rama nueva dedicada a ese ticket antes de modificar archivos. Partí de `main` actualizado y no reutilices una rama de otro ticket. Mantené todos los cambios del ticket en esa rama; no trabajes directamente en `main`.
+
 ## Aplicar SOLID durante el desarrollo
 
 Usá SOLID como guía para tomar decisiones y revisar cambios, no como requisito de crear interfaces, capas o abstracciones en cada implementación. Antes de modificar código, inspeccioná los patrones existentes y mantené la solución más simple que preserve responsabilidades claras.
