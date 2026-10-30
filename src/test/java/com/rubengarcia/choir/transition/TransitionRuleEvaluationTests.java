@@ -414,6 +414,14 @@ class TransitionRuleEvaluationTests {
                 .isEqualTo(selectedVersionId);
 
         assertThat(jdbc.queryForMap("""
+                SELECT from_formation_version_id, to_formation_version_id
+                FROM transition_versions
+                WHERE id = ?
+                """, transitionVersionId))
+                .containsEntry("FROM_FORMATION_VERSION_ID", fromVersionId)
+                .containsEntry("TO_FORMATION_VERSION_ID", toVersionId);
+
+        assertThat(jdbc.queryForMap("""
                 SELECT transition_id, from_formation_version_id,
                        to_formation_version_id
                 FROM transition_publication_evidence
