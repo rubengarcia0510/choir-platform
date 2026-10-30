@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -789,6 +790,37 @@ class TransitionVersionLifecycleServiceTests {
         }
     }
 
+
+    @Test
+    void publicationEvidenceMustMatchItsTransitionVersionSnapshot() {
+        Fixture fixture = fixture();
+        TransitionVersion draft = service.createDraft(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.transitionId(),
+                fixture.fromFormationVersionId(),
+                fixture.toFormationVersionId(),
+                "Evidencia con referencias exactas")
+                .block(TIMEOUT);
+        long evaluationId = insertLifecycleEvaluation(
+                fixture, draft, "SATISFIED");
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO transition_publication_evidence (
+                    transition_version_id, evaluation_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    separation_settings_revision, global_separation_threshold,
+                    published_by_email
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, ?)
+                """,
+                draft.getId(),
+                evaluationId,
+                fixture.transitionId(),
+                fixture.toFormationVersionId(),
+                fixture.fromFormationVersionId(),
+                fixture.email()))
+                .isInstanceOf(DataAccessException.class);
+    }
 
     private Long insertLifecycleEvaluation(
             Fixture fixture, TransitionVersion draft, String status) {

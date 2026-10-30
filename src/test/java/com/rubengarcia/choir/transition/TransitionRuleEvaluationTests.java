@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
+import com.rubengarcia.choir.formation.application.usecase.FormationVersionSelectionUseCase;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
@@ -36,6 +37,9 @@ class TransitionRuleEvaluationTests {
     private FormationPlanningAuthorizationService authorizedPlanningService;
 
     @Autowired
+    private FormationVersionSelectionUseCase formationVersionSelectionUseCase;
+
+    @Autowired
     private TransitionVersionLifecycleService lifecycleService;
 
     private Long directorId;
@@ -48,6 +52,8 @@ class TransitionRuleEvaluationTests {
     private Long toFormationId;
     private Long fromVersionId;
     private Long toVersionId;
+    private Long selectedFormationId;
+    private Long selectedVersionId;
     private Long transitionId;
     private Long transitionVersionId;
     private Long sceneRuleId;
@@ -64,6 +70,14 @@ class TransitionRuleEvaluationTests {
         }
 
         if (transitionVersionId != null) {
+            jdbc.update("""
+                    DELETE FROM transition_publication_decisions
+                    WHERE transition_version_id = ?
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_publication_evidence
+                    WHERE transition_version_id = ?
+                    """, transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluation_warnings WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluation_results WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluations WHERE transition_version_id = ?", transitionVersionId);
@@ -72,14 +86,32 @@ class TransitionRuleEvaluationTests {
         if (sceneRuleId != null) jdbc.update("DELETE FROM scene_rule_revisions WHERE scene_rule_id = ?", sceneRuleId);
         if (sceneRuleId != null) jdbc.update("DELETE FROM scene_rules WHERE id = ?", sceneRuleId);
         if (transitionId != null) jdbc.update("DELETE FROM transitions WHERE id = ?", transitionId);
+        if (concertId != null && repertoireItemId != null) {
+            jdbc.update("""
+                    DELETE FROM formation_version_selection_history
+                    WHERE concert_id = ? AND repertoire_item_id = ?
+                    """, concertId, repertoireItemId);
+            jdbc.update("""
+                    UPDATE concert_repertoire
+                    SET selected_formation_id = NULL,
+                        selected_formation_version_id = NULL
+                    WHERE concert_id = ? AND repertoire_item_id = ?
+                    """, concertId, repertoireItemId);
+        }
         if (fromVersionId != null || toVersionId != null) {
             if (fromVersionId != null) jdbc.update("DELETE FROM formation_positions WHERE formation_version_id = ?", fromVersionId);
             if (toVersionId != null) jdbc.update("DELETE FROM formation_positions WHERE formation_version_id = ?", toVersionId);
             if (fromVersionId != null) jdbc.update("DELETE FROM formation_versions WHERE id = ?", fromVersionId);
             if (toVersionId != null) jdbc.update("DELETE FROM formation_versions WHERE id = ?", toVersionId);
         }
+        if (selectedVersionId != null) {
+            jdbc.update("DELETE FROM formation_versions WHERE id = ?", selectedVersionId);
+        }
         if (fromFormationId != null) jdbc.update("DELETE FROM formations WHERE id = ?", fromFormationId);
         if (toFormationId != null) jdbc.update("DELETE FROM formations WHERE id = ?", toFormationId);
+        if (selectedFormationId != null) {
+            jdbc.update("DELETE FROM formations WHERE id = ?", selectedFormationId);
+        }
         if (concertId != null) jdbc.update("DELETE FROM concert_repertoire WHERE concert_id = ?", concertId);
         if (concertId != null) jdbc.update("DELETE FROM concerts WHERE id = ?", concertId);
         if (repertoireItemId != null) jdbc.update("DELETE FROM repertoire_items WHERE id = ?", repertoireItemId);
@@ -295,6 +327,131 @@ class TransitionRuleEvaluationTests {
                     .as("PostgreSQL debe rechazar DELETE en %s", table)
                     .isInstanceOf(DataAccessException.class);
         }
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_versions
+                SET instructions = instructions
+                WHERE id = ?
+                """, draft.getId()))
+                .as("PostgreSQL debe rechazar UPDATE de una transición publicada")
+                .isInstanceOf(DataAccessException.class);
+
+        jdbc.update("""
+                INSERT INTO transition_versions (
+                    transition_id, version_number,
+                    from_formation_version_id, to_formation_version_id,
+                    status, published_at
+                ) VALUES (?, 3, ?, ?, 'PUBLISHED', CURRENT_TIMESTAMP)
+                """, transitionId, fromVersionId, toVersionId);
+        Long publishedVersionWithoutEvidence = jdbc.queryForObject("""
+                SELECT id FROM transition_versions
+                WHERE transition_id = ? AND version_number = 3
+                """, Long.class, transitionId);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_versions WHERE id = ?
+                """, publishedVersionWithoutEvidence))
+                .as("PostgreSQL debe rechazar DELETE de una transición publicada")
+                .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void laterFormationSelectionDoesNotChangePublishedTransitionHistory() {
+        createFixture();
+
+        selectedFormationId = insertFormation("Selected after publication");
+        selectedVersionId = insertFormationVersion(selectedFormationId);
+        jdbc.update("""
+                UPDATE formation_versions
+                SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """, selectedVersionId);
+
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    repertoire_item_id, separation_settings_revision,
+                    global_separation_threshold, status
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'SATISFIED')
+                """,
+                transitionVersionId,
+                transitionId,
+                fromVersionId,
+                toVersionId,
+                repertoireItemId);
+        Long evaluationId = jdbc.queryForObject("""
+                SELECT id FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                """, Long.class, transitionVersionId);
+
+        TransitionVersion published = lifecycleService.publish(
+                email,
+                choirId,
+                transitionId,
+                transitionVersionId,
+                evaluationId,
+                List.of())
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(published).isNotNull();
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+
+        formationVersionSelectionUseCase.selectPublishedVersion(
+                email,
+                choirId,
+                concertId,
+                repertoireItemId,
+                selectedFormationId,
+                selectedVersionId)
+                .block(java.time.Duration.ofSeconds(10));
+
+        assertThat(jdbc.queryForObject("""
+                SELECT selected_formation_version_id
+                FROM concert_repertoire
+                WHERE concert_id = ? AND repertoire_item_id = ?
+                """, Long.class, concertId, repertoireItemId))
+                .isEqualTo(selectedVersionId);
+
+        assertThat(jdbc.queryForMap("""
+                SELECT from_formation_version_id, to_formation_version_id
+                FROM transition_versions
+                WHERE id = ?
+                """, transitionVersionId))
+                .containsEntry("FROM_FORMATION_VERSION_ID", fromVersionId)
+                .containsEntry("TO_FORMATION_VERSION_ID", toVersionId);
+
+        assertThat(jdbc.queryForMap("""
+                SELECT transition_id, from_formation_version_id,
+                       to_formation_version_id
+                FROM transition_publication_evidence
+                WHERE transition_version_id = ?
+                """, transitionVersionId))
+                .containsEntry("TRANSITION_ID", transitionId)
+                .containsEntry("FROM_FORMATION_VERSION_ID", fromVersionId)
+                .containsEntry("TO_FORMATION_VERSION_ID", toVersionId);
+
+        TransitionRuleEvaluationSnapshot recoveredEvaluation =
+                evaluationHistoryPort.findById(evaluationId)
+                        .block(java.time.Duration.ofSeconds(10));
+        assertThat(recoveredEvaluation).isNotNull();
+        assertThat(recoveredEvaluation.fromFormationVersionId())
+                .isEqualTo(fromVersionId);
+        assertThat(recoveredEvaluation.toFormationVersionId())
+                .isEqualTo(toVersionId);
+
+        assertThat(authorizedPlanningService
+                .positionsForTransitionVersion(
+                        email, choirId, transitionVersionId)
+                .collectList()
+                .block(java.time.Duration.ofSeconds(10)))
+                .extracting(position ->
+                        position.stage() + ":" + position.formationVersionId())
+                .containsExactlyInAnyOrder(
+                        "FROM:" + fromVersionId,
+                        "FROM:" + fromVersionId,
+                        "TO:" + toVersionId,
+                        "TO:" + toVersionId);
     }
 
     private void createFixture() {
