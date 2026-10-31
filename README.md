@@ -64,3 +64,4 @@ Ambos jobs repiten una prueba de registro concurrente para detectar regresiones.
 
 - [Modelo de dominio](docs/domain-model.md)
 - [API de borradores de formaciones](docs/formation-drafts-api.md)
+- [Specs de tickets CHOIR](docs/tickets/README.md)
