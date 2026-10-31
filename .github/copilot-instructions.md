@@ -4,6 +4,12 @@
 
 - Al comenzar un ticket nuevo, creá una rama nueva dedicada a ese ticket antes de modificar archivos. Partí de `main` actualizado y no reutilices una rama de otro ticket. Mantené todos los cambios del ticket en esa rama; no trabajes directamente en `main`.
 
+## Especificaciones de tickets Jira
+
+- Antes de trabajar en un ticket CHOIR, consultá [docs/tickets/README.md](../docs/tickets/README.md) y leé el archivo `docs/tickets/CHOIR-<número>.md` correspondiente.
+- Usá el spec local como contexto inicial; verificá Jira si el ticket no tiene spec o si necesitás confirmar cambios posteriores al snapshot indicado en el índice.
+- Si cambia el alcance acordado en Jira, actualizá el spec del ticket en una rama dedicada y mantené explícita la fecha del snapshot.
+
 ## Aplicar SOLID durante el desarrollo
 
 Usá SOLID como guía para tomar decisiones y revisar cambios, no como requisito de crear interfaces, capas o abstracciones en cada implementación. Antes de modificar código, inspeccioná los patrones existentes y mantené la solución más simple que preserve responsabilidades claras.
