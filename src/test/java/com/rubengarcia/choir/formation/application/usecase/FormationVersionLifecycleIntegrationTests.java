@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import org.junit.jupiter.api.Test;
@@ -167,7 +168,7 @@ class FormationVersionLifecycleIntegrationTests {
         assertThatThrownBy(() -> service.publish(
                 f.email(), f.choirId(), f.formationId(), f.versionId())
                 .block(TIMEOUT))
-                .isInstanceOf(ResponseStatusException.class)
+                .isInstanceOf(FormationLifecycleConflictException.class)
                 .hasMessageContaining("Solo se pueden publicar versiones");
     }
 

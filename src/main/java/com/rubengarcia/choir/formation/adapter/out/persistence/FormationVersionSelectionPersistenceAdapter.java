@@ -1,15 +1,17 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationOccurrenceNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationSelectionConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionSelectionPersistencePort;
 import com.rubengarcia.choir.formation.domain.FormationVersionSelection;
 import com.rubengarcia.choir.formation.domain.FormationVersionSelectionHistory;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import org.springframework.http.HttpStatus;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -51,9 +53,8 @@ public class FormationVersionSelectionPersistenceAdapter
                         row.get("selected_formation_version_id", Long.class),
                         row.get("selected_at", LocalDateTime.class)))
                 .one()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La ocurrencia de repertorio no existe")));
+                .switchIfEmpty(Mono.error(
+                        new FormationOccurrenceNotFoundException()));
     }
 
     @Override
@@ -143,9 +144,8 @@ public class FormationVersionSelectionPersistenceAdapter
                 .bind("repertoireItemId", repertoireItemId)
                 .fetch()
                 .first()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La formación no pertenece a esta ocurrencia de repertorio")))
+                .switchIfEmpty(Mono.error(
+                        new FormationNotFoundException()))
                 .then();
     }
 
@@ -163,9 +163,8 @@ public class FormationVersionSelectionPersistenceAdapter
                 .bind("repertoireItemId", repertoireItemId)
                 .fetch()
                 .first()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La ocurrencia de repertorio no existe")))
+                .switchIfEmpty(Mono.error(
+                        new FormationOccurrenceNotFoundException()))
                 .then();
     }
 
@@ -182,13 +181,11 @@ public class FormationVersionSelectionPersistenceAdapter
                 .bind("formationId", formationId)
                 .map((row, metadata) -> row.get("status", String.class))
                 .one()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La versión no pertenece a la formación indicada")))
+                .switchIfEmpty(Mono.error(
+                        new FormationVersionNotFoundException()))
                 .flatMap(status -> {
                     if (!"PUBLISHED".equals(status)) {
-                        return Mono.error(new ResponseStatusException(
-                                HttpStatus.CONFLICT,
+                        return Mono.error(new FormationSelectionConflictException(
                                 "Solo se pueden seleccionar versiones publicadas"));
                     }
                     return Mono.empty();
@@ -231,8 +228,7 @@ public class FormationVersionSelectionPersistenceAdapter
                 .rowsUpdated()
                 .flatMap(updated -> updated == 1
                         ? Mono.empty()
-                        : Mono.error(new ResponseStatusException(
-                                HttpStatus.CONFLICT,
+                        : Mono.error(new FormationSelectionConflictException(
                                 "No se pudo registrar el historial de selección")));
     }
 
@@ -256,8 +252,7 @@ public class FormationVersionSelectionPersistenceAdapter
                 .rowsUpdated()
                 .flatMap(updated -> updated == 1
                         ? Mono.empty()
-                        : Mono.error(new ResponseStatusException(
-                                HttpStatus.CONFLICT,
+                        : Mono.error(new FormationSelectionConflictException(
                                 "No se pudo actualizar la selección de versión")));
     }
 }

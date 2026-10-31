@@ -21,9 +21,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestConstructor;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.reactive.server.WebTestClient.ResponseSpec;
 
 @SpringBootTest
-@AutoConfigureWebTestClient
+@AutoConfigureWebTestClient(timeout = "30s")
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 class FormationVersionSelectionControllerIntegrationTests {
 
@@ -40,6 +41,7 @@ class FormationVersionSelectionControllerIntegrationTests {
     private final PasswordEncoder passwordEncoder;
 
     private Fixture fixture;
+    private ForeignFixture foreignFixture;
 
     FormationVersionSelectionControllerIntegrationTests(
             WebTestClient webTestClient,
@@ -52,6 +54,29 @@ class FormationVersionSelectionControllerIntegrationTests {
 
     @AfterEach
     void cleanup() {
+        if (foreignFixture != null) {
+            jdbc.update("""
+                    DELETE FROM formation_versions
+                    WHERE formation_id = ?
+                    """, foreignFixture.formationId());
+            jdbc.update(
+                    "DELETE FROM formations WHERE id = ?", foreignFixture.formationId());
+            jdbc.update("""
+                    DELETE FROM concert_repertoire
+                    WHERE concert_id = ? AND repertoire_item_id = ?
+                    """, foreignFixture.concertId(), foreignFixture.repertoireItemId());
+            jdbc.update("""
+                    DELETE FROM concerts WHERE id = ?
+                    """, foreignFixture.concertId());
+            jdbc.update("""
+                    DELETE FROM repertoire_items WHERE id = ?
+                    """, foreignFixture.repertoireItemId());
+            jdbc.update("DELETE FROM choirs WHERE id = ?", foreignFixture.choirId());
+            jdbc.update(
+                    "DELETE FROM directors WHERE id = ?", foreignFixture.directorId());
+            foreignFixture = null;
+        }
+
         if (fixture == null) {
             return;
         }
@@ -77,12 +102,24 @@ class FormationVersionSelectionControllerIntegrationTests {
                 """, fixture.concertId(), fixture.repertoireItemId());
 
         jdbc.update("""
+                DELETE FROM formation_positions
+                WHERE formation_version_id IN (
+                    SELECT fv.id
+                    FROM formation_versions fv
+                    JOIN formations f ON f.id = fv.formation_id
+                    WHERE f.choir_id = ?
+                )
+                """, fixture.choirId());
+
+        jdbc.update("""
                 DELETE FROM formation_versions
-                WHERE formation_id = ?
-                """, fixture.formationId());
+                WHERE formation_id IN (
+                    SELECT id FROM formations WHERE choir_id = ?
+                )
+                """, fixture.choirId());
 
         jdbc.update(
-                "DELETE FROM formations WHERE id = ?", fixture.formationId());
+                "DELETE FROM formations WHERE choir_id = ?", fixture.choirId());
 
         jdbc.update("""
                 DELETE FROM concert_repertoire
@@ -191,6 +228,133 @@ class FormationVersionSelectionControllerIntegrationTests {
         assertEquals(false, current.get("selected"));
         assertNull(current.get("formationId"));
         assertNull(current.get("formationVersionId"));
+        assertEquals(0, historyCount(f));
+    }
+
+    @Test
+    void selectionErrorsReturnConsistentSafeProblemDetails() {
+        Fixture f = fixture();
+        Session session = login(f.email());
+
+        expectProblem(webTestClient.put()
+                        .uri(selectionUri(f))
+                        .cookie("SESSION", session.sessionId())
+                        .header("X-CSRF-TOKEN", session.csrfToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of(
+                                "formationId", 0,
+                                "formationVersionId", f.versionId()))
+                        .exchange(),
+                400,
+                "Bad Request",
+                "La solicitud contiene datos inválidos");
+
+        jdbc.update("""
+                INSERT INTO formations
+                    (choir_id, concert_id, repertoire_item_id, name)
+                VALUES (?, ?, ?, ?)
+                """, f.choirId(), f.concertId(), f.repertoireItemId(),
+                "Formación extranjera " + UUID.randomUUID());
+        long foreignFormationId = jdbc.queryForObject("""
+                SELECT id FROM formations
+                WHERE choir_id = ? AND concert_id = ?
+                  AND repertoire_item_id = ? AND name LIKE 'Formación extranjera %'
+                ORDER BY id DESC LIMIT 1
+                """, Long.class, f.choirId(), f.concertId(), f.repertoireItemId());
+        jdbc.update("""
+                INSERT INTO formation_versions
+                    (formation_id, version_number, status)
+                VALUES (?, 1, 'PUBLISHED')
+                """, foreignFormationId);
+        long foreignVersionId = jdbc.queryForObject("""
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, foreignFormationId);
+
+        expectProblem(webTestClient.put()
+                        .uri(selectionUri(f))
+                        .cookie("SESSION", session.sessionId())
+                        .header("X-CSRF-TOKEN", session.csrfToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of(
+                                "formationId", f.formationId(),
+                                "formationVersionId", foreignVersionId))
+                        .exchange(),
+                404,
+                "Not Found",
+                "El recurso solicitado no existe o no está disponible");
+
+        expectProblem(webTestClient.put()
+                        .uri(selectionUri(f))
+                        .cookie("SESSION", session.sessionId())
+                        .header("X-CSRF-TOKEN", session.csrfToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of(
+                                "formationId", f.formationId(),
+                                "formationVersionId", Long.MAX_VALUE))
+                        .exchange(),
+                404,
+                "Not Found",
+                "El recurso solicitado no existe o no está disponible");
+
+        expectProblem(webTestClient.put()
+                        .uri("/api/choirs/{choirId}/concerts/{concertId}"
+                                        + "/repertoire/{repertoireItemId}/formations/selection",
+                                Long.MAX_VALUE, f.concertId(), f.repertoireItemId())
+                        .cookie("SESSION", session.sessionId())
+                        .header("X-CSRF-TOKEN", session.csrfToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of(
+                                "formationId", f.formationId(),
+                                "formationVersionId", f.versionId()))
+                        .exchange(),
+                404,
+                "Not Found",
+                "El recurso solicitado no existe o no está disponible");
+
+        ForeignFixture other = foreignFixture();
+        expectProblem(webTestClient.get()
+                        .uri(selectionUri(
+                                other.choirId(),
+                                other.concertId(),
+                                other.repertoireItemId()))
+                        .cookie("SESSION", session.sessionId())
+                        .exchange(),
+                404,
+                "Not Found",
+                "El recurso solicitado no existe o no está disponible");
+
+        assertEquals(0, historyCount(f));
+    }
+
+    @Test
+    void selectingDraftVersionReturnsConsistentConflictProblemDetail() {
+        Fixture f = fixture();
+        Session session = login(f.email());
+
+        jdbc.update("""
+                INSERT INTO formation_versions
+                    (formation_id, version_number, status)
+                VALUES (?, 2, 'DRAFT')
+                """, f.formationId());
+        long draftVersionId = jdbc.queryForObject("""
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 2
+                """, Long.class, f.formationId());
+
+        expectProblem(webTestClient.put()
+                        .uri(selectionUri(f))
+                        .cookie("SESSION", session.sessionId())
+                        .header("X-CSRF-TOKEN", session.csrfToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(Map.of(
+                                "formationId", f.formationId(),
+                                "formationVersionId", draftVersionId))
+                        .exchange(),
+                409,
+                "Conflict",
+                "La operación no puede completarse en el estado actual");
+
         assertEquals(0, historyCount(f));
     }
 
@@ -308,6 +472,61 @@ class FormationVersionSelectionControllerIntegrationTests {
         return fixture;
     }
 
+    private ForeignFixture foreignFixture() {
+        String suffix = UUID.randomUUID().toString();
+        String email = "foreign-selection-" + suffix + "@example.test";
+        jdbc.update("""
+                INSERT INTO directors (display_name, email)
+                VALUES (?, ?)
+                """, "Otro director " + suffix, email);
+        long directorId = jdbc.queryForObject("""
+                SELECT id FROM directors WHERE email = ?
+                """, Long.class, email);
+        jdbc.update("""
+                INSERT INTO choirs (director_id, name) VALUES (?, ?)
+                """, directorId, "Otro coro " + suffix);
+        long choirId = jdbc.queryForObject("""
+                SELECT id FROM choirs WHERE director_id = ? AND name = ?
+                """, Long.class, directorId, "Otro coro " + suffix);
+        jdbc.update("""
+                INSERT INTO concerts (choir_id, title, status)
+                VALUES (?, ?, 'PLANNED')
+                """, choirId, "Otro concierto " + suffix);
+        long concertId = jdbc.queryForObject("""
+                SELECT id FROM concerts WHERE choir_id = ? AND title = ?
+                """, Long.class, choirId, "Otro concierto " + suffix);
+        jdbc.update("""
+                INSERT INTO repertoire_items (choir_id, title)
+                VALUES (?, ?)
+                """, choirId, "Otra obra " + suffix);
+        long repertoireItemId = jdbc.queryForObject("""
+                SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?
+                """, Long.class, choirId, "Otra obra " + suffix);
+        jdbc.update("""
+                INSERT INTO concert_repertoire
+                    (concert_id, repertoire_item_id, order_index)
+                VALUES (?, ?, 0)
+                """, concertId, repertoireItemId);
+        jdbc.update("""
+                INSERT INTO formations
+                    (choir_id, concert_id, repertoire_item_id, name)
+                VALUES (?, ?, ?, ?)
+                """, choirId, concertId, repertoireItemId, "Formación ajena " + suffix);
+        long formationId = jdbc.queryForObject("""
+                SELECT id FROM formations
+                WHERE choir_id = ? AND concert_id = ?
+                  AND repertoire_item_id = ? AND name = ?
+                """, Long.class, choirId, concertId, repertoireItemId,
+                "Formación ajena " + suffix);
+        jdbc.update("""
+                INSERT INTO formation_versions (formation_id, version_number, status)
+                VALUES (?, 1, 'PUBLISHED')
+                """, formationId);
+        foreignFixture = new ForeignFixture(
+                directorId, choirId, concertId, repertoireItemId, formationId);
+        return foreignFixture;
+    }
+
     private Session login(String email) {
         EntityExchangeResult<Map<String, String>> csrfResult =
                 webTestClient.get()
@@ -398,10 +617,29 @@ class FormationVersionSelectionControllerIntegrationTests {
     }
 
     private String selectionUri(Fixture f) {
-        return "/api/choirs/" + f.choirId()
-                + "/concerts/" + f.concertId()
-                + "/repertoire/" + f.repertoireItemId()
+        return selectionUri(f.choirId(), f.concertId(), f.repertoireItemId());
+    }
+
+    private String selectionUri(
+            long choirId, long concertId, long repertoireItemId) {
+        return "/api/choirs/" + choirId
+                + "/concerts/" + concertId
+                + "/repertoire/" + repertoireItemId
                 + "/formations/selection";
+    }
+
+    private void expectProblem(
+            ResponseSpec response,
+            int status,
+            String title,
+            String detail) {
+        response.expectStatus().isEqualTo(status)
+                .expectHeader().contentTypeCompatibleWith(
+                        MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(status)
+                .jsonPath("$.title").isEqualTo(title)
+                .jsonPath("$.detail").isEqualTo(detail);
     }
 
     private long number(Map<String, Object> body, String key) {
@@ -419,5 +657,13 @@ class FormationVersionSelectionControllerIntegrationTests {
     }
 
     private record Session(String sessionId, String csrfToken) {
+    }
+
+    private record ForeignFixture(
+            long directorId,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId) {
     }
 }

@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationSelectionConflictException;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionSelectionPersistencePort;
 import com.rubengarcia.choir.formation.domain.FormationVersionSelection;
 import java.sql.Connection;
@@ -115,7 +116,7 @@ class FormationVersionSelectionPersistenceIntegrationTests {
                 persistencePort.selectPublishedVersion(
                         f.concertId(), f.repertoireItemId(), f.formationId(),
                         draftVersionId, f.email()).block(TIMEOUT))
-                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .isInstanceOf(FormationSelectionConflictException.class)
                 .hasMessageContaining("Solo se pueden seleccionar versiones publicadas");
 
         assertThat(jdbc.queryForObject("""

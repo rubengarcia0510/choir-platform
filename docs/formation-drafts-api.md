@@ -142,6 +142,31 @@ La operación reemplaza la lista completa: la implementación debe persistir
 el cambio de forma atómica para evitar que un error deje las posiciones
 parcialmente actualizadas.
 
+### Errores de versionado y selección
+
+Las rutas de ciclo de vida de versiones usan
+`/api/choirs/{choirId}/formations/{formationId}/versions`. La selección de
+una versión publicada usa
+`{base}/formations/selection`.
+
+Los errores de estas APIs se devuelven como `application/problem+json` con
+`title`, `status` y `detail`:
+
+- "400 Bad Request": la solicitud o alguno de sus identificadores es
+  inválido. El detalle es "La solicitud contiene datos inválidos".
+- "404 Not Found": el recurso no existe, la versión no corresponde a la
+  formación indicada o el recurso no está disponible para el director. El
+  detalle es "El recurso solicitado no existe o no está disponible".
+- "409 Conflict": la operación no es válida para el estado actual, por
+  ejemplo publicar una versión que no es `DRAFT` o seleccionar una versión
+  que no está publicada. El detalle es
+  "La operación no puede completarse en el estado actual".
+- "401 Unauthorized" y "403 Forbidden": se mantienen según el contrato de
+  autenticación y protección CSRF de la aplicación.
+
+Los errores de acceso a recursos ajenos usan la misma respuesta 404 que los
+recursos inexistentes para no revelar su existencia.
+
 Seguridad
 
 No se deben incluir credenciales, cookies de sesión ni tokens CSRF en

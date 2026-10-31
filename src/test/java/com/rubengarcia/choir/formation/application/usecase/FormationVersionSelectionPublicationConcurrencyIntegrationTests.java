@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationSelectionConflictException;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionSelectionPersistencePort;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
@@ -15,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -124,7 +124,7 @@ class FormationVersionSelectionPublicationConcurrencyIntegrationTests {
                 assertThat(initialVersionStatus).isEqualTo("ARCHIVED");
                 assertThat(selectionOutcome.selection()).isNull();
                 assertThat(selectionOutcome.error())
-                        .isInstanceOf(ResponseStatusException.class)
+                        .isInstanceOf(FormationSelectionConflictException.class)
                         .hasMessageContaining(
                                 "Solo se pueden seleccionar versiones publicadas");
                 assertThat(historyCount).isZero();

@@ -6,7 +6,6 @@ import com.rubengarcia.choir.formation.domain.FormationVersionSelectionHistory;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +14,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -63,13 +61,7 @@ public class FormationVersionSelectionController {
                         repertoireItemId,
                         request.formationId(),
                         request.formationVersionId())
-                .map(FormationVersionSelectionController::toSelectionResponse)
-                .onErrorMap(IllegalArgumentException.class, error ->
-                        new ResponseStatusException(
-                                HttpStatus.BAD_REQUEST, error.getMessage(), error))
-                .onErrorMap(IllegalStateException.class, error ->
-                        new ResponseStatusException(
-                                HttpStatus.CONFLICT, error.getMessage(), error));
+                .map(FormationVersionSelectionController::toSelectionResponse);
     }
 
     @GetMapping("/history")

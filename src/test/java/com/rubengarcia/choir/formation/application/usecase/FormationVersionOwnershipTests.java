@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import java.time.Duration;
 import java.util.UUID;
@@ -7,7 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,8 +40,7 @@ class FormationVersionOwnershipTests {
                 fixture.email(), fixture.choirId(),
                 fixture.firstFormationId(), foreignDraft.getId())
                 .block(TIMEOUT))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Versión inexistente o fuera de la formación");
+                .isInstanceOf(FormationVersionNotFoundException.class);
 
         assertThat(jdbc.queryForObject("""
                 SELECT status

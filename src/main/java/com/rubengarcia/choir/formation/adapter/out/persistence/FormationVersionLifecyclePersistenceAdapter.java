@@ -1,13 +1,14 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
+import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionLifecyclePort;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import java.time.LocalDateTime;
-import org.springframework.http.HttpStatus;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -76,9 +77,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                         .bind("formationId", formationId)
                         .map((row, metadata) -> mapVersion(row))
                         .one()
-                        .switchIfEmpty(Mono.error(new ResponseStatusException(
-                                HttpStatus.NOT_FOUND,
-                                "La formación todavía no tiene una versión publicada"))));
+                        .switchIfEmpty(Mono.error(
+                                new FormationVersionNotFoundException())));
     }
 
     @Override
@@ -89,8 +89,7 @@ public class FormationVersionLifecyclePersistenceAdapter
                 .then(findVersion(formationId, versionId))
                 .flatMap(version -> {
                     if (!"DRAFT".equals(version.getStatus())) {
-                        return Mono.error(new ResponseStatusException(
-                                HttpStatus.CONFLICT,
+                        return Mono.error(new FormationLifecycleConflictException(
                                 "Solo se pueden publicar versiones en estado DRAFT"));
                     }
 
@@ -123,8 +122,7 @@ public class FormationVersionLifecyclePersistenceAdapter
                                     .rowsUpdated())
                             .flatMap(updated -> updated == 1
                                     ? findVersion(formationId, versionId)
-                                    : Mono.error(new ResponseStatusException(
-                                            HttpStatus.CONFLICT,
+                                    : Mono.error(new FormationLifecycleConflictException(
                                             "La versión cambió de estado y no pudo publicarse")));
                 });
     }
@@ -140,9 +138,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                 .bind("choirId", choirId)
                 .fetch()
                 .first()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Formación inexistente o fuera del coro")))
+                .switchIfEmpty(Mono.error(
+                        new FormationNotFoundException()))
                 .then();
     }
 
@@ -158,9 +155,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                 .bind("choirId", choirId)
                 .fetch()
                 .first()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Formación inexistente o fuera del coro")))
+                .switchIfEmpty(Mono.error(
+                        new FormationNotFoundException()))
                 .then();
     }
 
@@ -191,9 +187,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                 .bind("versionId", versionId)
                 .map((row, metadata) -> mapVersion(row))
                 .one()
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Versión inexistente o fuera de la formación")));
+                .switchIfEmpty(Mono.error(
+                        new FormationVersionNotFoundException()));
     }
 
     private Mono<Void> copyPublishedPositions(
