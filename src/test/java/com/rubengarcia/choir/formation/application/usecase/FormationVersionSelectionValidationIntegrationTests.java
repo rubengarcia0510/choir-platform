@@ -1,5 +1,8 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationSelectionConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.application.port.out.FormationVersionSelectionPersistencePort;
 import com.rubengarcia.choir.formation.domain.FormationVersionSelection;
 import java.time.Duration;
@@ -9,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -190,10 +192,11 @@ class FormationVersionSelectionValidationIntegrationTests {
                 requestedFormationId,
                 requestedVersionId,
                 f.email()).block(TIMEOUT))
-                .isInstanceOfSatisfying(
-                        ResponseStatusException.class,
-                        exception -> assertThat(exception.getStatusCode())
-                                .isEqualTo(expectedStatus));
+                .isInstanceOf(expectedStatus == HttpStatus.CONFLICT
+                        ? FormationSelectionConflictException.class
+                        : requestedFormationId == f.formationId()
+                                ? FormationVersionNotFoundException.class
+                                : FormationNotFoundException.class);
 
         assertThat(jdbc.queryForMap("""
                 SELECT selected_formation_id, selected_formation_version_id

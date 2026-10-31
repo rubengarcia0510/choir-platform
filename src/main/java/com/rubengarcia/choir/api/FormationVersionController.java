@@ -3,9 +3,11 @@ package com.rubengarcia.choir.api;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionLifecycleUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +19,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @RestController
+@Validated
 @RequestMapping("/api/choirs/{choirId}/formations/{formationId}/versions")
 public class FormationVersionController {
 
@@ -29,8 +32,8 @@ public class FormationVersionController {
 
     @GetMapping
     public Flux<FormationVersion> list(
-            @PathVariable long choirId,
-            @PathVariable long formationId,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long formationId,
             Authentication authentication) {
         return useCase.list(authentication.getName(), choirId, formationId);
     }
@@ -38,8 +41,8 @@ public class FormationVersionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<FormationVersion> createDraft(
-            @PathVariable long choirId,
-            @PathVariable long formationId,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long formationId,
             @Valid @RequestBody(required = false) CreateDraftRequest request,
             Authentication authentication) {
         return useCase.createDraft(
@@ -51,8 +54,8 @@ public class FormationVersionController {
 
     @GetMapping("/published")
     public Mono<FormationVersion> published(
-            @PathVariable long choirId,
-            @PathVariable long formationId,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long formationId,
             Authentication authentication) {
         return useCase.published(
                 authentication.getName(), choirId, formationId);
@@ -60,9 +63,9 @@ public class FormationVersionController {
 
     @PostMapping("/{versionId}/publish")
     public Mono<FormationVersion> publish(
-            @PathVariable long choirId,
-            @PathVariable long formationId,
-            @PathVariable long versionId,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long formationId,
+            @PathVariable @Positive long versionId,
             Authentication authentication) {
         return useCase.publish(
                 authentication.getName(), choirId, formationId, versionId);
