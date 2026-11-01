@@ -258,14 +258,16 @@ public class TransitionRuleEvaluationHistoryAdapter
     private Mono<Void> insertWarning(long evaluationId, Warning warning) {
         DatabaseClient.GenericExecuteSpec insert = database.sql("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, warning_order,
+                    evaluation_id, result_order, result_order_key, warning_order,
                     code, explanation, status
                 ) VALUES (
-                    :evaluationId, :resultOrder, :warningOrder,
+                    :evaluationId, :resultOrder, :resultOrderKey, :warningOrder,
                     :code, :explanation, :status
                 )
                 """)
                 .bind("evaluationId", evaluationId)
+                .bind("resultOrderKey", warning.resultOrder() == null
+                        ? -1 : warning.resultOrder())
                 .bind("warningOrder", warning.warningOrder())
                 .bind("code", warning.code())
                 .bind("explanation", warning.explanation())
