@@ -409,6 +409,30 @@ class ChoirDomainMigrationTests {
                 """, evaluationId, transitionVersionId))
                 .isInstanceOf(DataAccessException.class);
 
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_publication_decisions
+                WHERE evaluation_id = ? AND transition_version_id = ?
+                """, evaluationId, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_publication_evidence
+                WHERE transition_version_id = ?
+                """, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_rule_evaluation_warnings
+                WHERE evaluation_id = ? AND warning_order = 0
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_rule_evaluations
+                WHERE id = ?
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
         jdbc.update("""
                 UPDATE transition_versions
                 SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP
