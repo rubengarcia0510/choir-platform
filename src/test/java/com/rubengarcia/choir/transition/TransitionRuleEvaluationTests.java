@@ -289,9 +289,9 @@ class TransitionRuleEvaluationTests {
                 """, Long.class, draft.getId());
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'STAGE_SEPARATION',
+                ) VALUES (?, NULL, 0, 'STAGE_SEPARATION',
                           'Excepción documentada para probar el historial', 'VIOLATED')
                 """, publicationEvaluationId);
         lifecycleService.publish(email, choirId, transitionId, draft.getId(),

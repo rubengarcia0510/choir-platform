@@ -580,9 +580,9 @@ class TransitionVersionLifecycleServiceTests {
         String explanation = "Excepción de separación documentada";
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'STAGE_SEPARATION', ?, 'VIOLATED')
+                ) VALUES (?, NULL, 0, 'STAGE_SEPARATION', ?, 'VIOLATED')
                 """, evaluationId, explanation);
 
         TransitionVersion published = service.publish(
@@ -646,9 +646,9 @@ class TransitionVersionLifecycleServiceTests {
 
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'VISIBILITY_UNVERIFIED',
+                ) VALUES (?, NULL, 0, 'VISIBILITY_UNVERIFIED',
                           'No se puede comprobar la visibilidad', 'NOT_EVALUABLE')
                 """, evaluationId);
 
@@ -696,9 +696,9 @@ class TransitionVersionLifecycleServiceTests {
 
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'VISIBILITY_UNVERIFIED',
+                ) VALUES (?, NULL, 0, 'VISIBILITY_UNVERIFIED',
                           'No se puede comprobar la visibilidad', 'VIOLATED')
                 """, evaluationId);
 
@@ -727,9 +727,9 @@ class TransitionVersionLifecycleServiceTests {
 
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'DIRECTOR_VISIBILITY_NOT_EVALUABLE',
+                ) VALUES (?, NULL, 0, 'DIRECTOR_VISIBILITY_NOT_EVALUABLE',
                           'No se puede comprobar la visibilidad del director', 'VIOLATED')
                 """, evaluationId);
 
@@ -759,9 +759,9 @@ class TransitionVersionLifecycleServiceTests {
         String explanation = "Advertencia para probar rollback";
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
-                    evaluation_id, result_order, result_order_key, warning_order,
+                    evaluation_id, result_order, warning_order,
                     code, explanation, status
-                ) VALUES (?, NULL, -1, 0, 'STAGE_SEPARATION', ?, 'VIOLATED')
+                ) VALUES (?, NULL, 0, 'STAGE_SEPARATION', ?, 'VIOLATED')
                 """, evaluationId, explanation);
 
         jdbc.execute("""
