@@ -40,7 +40,7 @@ spring:
     username: sa
     password:
   flyway:
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/migration-h2
 
 server:
   reactive:

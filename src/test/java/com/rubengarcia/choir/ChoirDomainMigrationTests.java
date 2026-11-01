@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.test.context.TestConstructor;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Assumptions;
@@ -245,6 +246,387 @@ class ChoirDomainMigrationTests {
     }
 
     @Test
+    void auditRowsMustReferenceTheMatchingTransitionSnapshotAndWarning() {
+        String schema = "choir_audit_integrity_"
+                + UUID.randomUUID().toString().replace("-", "");
+        SingleConnectionDataSource isolatedDataSource = null;
+        java.sql.Connection isolatedConnection = null;
+        String originalSchema = null;
+
+        try {
+            String databaseProduct = jdbcTemplate.execute(
+                    (org.springframework.jdbc.core.ConnectionCallback<String>) connection ->
+                            connection.getMetaData().getDatabaseProductName());
+            if (!"PostgreSQL".equalsIgnoreCase(databaseProduct)) {
+                schema = schema.toUpperCase(java.util.Locale.ROOT);
+            }
+            jdbcTemplate.execute("CREATE SCHEMA " + schema);
+            isolatedConnection = jdbcTemplate.getDataSource().getConnection();
+            originalSchema = isolatedConnection.getSchema();
+            isolatedConnection.setSchema(schema);
+            isolatedDataSource = new SingleConnectionDataSource(isolatedConnection, true);
+            JdbcTemplate isolatedJdbc = new JdbcTemplate(isolatedDataSource);
+            List<String> locations = new ArrayList<>(List.of("classpath:db/migration"));
+            if ("PostgreSQL".equalsIgnoreCase(databaseProduct)) {
+                locations.add("classpath:db/migration-postgresql");
+            } else {
+                locations.add("classpath:db/migration-h2");
+            }
+
+            Flyway.configure()
+                    .dataSource(isolatedDataSource)
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations(locations.toArray(String[]::new))
+                    .load()
+                    .migrate();
+
+            Long choirId = createChoir(isolatedJdbc);
+            Long fromVersionA = createFormationVersion(isolatedJdbc, choirId);
+            Long toVersionA = createFormationVersion(isolatedJdbc, choirId);
+            Long fromVersionB = createFormationVersion(isolatedJdbc, choirId);
+            Long toVersionB = createFormationVersion(isolatedJdbc, choirId);
+            Long transitionVersionA = createTransitionVersion(
+                    isolatedJdbc, choirId, fromVersionA, toVersionA);
+            Long transitionVersionB = createTransitionVersion(
+                    isolatedJdbc, choirId, fromVersionB, toVersionB);
+            Long transitionA = transitionIdForVersion(isolatedJdbc, transitionVersionA);
+            Long transitionB = transitionIdForVersion(isolatedJdbc, transitionVersionB);
+            Long repertoireItemId = createRepertoireItem(isolatedJdbc, choirId);
+            Long evaluationA = createEvaluation(
+                    isolatedJdbc, transitionVersionA, transitionA,
+                    fromVersionA, toVersionA, repertoireItemId);
+            Long evaluationB = createEvaluation(
+                    isolatedJdbc, transitionVersionB, transitionB,
+                    fromVersionB, toVersionB, repertoireItemId);
+
+            assertThatThrownBy(() -> createEvaluation(
+                    isolatedJdbc, transitionVersionA, transitionB,
+                    fromVersionB, toVersionB, repertoireItemId))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            isolatedJdbc.update("""
+                    INSERT INTO transition_rule_evaluation_warnings (
+                        evaluation_id, result_order, warning_order,
+                        code, explanation, status
+                    ) VALUES (?, NULL, 0, 'STAGE_SEPARATION',
+                              'Advertencia de prueba', 'VIOLATED')
+                    """, evaluationA);
+
+            assertThatThrownBy(() -> isolatedJdbc.update("""
+                    INSERT INTO transition_publication_evidence (
+                        transition_version_id, evaluation_id, transition_id,
+                        from_formation_version_id, to_formation_version_id,
+                        separation_settings_revision, global_separation_threshold,
+                        published_by_email
+                    ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'director@example.test')
+                    """, transitionVersionA, evaluationB, transitionA,
+                    fromVersionA, toVersionA))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            assertThatThrownBy(() -> insertPublicationDecision(
+                    isolatedJdbc, evaluationB, transitionVersionA, -1, 0))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            assertThatThrownBy(() -> insertPublicationDecision(
+                    isolatedJdbc, evaluationA, transitionVersionA, -1, 1))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            isolatedJdbc.update("""
+                    INSERT INTO transition_publication_evidence (
+                        transition_version_id, evaluation_id, transition_id,
+                        from_formation_version_id, to_formation_version_id,
+                        separation_settings_revision, global_separation_threshold,
+                        published_by_email
+                    ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'director@example.test')
+                    """, transitionVersionA, evaluationA, transitionA,
+                    fromVersionA, toVersionA);
+            insertPublicationDecision(
+                    isolatedJdbc, evaluationA, transitionVersionA, -1, 0);
+
+            assertThat(isolatedJdbc.queryForObject("""
+                    SELECT COUNT(*) FROM transition_publication_evidence
+                    WHERE transition_version_id = ? AND evaluation_id = ?
+                    """, Integer.class, transitionVersionA, evaluationA)).isEqualTo(1);
+            assertThat(isolatedJdbc.queryForObject("""
+                    SELECT COUNT(*) FROM transition_publication_decisions
+                    WHERE evaluation_id = ? AND transition_version_id = ?
+                      AND result_order = -1 AND warning_order = 0
+                    """, Integer.class, evaluationA, transitionVersionA)).isEqualTo(1);
+        } catch (java.sql.SQLException exception) {
+            throw new IllegalStateException(
+                    "No se pudo preparar el esquema aislado de integridad", exception);
+        } finally {
+            try {
+                if (isolatedConnection != null && originalSchema != null) {
+                    isolatedConnection.setSchema(originalSchema);
+                }
+            } catch (java.sql.SQLException exception) {
+                throw new IllegalStateException(
+                        "No se pudo restaurar el esquema de la conexión de prueba", exception);
+            } finally {
+                if (isolatedDataSource != null) {
+                    isolatedDataSource.destroy();
+                }
+            }
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
+    }
+
+    @Test
+    void upgradeFromPreV18PreservesPublishedAndSelectedHistoricalData() {
+        String databaseProduct = jdbcTemplate.execute(
+                (org.springframework.jdbc.core.ConnectionCallback<String>) connection ->
+                        connection.getMetaData().getDatabaseProductName());
+
+        Assumptions.assumeTrue(
+                "PostgreSQL".equalsIgnoreCase(databaseProduct),
+                "La prueba de upgrade histórico requiere PostgreSQL");
+
+        String schema = "choir_upgrade_history_"
+                + UUID.randomUUID().toString().replace("-", "");
+
+        try {
+            jdbcTemplate.execute("CREATE SCHEMA " + schema);
+            Flyway.configure()
+                    .dataSource(jdbcTemplate.getDataSource())
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations("classpath:db/migration")
+                    .target("17")
+                    .load()
+                    .migrate();
+
+            String prefix = schema + ".";
+            String suffix = UUID.randomUUID().toString();
+            String email = suffix + "@example.test";
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "directors (display_name, email) VALUES (?, ?)",
+                    "Director histórico", email);
+            Long directorId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "directors WHERE email = ?",
+                    Long.class, email);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + "choirs (director_id, name) VALUES (?, ?)",
+                    directorId, "Coro histórico " + suffix);
+            Long choirId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "choirs WHERE director_id = ?",
+                    Long.class, directorId);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + "formations (choir_id, name) VALUES (?, ?)",
+                    choirId, "Origen legacy " + suffix);
+            Long fromFormationId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "formations WHERE choir_id = ? AND name = ?",
+                    Long.class, choirId, "Origen legacy " + suffix);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "formation_versions (formation_id, version_number, status) "
+                            + "VALUES (?, 1, 'PUBLISHED')",
+                    fromFormationId);
+            Long fromVersionId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "formation_versions WHERE formation_id = ? AND version_number = 1",
+                    Long.class, fromFormationId);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + "formations (choir_id, name) VALUES (?, ?)",
+                    choirId, "Destino legacy " + suffix);
+            Long toFormationId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "formations WHERE choir_id = ? AND name = ?",
+                    Long.class, choirId, "Destino legacy " + suffix);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "formation_versions (formation_id, version_number, status) "
+                            + "VALUES (?, 1, 'PUBLISHED')",
+                    toFormationId);
+            Long toVersionId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "formation_versions WHERE formation_id = ? AND version_number = 1",
+                    Long.class, toFormationId);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + "transitions (choir_id, name) VALUES (?, ?)",
+                    choirId, "Transición publicada " + suffix);
+            Long transitionId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "transitions WHERE choir_id = ?",
+                    Long.class, choirId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            transition_versions (
+                                transition_id, version_number,
+                                from_formation_version_id, to_formation_version_id,
+                                status
+                            ) VALUES (?, 1, ?, ?, 'PUBLISHED')
+                            """,
+                    transitionId, fromVersionId, toVersionId);
+            Long transitionVersionId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "transition_versions WHERE transition_id = ?",
+                    Long.class, transitionId);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + "concerts (choir_id, title) VALUES (?, ?)",
+                    choirId, "Concierto histórico " + suffix);
+            Long concertId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "concerts WHERE choir_id = ?",
+                    Long.class, choirId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "repertoire_items (choir_id, title) VALUES (?, ?)",
+                    choirId, "Obra histórica " + suffix);
+            Long repertoireItemId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix + "repertoire_items WHERE choir_id = ?",
+                    Long.class, choirId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "concert_repertoire (concert_id, repertoire_item_id, order_index) "
+                            + "VALUES (?, ?, 0)",
+                    concertId, repertoireItemId);
+
+            Flyway.configure()
+                    .dataSource(jdbcTemplate.getDataSource())
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations(
+                            "classpath:db/migration",
+                            "classpath:db/migration-postgresql")
+                    .target("29")
+                    .load()
+                    .migrate();
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "formations (choir_id, name, concert_id, repertoire_item_id) "
+                            + "VALUES (?, ?, ?, ?)",
+                    choirId, "Formación seleccionada " + suffix, concertId, repertoireItemId);
+            Long selectedFormationId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "formations WHERE choir_id = ? AND name = ?",
+                    Long.class, choirId, "Formación seleccionada " + suffix);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix
+                            + "formation_versions (formation_id, version_number, status) "
+                            + "VALUES (?, 1, 'PUBLISHED')",
+                    selectedFormationId);
+            Long selectedFormationVersionId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "formation_versions WHERE formation_id = ? AND version_number = 1",
+                    Long.class, selectedFormationId);
+            jdbcTemplate.update(
+                    "UPDATE " + prefix + "concert_repertoire "
+                            + "SET selected_formation_id = ?, "
+                            + "selected_formation_version_id = ? "
+                            + "WHERE concert_id = ? AND repertoire_item_id = ?",
+                    selectedFormationId, selectedFormationVersionId,
+                    concertId, repertoireItemId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            formation_version_selection_history (
+                                concert_id, repertoire_item_id,
+                                selected_formation_id, selected_formation_version_id,
+                                actor_email
+                            ) VALUES (?, ?, ?, ?, ?)
+                            """,
+                    concertId, repertoireItemId, selectedFormationId,
+                    selectedFormationVersionId, email);
+
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            transition_rule_evaluations (
+                                transition_version_id, transition_id,
+                                from_formation_version_id, to_formation_version_id,
+                                repertoire_item_id, separation_settings_revision,
+                                global_separation_threshold, status
+                            ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'VIOLATED')
+                            """,
+                    transitionVersionId, transitionId, fromVersionId, toVersionId,
+                    repertoireItemId);
+            Long evaluationId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM " + prefix
+                            + "transition_rule_evaluations WHERE transition_version_id = ?",
+                    Long.class, transitionVersionId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            transition_rule_evaluation_warnings (
+                                evaluation_id, result_order, warning_order,
+                                code, explanation, status
+                            ) VALUES (?, NULL, 0, 'STAGE_SEPARATION',
+                                      'Advertencia legacy aceptada', 'VIOLATED')
+                            """,
+                    evaluationId);
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            transition_publication_decisions (
+                                evaluation_id, transition_version_id,
+                                result_order, warning_order, warning_code,
+                                warning_explanation, decision, director_email, reason
+                            ) VALUES (?, ?, -1, 0, 'STAGE_SEPARATION',
+                                      'Advertencia legacy aceptada', 'ACCEPTED', ?, ?)
+                            """,
+                    evaluationId, transitionVersionId, email, "Motivo histórico");
+            jdbcTemplate.update(
+                    "INSERT INTO " + prefix + """
+                            transition_publication_evidence (
+                                transition_version_id, evaluation_id, transition_id,
+                                from_formation_version_id, to_formation_version_id,
+                                separation_settings_revision, global_separation_threshold,
+                                published_by_email
+                            ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, ?)
+                            """,
+                    transitionVersionId, evaluationId, transitionId,
+                    fromVersionId, toVersionId, email);
+
+            Flyway.configure()
+                    .dataSource(jdbcTemplate.getDataSource())
+                    .schemas(schema)
+                    .defaultSchema(schema)
+                    .locations(
+                            "classpath:db/migration",
+                            "classpath:db/migration-postgresql")
+                    .load()
+                    .migrate();
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT concert_id FROM " + prefix + "formations WHERE id = ?",
+                    Long.class, fromFormationId)).isNull();
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT status FROM " + prefix + "formation_versions WHERE id = ?",
+                    String.class, fromVersionId)).isEqualTo("PUBLISHED");
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT status FROM " + prefix + "transition_versions WHERE id = ?",
+                    String.class, transitionVersionId)).isEqualTo("PUBLISHED");
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + prefix
+                            + "transition_publication_evidence "
+                            + "WHERE transition_version_id = ? AND evaluation_id = ?",
+                    Integer.class, transitionVersionId, evaluationId)).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + prefix
+                            + "transition_publication_decisions "
+                            + "WHERE evaluation_id = ? AND result_order = -1 "
+                            + "AND warning_order = 0",
+                    Integer.class, evaluationId)).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT selected_formation_version_id FROM " + prefix
+                            + "concert_repertoire WHERE concert_id = ? "
+                            + "AND repertoire_item_id = ?",
+                    Long.class, concertId, repertoireItemId))
+                    .isEqualTo(selectedFormationVersionId);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + prefix
+                            + "formation_version_selection_history "
+                            + "WHERE concert_id = ? AND repertoire_item_id = ? "
+                            + "AND selected_formation_version_id = ?",
+                    Integer.class, concertId, repertoireItemId,
+                    selectedFormationVersionId)).isEqualTo(1);
+        } finally {
+            jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+        }
+    }
+
+    @Test
     void formationCanReferenceConcertRepertoireOccurrence() {
         Long choirId = createChoir();
         Long concertId = createConcert(choirId);
@@ -358,6 +740,123 @@ class ChoirDomainMigrationTests {
                 Long.class, directorId);
     }
 
+    private Long createFormationVersion(JdbcTemplate jdbc, Long choirId) {
+        String formationName = "Formación versionada " + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO formations (choir_id, name) VALUES (?, ?)
+                """, choirId, formationName);
+        Long formationId = jdbc.queryForObject("""
+                SELECT id FROM formations WHERE choir_id = ? AND name = ?
+                """, Long.class, choirId, formationName);
+        jdbc.update("""
+                INSERT INTO formation_versions (formation_id, version_number, status)
+                VALUES (?, 1, 'PUBLISHED')
+                """, formationId);
+        return jdbc.queryForObject("""
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, formationId);
+    }
+
+    private Long createTransitionVersion(
+            JdbcTemplate jdbc,
+            Long choirId,
+            Long fromFormationVersionId,
+            Long toFormationVersionId) {
+        jdbc.update(
+                "INSERT INTO transitions (choir_id, name) VALUES (?, ?)",
+                choirId, "Transición " + UUID.randomUUID());
+        Long transitionId = jdbc.queryForObject("""
+                SELECT id FROM transitions
+                WHERE choir_id = ? ORDER BY id DESC LIMIT 1
+                """, Long.class, choirId);
+        jdbc.update("""
+                INSERT INTO transition_versions (
+                    transition_id, version_number,
+                    from_formation_version_id, to_formation_version_id
+                ) VALUES (?, 1, ?, ?)
+                """, transitionId, fromFormationVersionId, toFormationVersionId);
+        return jdbc.queryForObject("""
+                SELECT id FROM transition_versions
+                WHERE transition_id = ? AND version_number = 1
+                """, Long.class, transitionId);
+    }
+
+    private Long transitionIdForVersion(
+            JdbcTemplate jdbc, Long transitionVersionId) {
+        return jdbc.queryForObject("""
+                SELECT transition_id FROM transition_versions WHERE id = ?
+                """, Long.class, transitionVersionId);
+    }
+
+    private Long createEvaluation(
+            JdbcTemplate jdbc,
+            Long transitionVersionId,
+            Long transitionId,
+            Long fromFormationVersionId,
+            Long toFormationVersionId,
+            Long repertoireItemId) {
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluations (
+                    transition_version_id, transition_id,
+                    from_formation_version_id, to_formation_version_id,
+                    repertoire_item_id, separation_settings_revision,
+                    global_separation_threshold, status
+                ) VALUES (?, ?, ?, ?, ?, 1, 0.0500000, 'SATISFIED')
+                """, transitionVersionId, transitionId,
+                fromFormationVersionId, toFormationVersionId, repertoireItemId);
+        return jdbc.queryForObject("""
+                SELECT id FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                ORDER BY id DESC LIMIT 1
+                """, Long.class, transitionVersionId);
+    }
+
+    private void insertPublicationDecision(
+            JdbcTemplate jdbc,
+            Long evaluationId,
+            Long transitionVersionId,
+            int resultOrder,
+            int warningOrder) {
+        jdbc.update("""
+                INSERT INTO transition_publication_decisions (
+                    evaluation_id, transition_version_id,
+                    result_order, warning_order, warning_code,
+                    warning_explanation, decision, director_email, reason
+                ) VALUES (?, ?, ?, ?, 'STAGE_SEPARATION',
+                          'Advertencia de prueba', 'ACCEPTED',
+                          'director@example.test', 'Motivo de prueba')
+                """, evaluationId, transitionVersionId, resultOrder, warningOrder);
+    }
+
+    private Long createChoir(JdbcTemplate jdbc) {
+        String email = UUID.randomUUID() + "@example.test";
+        jdbc.update(
+                "INSERT INTO directors (display_name, email) VALUES (?, ?)",
+                "Director de prueba", email);
+        Long directorId = jdbc.queryForObject(
+                "SELECT id FROM directors WHERE email = ?",
+                Long.class, email);
+        jdbc.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId, "Coro " + UUID.randomUUID());
+        return jdbc.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ?",
+                Long.class, directorId);
+    }
+
+    private Long createRepertoireItem(JdbcTemplate jdbc, Long choirId) {
+        jdbc.update(
+                "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+                choirId, "Obra " + UUID.randomUUID());
+        return jdbc.queryForObject("""
+                SELECT id FROM repertoire_items
+                WHERE choir_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, choirId);
+    }
+
     private Long createConcert(Long choirId) {
         jdbcTemplate.update(
                 "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
@@ -416,6 +915,49 @@ class ChoirDomainMigrationTests {
     }
 
     private void deleteChoirData(Long choirId) {
+        jdbcTemplate.update("""
+                DELETE FROM transition_publication_decisions
+                WHERE transition_version_id IN (
+                    SELECT tv.id FROM transition_versions tv
+                    JOIN transitions t ON t.id = tv.transition_id
+                    WHERE t.choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM transition_publication_evidence
+                WHERE transition_version_id IN (
+                    SELECT tv.id FROM transition_versions tv
+                    JOIN transitions t ON t.id = tv.transition_id
+                    WHERE t.choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM transition_rule_evaluation_warnings
+                WHERE evaluation_id IN (
+                    SELECT e.id FROM transition_rule_evaluations e
+                    JOIN transitions t ON t.id = e.transition_id
+                    WHERE t.choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM transition_rule_evaluation_results
+                WHERE evaluation_id IN (
+                    SELECT e.id FROM transition_rule_evaluations e
+                    JOIN transitions t ON t.id = e.transition_id
+                    WHERE t.choir_id = ?
+                )
+                """, choirId);
+
+        jdbcTemplate.update("""
+                DELETE FROM transition_rule_evaluations
+                WHERE transition_id IN (
+                    SELECT id FROM transitions WHERE choir_id = ?
+                )
+                """, choirId);
+
         jdbcTemplate.update("""
                 DELETE FROM formation_positions
                 WHERE formation_version_id IN (
