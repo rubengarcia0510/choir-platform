@@ -3,27 +3,42 @@ package com.rubengarcia.choir.transition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
+import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionSelectionUseCase;
-import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
-import com.rubengarcia.choir.domain.TransitionVersion;
-import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
-import org.springframework.dao.DataAccessException;
-import org.junit.jupiter.api.Assumptions;
+import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
+import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TransitionRuleEvaluationTests {
+
+    private static final DisposablePostgresTestDatabase POSTGRES_TEST_DATABASE =
+            new DisposablePostgresTestDatabase();
+
+    @DynamicPropertySource
+    static void isolatePostgresDatabase(DynamicPropertyRegistry registry) {
+        POSTGRES_TEST_DATABASE.configure(registry);
+    }
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -59,6 +74,11 @@ class TransitionRuleEvaluationTests {
     private Long sceneRuleId;
     private Long ruleRevisionId;
     private String email;
+
+    @AfterAll
+    void dropPostgresTestDatabase() throws Exception {
+        POSTGRES_TEST_DATABASE.drop();
+    }
 
     @AfterEach
     void cleanup() throws Exception {
@@ -467,22 +487,22 @@ class TransitionRuleEvaluationTests {
                 "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
                 directorId, "Evaluation choir " + suffix);
         choirId = jdbc.queryForObject(
-                "SELECT id FROM choirs WHERE director_id = ?",
-                Long.class, directorId);
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class, directorId, "Evaluation choir " + suffix);
         jdbc.update("""
                 INSERT INTO concerts (choir_id, title, status)
                 VALUES (?, ?, 'PLANNED')
                 """, choirId, "Evaluation concert " + suffix);
         concertId = jdbc.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation concert " + suffix);
         jdbc.update("""
                 INSERT INTO repertoire_items (choir_id, title)
                 VALUES (?, ?)
                 """, choirId, "Evaluation song " + suffix);
         repertoireItemId = jdbc.queryForObject(
-                "SELECT id FROM repertoire_items WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation song " + suffix);
         jdbc.update("""
                 INSERT INTO concert_repertoire
                     (concert_id, repertoire_item_id, order_index)
@@ -504,8 +524,8 @@ class TransitionRuleEvaluationTests {
                 VALUES (?, 'Rule evaluation transition')
                 """, choirId);
         transitionId = jdbc.queryForObject(
-                "SELECT id FROM transitions WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM transitions WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, "Rule evaluation transition");
         jdbc.update("""
                 INSERT INTO transition_versions (
                     transition_id, version_number,
@@ -513,7 +533,10 @@ class TransitionRuleEvaluationTests {
                 ) VALUES (?, 1, ?, ?)
                 """, transitionId, fromVersionId, toVersionId);
         transitionVersionId = jdbc.queryForObject(
-                "SELECT id FROM transition_versions WHERE transition_id = ?",
+                """
+                SELECT id FROM transition_versions
+                WHERE transition_id = ? AND version_number = 1
+                """,
                 Long.class, transitionId);
         String conditionJson = """
                 {"spatialConstraints":[
@@ -579,8 +602,10 @@ class TransitionRuleEvaluationTests {
                 VALUES (?, 1, 'DRAFT')
                 """, formationId);
         return jdbc.queryForObject(
-                "SELECT id FROM formation_versions WHERE formation_id = ?",
-                Long.class, formationId);
+                """
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, formationId);
     }
 
     private void insertPosition(
@@ -593,4 +618,5 @@ class TransitionRuleEvaluationTests {
                 """, versionId, singerId, "Singer " + singerId,
                 new BigDecimal(x), new BigDecimal(y));
     }
+
 }

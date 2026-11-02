@@ -8,14 +8,27 @@ import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvalu
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TransitionRuleEvaluationHistoricalImmutabilityTests {
+
+    private static final DisposablePostgresTestDatabase POSTGRES_TEST_DATABASE =
+            new DisposablePostgresTestDatabase();
+
+    @DynamicPropertySource
+    static void isolatePostgresDatabase(DynamicPropertyRegistry registry) {
+        POSTGRES_TEST_DATABASE.configure(registry);
+    }
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -193,6 +206,11 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
         }
     }
 
+    @AfterAll
+    static void dropPostgresTestDatabase() throws Exception {
+        POSTGRES_TEST_DATABASE.drop();
+    }
+
     private void createFixture() {
         String suffix = UUID.randomUUID().toString();
         email = "historical-evaluation-" + suffix + "@example.test";
@@ -207,22 +225,24 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
         jdbc.update("INSERT INTO choirs (director_id, name) VALUES (?, ?)",
                 directorId, "Evaluation choir " + suffix);
         choirId = jdbc.queryForObject(
-                "SELECT id FROM choirs WHERE director_id = ?", Long.class, directorId);
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class, directorId, "Evaluation choir " + suffix);
 
         jdbc.update("""
                 INSERT INTO concerts (choir_id, title, status)
                 VALUES (?, ?, 'PLANNED')
                 """, choirId, "Evaluation concert " + suffix);
         concertId = jdbc.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ?", Long.class, choirId);
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation concert " + suffix);
 
         jdbc.update("""
                 INSERT INTO repertoire_items (choir_id, title)
                 VALUES (?, ?)
                 """, choirId, "Evaluation song " + suffix);
         repertoireItemId = jdbc.queryForObject(
-                "SELECT id FROM repertoire_items WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation song " + suffix);
 
         jdbc.update("""
                 INSERT INTO concert_repertoire
@@ -248,8 +268,8 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
                 VALUES (?, 'Historical evaluation transition')
                 """, choirId);
         transitionId = jdbc.queryForObject(
-                "SELECT id FROM transitions WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM transitions WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, "Historical evaluation transition");
 
         jdbc.update("""
                 INSERT INTO transition_versions (
@@ -258,7 +278,10 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
                 ) VALUES (?, 1, ?, ?)
                 """, transitionId, fromVersionId, toVersionId);
         transitionVersionId = jdbc.queryForObject(
-                "SELECT id FROM transition_versions WHERE transition_id = ?",
+                """
+                SELECT id FROM transition_versions
+                WHERE transition_id = ? AND version_number = 1
+                """,
                 Long.class, transitionId);
 
         String conditionJson = """
@@ -328,8 +351,10 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
                 VALUES (?, 1, 'DRAFT')
                 """, formationId);
         return jdbc.queryForObject(
-                "SELECT id FROM formation_versions WHERE formation_id = ?",
-                Long.class, formationId);
+                """
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, formationId);
     }
 
     private void insertPosition(

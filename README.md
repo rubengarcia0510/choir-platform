@@ -53,6 +53,8 @@ GitHub Actions ejecuta dos validaciones en `.github/workflows/ci.yml`:
 - `test-prod`: PostgreSQL 16, perfil `prod`, migraciones Flyway y suite completa.
 
 Ambos jobs repiten una prueba de registro concurrente para detectar regresiones.
+El job `test-prod` también repite las dos suites de historial de evaluaciones
+con bases PostgreSQL descartables para verificar su aislamiento y limpieza.
 
 ## Límites entre JDBC y R2DBC
 
