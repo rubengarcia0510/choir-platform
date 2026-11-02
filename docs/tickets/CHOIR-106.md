@@ -46,22 +46,14 @@ conjunto contratos, invariantes y fases anteriores.
 
 ## Resultados de ejecución
 
-- GitHub Actions [workflow #500 / #501 (run 41348826877 / 41348996594)](https://github.com/rubengarcia0510/choir-platform/actions/runs/41348826877): `success` para el commit `85d97726c967bfc13a4f093dba1c545cac067e31`, ejecutando en H2 y PostgreSQL 16 la suite completa, la repetición determinística de CHOIR-43 y la validación del script de rollback CHOIR-56.
+- GitHub Actions [workflow #503](https://github.com/rubengarcia0510/choir-platform/actions/runs/41353426606): `success` para el commit `ed532e81b875e20dc212ec9113a042cb564ed5c6`, ejecutando en H2 y PostgreSQL 16 la suite completa, la repetición determinística de CHOIR-43 y la validación del script de rollback CHOIR-56. Los cuatro checks de CI están en verde.
 - La suite local de pruebas de migración `ChoirDomainMigrationTests` y `git diff --check` pasaron exitosamente.
 - Se agregaron aserciones explícitas de `DELETE` en `ChoirDomainMigrationTests.assertPostgresqlPublicationHistoryIsImmutable` para confirmar el rechazo de borrado en `transition_publication_decisions`, `transition_publication_evidence`, `transition_rule_evaluation_warnings` y `transition_rule_evaluations`, cubriendo la totalidad de los registros de auditoría frente a mutaciones.
 
 ## Comentario de revisión en Jira
 
-Comentario sobre la rama `feature/CHOIR-106-versioning-acceptance` y el [PR #78](https://github.com/rubengarcia0510/choir-platform/pull/78), revisado en el commit `85d97726c967bfc13a4f093dba1c545cac067e31`. El reviewer confirma que el PR sigue abierto contra `main` y que el [workflow #501](https://github.com/rubengarcia0510/choir-platform/actions/runs/41348996594) pasó en H2 y PostgreSQL, incluyendo las suites completas, la repetición de CHOIR-43 y la validación del rollback CHOIR-56.
+El reviewer revisó la rama `feature/CHOIR-106-versioning-acceptance` y el [PR #78](https://github.com/rubengarcia0510/choir-platform/pull/78), primero en `85d97726c967bfc13a4f093dba1c545cac067e31` y luego en `ed532e81b875e20dc212ec9113a042cb564ed5c6`.
 
-El reviewer reconoce que la matriz enlaza pruebas para catálogo/publicación, autorización, numeración, selección/historial, snapshots/evaluaciones, auditoría, migraciones, duplicación y contratos HTTP. Antes de considerar completa la aceptación, solicita:
+En la revisión inicial, solicitó actualizar la evidencia de CI, documentar la inspección de servicios legacy y cubrir `DELETE` sobre los registros de auditoría. La revisión de la corrección confirma que se documentaron los servicios legacy, se agregaron pruebas de borrado para evaluaciones, warnings, evidence y decisions, y no se modificaron código productivo ni migraciones.
 
-1. Actualizar los resultados de ejecución: la sección anterior todavía menciona el workflow #499 y pruebas pendientes; registrar el workflow #501 y el SHA que realmente validó.
-2. Documentar explícitamente la inspección de servicios legacy: cuáles se revisaron, qué consumidores tienen y si queda alguno sin migrar.
-3. Confirmar las aserciones negativas de `DELETE` para los registros de auditoría (`transition_rule_evaluations`, warnings, evidence y decisions). El comentario observa que la prueba revisa `UPDATE` de auditoría y `DELETE` de `transition_versions`, pero no el borrado individual de cada registro auditado.
-
-### Resolución de los puntos de revisión
-
-1. **Resultados de ejecución actualizados**: se documentó el workflow #501 / #500 y el commit `85d9772` que validó la suite completa en H2 y PostgreSQL 16 sin fallos.
-2. **Inspección de servicios legacy documentada**: se detalló en la matriz la inspección estática de los servicios en `com.rubengarcia.choir.service` y de los controladores web de `formation` y `transition`, confirmando la ausencia de servicios legacy de versionado o consumidores sin migrar.
-3. **Aserciones negativas de `DELETE` añadidas**: se incorporaron aserciones en `ChoirDomainMigrationTests.assertPostgresqlPublicationHistoryIsImmutable` para comprobar que PostgreSQL rechace el borrado individual en `transition_publication_decisions`, `transition_publication_evidence`, `transition_rule_evaluation_warnings` y `transition_rule_evaluations`, verificando la inmutabilidad completa del historial de auditoría frente a `DELETE`.
+El único ajuste pendiente señalado en el comentario más reciente era actualizar el resultado del spec para referenciar el workflow #503 y el SHA `ed532e8`, en lugar de #500/#501 y el commit anterior. Esta sección ya refleja ese resultado. El PR #78 continúa abierto contra `main`; el reviewer no lo considera mergeado.
