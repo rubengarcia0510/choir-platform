@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
@@ -246,7 +247,7 @@ class ChoirDomainMigrationTests {
     }
 
     @Test
-    void auditRowsMustReferenceTheMatchingTransitionSnapshotAndWarning() {
+    void auditIntegrityAndTransitionPublicationHistoryRemainImmutable() {
         String schema = "choir_audit_integrity_"
                 + UUID.randomUUID().toString().replace("-", "");
         SingleConnectionDataSource isolatedDataSource = null;
@@ -353,6 +354,11 @@ class ChoirDomainMigrationTests {
                     WHERE evaluation_id = ? AND transition_version_id = ?
                       AND result_order = -1 AND warning_order = 0
                     """, Integer.class, evaluationA, transitionVersionA)).isEqualTo(1);
+
+            if ("PostgreSQL".equalsIgnoreCase(databaseProduct)) {
+                assertPostgresqlPublicationHistoryIsImmutable(
+                        isolatedJdbc, evaluationA, transitionVersionA);
+            }
         } catch (java.sql.SQLException exception) {
             throw new IllegalStateException(
                     "No se pudo preparar el esquema aislado de integridad", exception);
@@ -371,6 +377,79 @@ class ChoirDomainMigrationTests {
             }
             jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
         }
+    }
+
+    private void assertPostgresqlPublicationHistoryIsImmutable(
+            JdbcTemplate jdbc, Long evaluationId, Long transitionVersionId) {
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_rule_evaluations
+                SET status = 'VIOLATED'
+                WHERE id = ?
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_rule_evaluation_warnings
+                SET explanation = 'Advertencia modificada'
+                WHERE evaluation_id = ? AND warning_order = 0
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_publication_evidence
+                SET published_by_email = 'changed@example.test'
+                WHERE transition_version_id = ?
+                """, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_publication_decisions
+                SET reason = 'Motivo modificado'
+                WHERE evaluation_id = ? AND transition_version_id = ?
+                """, evaluationId, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_publication_decisions
+                WHERE evaluation_id = ? AND transition_version_id = ?
+                """, evaluationId, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_publication_evidence
+                WHERE transition_version_id = ?
+                """, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_rule_evaluation_warnings
+                WHERE evaluation_id = ? AND warning_order = 0
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_rule_evaluations
+                WHERE id = ?
+                """, evaluationId))
+                .isInstanceOf(DataAccessException.class);
+
+        jdbc.update("""
+                UPDATE transition_versions
+                SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """, transitionVersionId);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE transition_versions
+                SET instructions = 'Instrucciones modificadas'
+                WHERE id = ?
+                """, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                DELETE FROM transition_versions WHERE id = ?
+                """, transitionVersionId))
+                .isInstanceOf(DataAccessException.class);
     }
 
     @Test
