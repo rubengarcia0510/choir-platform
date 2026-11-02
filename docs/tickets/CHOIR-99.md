@@ -1,6 +1,6 @@
 # CHOIR-99 — Hacer fiable la limpieza de datos de pruebas de evaluación en PostgreSQL
 
-- Estado al snapshot: En curso.
+- Estado al snapshot: En revisión; CI aprobado.
 - Fuente: [CHOIR-99 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-99).
 
 ## Problema y trabajo
@@ -41,5 +41,8 @@ suite completa, para verificar aislamiento y teardown reproducibles. Las dos
 suites pasaron localmente con H2: 4 pruebas ejecutadas y una comprobación
 específica de PostgreSQL omitida en `TransitionRuleEvaluationTests`, y una
 prueba ejecutada en `TransitionRuleEvaluationHistoricalImmutabilityTests`.
-Docker/PostgreSQL no están disponibles localmente; falta confirmar ese job en
-CI.
+
+La ejecución CI #508, sobre el commit `b14a6ad3349cbace13e610021882d819f0053e96`,
+finalizó correctamente. Pasaron los jobs H2 y PostgreSQL; en PostgreSQL se
+completaron las tres repeticiones de ambas suites, la suite completa con el
+perfil `prod` y la validación del rollback CHOIR-56. [Ver ejecución #508](https://github.com/rubengarcia0510/choir-platform/actions/runs/41474566945).
