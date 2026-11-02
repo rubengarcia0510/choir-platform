@@ -78,6 +78,13 @@ jobs:
             ./gradlew test --tests 'com.rubengarcia.choir.auth.DirectorRegistrationCompletedLookupConcurrentTests'
           done
 
+      - name: Repeat evaluation history cleanup test (PostgreSQL)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Evaluation history cleanup attempt ${attempt}/3"
+            ./gradlew test --rerun-tasks --tests 'com.rubengarcia.choir.transition.TransitionRuleEvaluationTests'
+          done
+
       - name: Run full test suite with production profile and PostgreSQL
         run: ./gradlew test
 

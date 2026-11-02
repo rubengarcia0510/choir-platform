@@ -24,3 +24,19 @@ ejecución.
   historial inmutable.
 - La suite relevante pasa con H2 y PostgreSQL.
 - No se agregan `System.out`/`System.err` ni dependencias de orden entre tests.
+
+## Estrategia de aislamiento
+
+En PostgreSQL, las evaluaciones, sus resultados y advertencias, y la evidencia
+y decisiones de publicación son historial inmutable. La clase
+`TransitionRuleEvaluationTests` ejecuta sus pruebas en un schema exclusivo
+creado por Flyway y elimina el schema completo al finalizar la clase. Así no
+intenta borrar filas protegidas por triggers ni deja fixtures en el schema
+compartido. En H2 se mantiene la limpieza por filas, eliminando primero
+decisiones/evidencia, luego warnings/resultados, evaluaciones y finalmente las
+entidades padre.
+
+La validación local con H2 pasa. El job `test-prod` repite tres veces la clase
+en PostgreSQL antes de la suite completa, para verificar aislamiento y teardown
+reproducibles. Docker/PostgreSQL no están disponibles en el entorno local; falta
+confirmar el resultado de ese job en CI.

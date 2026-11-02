@@ -3,27 +3,56 @@ package com.rubengarcia.choir.transition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
+import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionSelectionUseCase;
-import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
-import com.rubengarcia.choir.domain.TransitionVersion;
-import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
-import org.springframework.dao.DataAccessException;
-import org.junit.jupiter.api.Assumptions;
+import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
+import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TransitionRuleEvaluationTests {
+
+    private static final String POSTGRES_TEST_SCHEMA =
+            "choir_eval_tests_"
+                    + UUID.randomUUID().toString().replace("-", "");
+
+    @DynamicPropertySource
+    static void isolatePostgresSchema(DynamicPropertyRegistry registry) {
+        if (!isProductionProfileActive()) {
+            return;
+        }
+
+        String jdbcUrl = System.getenv("DATABASE_URL");
+        String r2dbcUrl = System.getenv("R2DBC_URL");
+        registry.add("spring.datasource.url",
+                () -> appendQueryParameter(
+                        jdbcUrl, "currentSchema", POSTGRES_TEST_SCHEMA));
+        registry.add("spring.r2dbc.url",
+                () -> appendQueryParameter(
+                        r2dbcUrl, "schema", POSTGRES_TEST_SCHEMA));
+        registry.add("spring.flyway.schemas", () -> POSTGRES_TEST_SCHEMA);
+        registry.add("spring.flyway.default-schema", () -> POSTGRES_TEST_SCHEMA);
+    }
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -59,6 +88,24 @@ class TransitionRuleEvaluationTests {
     private Long sceneRuleId;
     private Long ruleRevisionId;
     private String email;
+
+    @AfterAll
+    void dropPostgresTestSchema() throws Exception {
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            if (!connection.getMetaData().getDatabaseProductName()
+                    .contains("PostgreSQL")) {
+                return;
+            }
+        }
+        jdbc.execute("DROP SCHEMA IF EXISTS "
+                + POSTGRES_TEST_SCHEMA + " CASCADE");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM information_schema.schemata
+                WHERE schema_name = ?
+                """, Integer.class, POSTGRES_TEST_SCHEMA))
+                .isZero();
+    }
 
     @AfterEach
     void cleanup() throws Exception {
@@ -592,5 +639,25 @@ class TransitionRuleEvaluationTests {
                 ) VALUES (?, ?, ?, 'SOPRANO', 'Evaluation position', ?, ?)
                 """, versionId, singerId, "Singer " + singerId,
                 new BigDecimal(x), new BigDecimal(y));
+    }
+
+    private static boolean isProductionProfileActive() {
+        String activeProfiles = System.getProperty(
+                "spring.profiles.active",
+                System.getenv("SPRING_PROFILES_ACTIVE"));
+        return activeProfiles != null
+                && List.of(activeProfiles.split(",")).stream()
+                        .map(String::trim)
+                        .anyMatch("prod"::equalsIgnoreCase);
+    }
+
+    private static String appendQueryParameter(
+            String url, String name, String value) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalStateException(
+                    "La URL de conexión es obligatoria para aislar el esquema PostgreSQL");
+        }
+        return url + (url.contains("?") ? "&" : "?")
+                + name + "=" + value;
     }
 }
