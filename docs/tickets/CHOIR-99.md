@@ -28,15 +28,18 @@ ejecución.
 ## Estrategia de aislamiento
 
 En PostgreSQL, las evaluaciones, sus resultados y advertencias, y la evidencia
-y decisiones de publicación son historial inmutable. La clase
-`TransitionRuleEvaluationTests` ejecuta sus pruebas en un schema exclusivo
-creado por Flyway y elimina el schema completo al finalizar la clase. Así no
-intenta borrar filas protegidas por triggers ni deja fixtures en el schema
-compartido. En H2 se mantiene la limpieza por filas, eliminando primero
-decisiones/evidencia, luego warnings/resultados, evaluaciones y finalmente las
-entidades padre.
+y decisiones de publicación son historial inmutable. Cada una de las dos suites
+de evaluación crea una base PostgreSQL descartable antes de inicializar Spring
+y configura JDBC/Flyway y R2DBC para usarla. La base se elimina al terminar la
+clase, incluso si fallan aserciones; un shutdown hook cubre fallos durante la
+inicialización del contexto o el teardown. Así se conservan las restricciones
+de inmutabilidad sin dejar fixtures en la base compartida. En H2 se mantiene la
+limpieza por filas, eliminando primero dependientes y luego entidades padre.
 
-La validación local con H2 pasa. El job `test-prod` repite tres veces la clase
-en PostgreSQL antes de la suite completa, para verificar aislamiento y teardown
-reproducibles. Docker/PostgreSQL no están disponibles en el entorno local; falta
-confirmar el resultado de ese job en CI.
+El job `test-prod` repite tres veces ambas suites en PostgreSQL antes de la
+suite completa, para verificar aislamiento y teardown reproducibles. Las dos
+suites pasaron localmente con H2: 4 pruebas ejecutadas y una comprobación
+específica de PostgreSQL omitida en `TransitionRuleEvaluationTests`, y una
+prueba ejecutada en `TransitionRuleEvaluationHistoricalImmutabilityTests`.
+Docker/PostgreSQL no están disponibles localmente; falta confirmar ese job en
+CI.

@@ -32,26 +32,12 @@ import org.springframework.web.server.ResponseStatusException;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TransitionRuleEvaluationTests {
 
-    private static final String POSTGRES_TEST_SCHEMA =
-            "choir_eval_tests_"
-                    + UUID.randomUUID().toString().replace("-", "");
+    private static final DisposablePostgresTestDatabase POSTGRES_TEST_DATABASE =
+            new DisposablePostgresTestDatabase();
 
     @DynamicPropertySource
-    static void isolatePostgresSchema(DynamicPropertyRegistry registry) {
-        if (!isProductionProfileActive()) {
-            return;
-        }
-
-        String jdbcUrl = System.getenv("DATABASE_URL");
-        String r2dbcUrl = System.getenv("R2DBC_URL");
-        registry.add("spring.datasource.url",
-                () -> appendQueryParameter(
-                        jdbcUrl, "currentSchema", POSTGRES_TEST_SCHEMA));
-        registry.add("spring.r2dbc.url",
-                () -> appendQueryParameter(
-                        r2dbcUrl, "schema", POSTGRES_TEST_SCHEMA));
-        registry.add("spring.flyway.schemas", () -> POSTGRES_TEST_SCHEMA);
-        registry.add("spring.flyway.default-schema", () -> POSTGRES_TEST_SCHEMA);
+    static void isolatePostgresDatabase(DynamicPropertyRegistry registry) {
+        POSTGRES_TEST_DATABASE.configure(registry);
     }
 
     @Autowired
@@ -90,21 +76,8 @@ class TransitionRuleEvaluationTests {
     private String email;
 
     @AfterAll
-    void dropPostgresTestSchema() throws Exception {
-        try (var connection = jdbc.getDataSource().getConnection()) {
-            if (!connection.getMetaData().getDatabaseProductName()
-                    .contains("PostgreSQL")) {
-                return;
-            }
-        }
-        jdbc.execute("DROP SCHEMA IF EXISTS "
-                + POSTGRES_TEST_SCHEMA + " CASCADE");
-        assertThat(jdbc.queryForObject("""
-                SELECT COUNT(*)
-                FROM information_schema.schemata
-                WHERE schema_name = ?
-                """, Integer.class, POSTGRES_TEST_SCHEMA))
-                .isZero();
+    void dropPostgresTestDatabase() throws Exception {
+        POSTGRES_TEST_DATABASE.drop();
     }
 
     @AfterEach
@@ -514,22 +487,22 @@ class TransitionRuleEvaluationTests {
                 "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
                 directorId, "Evaluation choir " + suffix);
         choirId = jdbc.queryForObject(
-                "SELECT id FROM choirs WHERE director_id = ?",
-                Long.class, directorId);
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class, directorId, "Evaluation choir " + suffix);
         jdbc.update("""
                 INSERT INTO concerts (choir_id, title, status)
                 VALUES (?, ?, 'PLANNED')
                 """, choirId, "Evaluation concert " + suffix);
         concertId = jdbc.queryForObject(
-                "SELECT id FROM concerts WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation concert " + suffix);
         jdbc.update("""
                 INSERT INTO repertoire_items (choir_id, title)
                 VALUES (?, ?)
                 """, choirId, "Evaluation song " + suffix);
         repertoireItemId = jdbc.queryForObject(
-                "SELECT id FROM repertoire_items WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class, choirId, "Evaluation song " + suffix);
         jdbc.update("""
                 INSERT INTO concert_repertoire
                     (concert_id, repertoire_item_id, order_index)
@@ -551,8 +524,8 @@ class TransitionRuleEvaluationTests {
                 VALUES (?, 'Rule evaluation transition')
                 """, choirId);
         transitionId = jdbc.queryForObject(
-                "SELECT id FROM transitions WHERE choir_id = ?",
-                Long.class, choirId);
+                "SELECT id FROM transitions WHERE choir_id = ? AND name = ?",
+                Long.class, choirId, "Rule evaluation transition");
         jdbc.update("""
                 INSERT INTO transition_versions (
                     transition_id, version_number,
@@ -560,7 +533,10 @@ class TransitionRuleEvaluationTests {
                 ) VALUES (?, 1, ?, ?)
                 """, transitionId, fromVersionId, toVersionId);
         transitionVersionId = jdbc.queryForObject(
-                "SELECT id FROM transition_versions WHERE transition_id = ?",
+                """
+                SELECT id FROM transition_versions
+                WHERE transition_id = ? AND version_number = 1
+                """,
                 Long.class, transitionId);
         String conditionJson = """
                 {"spatialConstraints":[
@@ -626,8 +602,10 @@ class TransitionRuleEvaluationTests {
                 VALUES (?, 1, 'DRAFT')
                 """, formationId);
         return jdbc.queryForObject(
-                "SELECT id FROM formation_versions WHERE formation_id = ?",
-                Long.class, formationId);
+                """
+                SELECT id FROM formation_versions
+                WHERE formation_id = ? AND version_number = 1
+                """, Long.class, formationId);
     }
 
     private void insertPosition(
@@ -641,23 +619,4 @@ class TransitionRuleEvaluationTests {
                 new BigDecimal(x), new BigDecimal(y));
     }
 
-    private static boolean isProductionProfileActive() {
-        String activeProfiles = System.getProperty(
-                "spring.profiles.active",
-                System.getenv("SPRING_PROFILES_ACTIVE"));
-        return activeProfiles != null
-                && List.of(activeProfiles.split(",")).stream()
-                        .map(String::trim)
-                        .anyMatch("prod"::equalsIgnoreCase);
-    }
-
-    private static String appendQueryParameter(
-            String url, String name, String value) {
-        if (url == null || url.isBlank()) {
-            throw new IllegalStateException(
-                    "La URL de conexión es obligatoria para aislar el esquema PostgreSQL");
-        }
-        return url + (url.contains("?") ? "&" : "?")
-                + name + "=" + value;
-    }
 }
