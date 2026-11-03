@@ -235,6 +235,55 @@ class TransitionRuleEvaluationTests {
     }
 
     @Test
+    void activeRuleViolationPersistsItsExactRevisionAndActionableWarning() {
+        createFixture();
+        jdbc.update("""
+                UPDATE formation_positions
+                SET x_coordinate = 0.90
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, toVersionId, singerTwoId);
+
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+
+        assertThat(evaluation).isNotNull();
+        assertThat(evaluation.status()).isEqualTo(Status.VIOLATED);
+        assertThat(evaluation.results()).singleElement().satisfies(result -> {
+            assertThat(result.sceneRuleId()).isEqualTo(sceneRuleId);
+            assertThat(result.ruleRevisionId()).isEqualTo(ruleRevisionId);
+            assertThat(result.status()).isEqualTo(Status.VIOLATED);
+            assertThat(result.warnings())
+                    .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
+                    .containsExactly("NEAR_THRESHOLD_EXCEEDED");
+            assertThat(result.warnings().getFirst().explanation())
+                    .isEqualTo("La distancia supera el umbral");
+        });
+
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM transition_rule_evaluation_results
+                WHERE evaluation_id = ?
+                  AND scene_rule_id = ?
+                  AND rule_revision_id = ?
+                  AND status = 'VIOLATED'
+                """, Integer.class, evaluation.id(), sceneRuleId, ruleRevisionId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM transition_rule_evaluation_warnings
+                WHERE evaluation_id = ?
+                  AND result_order = 0
+                  AND warning_order = 0
+                  AND code = 'NEAR_THRESHOLD_EXCEEDED'
+                  AND explanation = 'La distancia supera el umbral'
+                  AND status = 'VIOLATED'
+                """, Integer.class, evaluation.id()))
+                .isEqualTo(1);
+    }
+
+    @Test
     void inactiveLatestRevisionDoesNotFallBackToEarlierActiveRevision() {
         createFixture();
 
@@ -404,6 +453,13 @@ class TransitionRuleEvaluationTests {
                 SELECT id FROM transition_rule_evaluations
                 WHERE transition_version_id = ?
                 """, Long.class, transitionVersionId);
+        jdbc.update("""
+                INSERT INTO transition_rule_evaluation_results (
+                    evaluation_id, result_order, scene_rule_id,
+                    rule_revision_id, rule_type, status, code, explanation
+                ) VALUES (?, 0, ?, ?, 'MOVEMENT', 'SATISFIED',
+                          'RULE_SATISFIED', 'Todos los criterios se cumplen')
+                """, evaluationId, sceneRuleId, ruleRevisionId);
 
         TransitionVersion published = lifecycleService.publish(
                 email,
@@ -413,6 +469,19 @@ class TransitionRuleEvaluationTests {
                 evaluationId,
                 List.of())
                 .block(java.time.Duration.ofSeconds(10));
+
+        jdbc.update("""
+                INSERT INTO scene_rule_revisions (
+                    scene_rule_id, revision_number, repertoire_item_id,
+                    rule_order, rule_type, description, active, revision_kind,
+                    condition_json, definition_status
+                )
+                SELECT scene_rule_id, 2, repertoire_item_id, rule_order,
+                       rule_type, description, FALSE, 'DEACTIVATE',
+                       condition_json, definition_status
+                FROM scene_rule_revisions
+                WHERE id = ?
+                """, ruleRevisionId);
 
         assertThat(published).isNotNull();
         assertThat(published.getStatus()).isEqualTo("PUBLISHED");
@@ -450,6 +519,23 @@ class TransitionRuleEvaluationTests {
                 .containsEntry("TRANSITION_ID", transitionId)
                 .containsEntry("FROM_FORMATION_VERSION_ID", fromVersionId)
                 .containsEntry("TO_FORMATION_VERSION_ID", toVersionId);
+
+        assertThat(jdbc.queryForMap("""
+                SELECT result.scene_rule_id, result.rule_revision_id
+                FROM transition_publication_evidence evidence
+                JOIN transition_rule_evaluation_results result
+                  ON result.evaluation_id = evidence.evaluation_id
+                WHERE evidence.transition_version_id = ?
+                """, transitionVersionId))
+                .containsEntry("SCENE_RULE_ID", sceneRuleId)
+                .containsEntry("RULE_REVISION_ID", ruleRevisionId);
+        assertThat(jdbc.queryForObject("""
+                SELECT active FROM scene_rule_revisions WHERE id = ?
+                """, Boolean.class, jdbc.queryForObject("""
+                SELECT id FROM scene_rule_revisions
+                WHERE scene_rule_id = ? AND revision_number = 2
+                """, Long.class, sceneRuleId)))
+                .isFalse();
 
         TransitionRuleEvaluationSnapshot recoveredEvaluation =
                 evaluationHistoryPort.findById(evaluationId)
