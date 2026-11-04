@@ -35,6 +35,29 @@ Se dejan como `NOT_EVALUABLE` las ambigüedades no resueltas por los criterios: 
 
 La planificación vuelve a evaluar mediante `POST /api/choirs/{choirId}/transitions/{transitionId}/versions/{transitionVersionId}/rule-evaluations` y consulta el historial con `GET` en la misma ruta. Cada recálculo agrega un registro inmutable con los IDs exactos de transición, versiones FROM/TO, revisión de umbral y revisiones de reglas usadas, además de resultados y advertencias; no actualiza evaluaciones previas. El puerto de historial de reglas devuelve snapshots, no perfiles actuales. La evaluación se ejecuta desde el caso de uso y el SQL de contexto/historial permanece en adaptadores.
 
+### Alcance de las reglas y decisión de publicación
+
+Una regla se define y versiona para una obra del repertorio, por lo que puede
+aplicarse a cada inclusión de esa obra en un concierto sin duplicar su
+definición. La evaluación no es global para la canción: el planificador resuelve
+la inclusión concreta mediante `concert_repertoire` y evalúa sus reglas activas
+contra las versiones exactas FROM/TO de la transición. No se infieren
+formaciones desde la selección actual del concierto ni integrantes de grupos
+`COUNT` desde fichas, divisiones vocales o proximidad; la planificación debe
+entregar asignaciones completas o la regla queda `NOT_EVALUABLE`.
+
+Cada resultado guarda la identidad de la regla y de su revisión inmutable junto
+con la inclusión, transición y snapshots evaluados. Una revisión nueva,
+reordenamiento o desactivación afecta recálculos futuros, pero no reescribe
+evaluaciones ni evidencia de publicación existentes. Una regla activa
+incumplida produce estado `VIOLATED` y advertencias con código y explicación;
+no se descarta ni bloquea silenciosamente. Para publicar con esas advertencias,
+el director debe aceptar explícitamente cada una y la decisión queda auditada
+contra la advertencia y evaluación exactas. Esto no permite aceptar resultados
+`NOT_EVALUABLE`: por ejemplo, la visibilidad física del director no puede
+validarse con los snapshots geométricos disponibles y sigue impidiendo publicar
+hasta que ese criterio sea evaluable.
+
 El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED` o `REHEARSAL`.
 
 Dentro de una transacción, la publicación cambia el estado a `PUBLISHED`, registra `published_at` y captura:

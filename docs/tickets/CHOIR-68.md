@@ -43,3 +43,20 @@ No implementar/rediseñar CRUD (CHOIR-66), aplicación al motor de cálculo
 adaptación automática por ausencias (CHOIR-28/29) ni resolver aquí toda la
 migración de ocurrencias/alternativas de formación. Coordinar cambios de
 dominio compartidos con CHOIR-22, CHOIR-24 y CHOIR-31.
+
+## Matriz de verificación
+
+| Invariante | Evidencia |
+|---|---|
+| Persistencia, CRUD, orden, desactivación y autorización del director | `SceneRuleServiceImplTests` y `SceneRuleControllerTests` |
+| Snapshots identificados inmutables y sin reconstrucción desde fichas actuales | `SceneRuleServiceImplTests.readsCompleteRevisionSnapshotsWithoutUsingCurrentSingerData` |
+| Reglas `COUNT`, composición explícita 4+4 y asignación incompleta | `SceneRuleEvaluatorCountGroupTests` |
+| Inclusión concreta de obra evaluada con versiones FROM/TO exactas; advertencia activa incumplida vinculada a su revisión | `TransitionRuleEvaluationTests.recalculationsPersistSeparateExactSnapshotsAndWarnings` y `activeRuleViolationPersistsItsExactRevisionAndActionableWarning` |
+| Desactivación excluida de cálculos nuevos sin fallback a una revisión anterior | `TransitionRuleEvaluationTests.inactiveLatestRevisionDoesNotFallBackToEarlierActiveRevision` |
+| Evaluación histórica estable ante nuevas revisiones y selección posterior; decisión explícita de publicación | `TransitionRuleEvaluationHistoricalImmutabilityTests`, `TransitionRuleEvaluationTests` y `TransitionVersionLifecycleServiceTests` |
+
+## Validación
+
+Las suites enfocadas pasaron localmente con H2: 81 pruebas, 1 omitida por
+requerir los triggers específicos de PostgreSQL, 0 fallos y 0 errores. La
+validación de PostgreSQL queda pendiente de la ejecución CI de esta rama.
