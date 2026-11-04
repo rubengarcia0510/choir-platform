@@ -90,6 +90,7 @@ public final class FormationPersistenceMapper {
         domain.setPositionLabel(entity.getPositionLabel());
         domain.setXCoordinate(entity.getXCoordinate());
         domain.setYCoordinate(entity.getYCoordinate());
+        domain.setLocked(entity.isLocked());
         domain.setCreatedAt(entity.getCreatedAt());
         return domain;
     }
@@ -111,6 +112,7 @@ public final class FormationPersistenceMapper {
         entity.setPositionLabel(domain.getPositionLabel());
         entity.setXCoordinate(domain.getXCoordinate());
         entity.setYCoordinate(domain.getYCoordinate());
+        entity.setLocked(domain.isLocked());
         entity.setCreatedAt(domain.getCreatedAt());
         return entity;
     }

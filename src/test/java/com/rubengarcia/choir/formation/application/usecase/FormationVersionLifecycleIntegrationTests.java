@@ -35,6 +35,10 @@ class FormationVersionLifecycleIntegrationTests {
     @Test
     void createsDraftByCopyingPublishedPositionsAndSnapshots() {
         Fixture f = fixture("PUBLISHED");
+        jdbc.update("""
+                UPDATE formation_positions SET locked = TRUE
+                WHERE formation_version_id = ?
+                """, f.versionId());
 
         FormationVersion draft = service.createDraft(
                 f.email(), f.choirId(), f.formationId(), "Nueva revisión")
@@ -54,7 +58,7 @@ class FormationVersionLifecycleIntegrationTests {
                 SELECT singer_id, singer_name_snapshot, voice_part_snapshot,
                        voice_section_id_snapshot, voice_section_name_snapshot,
                        division_number_snapshot, position_label,
-                       x_coordinate, y_coordinate
+                       x_coordinate, y_coordinate, locked
                 FROM formation_positions
                 WHERE formation_version_id = ?
                 """, draft.getId()))
@@ -66,7 +70,8 @@ class FormationVersionLifecycleIntegrationTests {
                 .containsEntry("DIVISION_NUMBER_SNAPSHOT", 2)
                 .containsEntry("POSITION_LABEL", "Posición original")
                 .containsEntry("X_COORDINATE", new java.math.BigDecimal("1.000"))
-                .containsEntry("Y_COORDINATE", new java.math.BigDecimal("2.000"));
+                .containsEntry("Y_COORDINATE", new java.math.BigDecimal("2.000"))
+                .containsEntry("LOCKED", true);
     }
 
     @Test

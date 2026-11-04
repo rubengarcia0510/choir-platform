@@ -151,6 +151,27 @@ class FormationDraftControllerTests {
     }
 
     @Test
+    void unauthenticatedPositionLockAndUnlockAreRejected() {
+        CsrfSession csrf = obtainCsrf();
+        String uri = "/api/choirs/1/concerts/1/repertoire/1"
+                + "/formations/1/versions/1/positions/1/lock";
+
+        webTestClient.put()
+                .uri(uri)
+                .cookie("SESSION", csrf.sessionId())
+                .header("X-CSRF-TOKEN", csrf.token())
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        webTestClient.delete()
+                .uri(uri)
+                .cookie("SESSION", csrf.sessionId())
+                .header("X-CSRF-TOKEN", csrf.token())
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void authenticatedDirectorCannotAccessFormationForIncorrectConcertRepertoireAssociation() {
         DirectorAccount director = createDirector();
         Session session = login(director.email());

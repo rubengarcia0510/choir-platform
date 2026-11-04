@@ -15,5 +15,6 @@ public record PlanningPosition(
         Integer divisionNumber,
         String positionLabel,
         BigDecimal xCoordinate,
-        BigDecimal yCoordinate) {
+        BigDecimal yCoordinate,
+        boolean locked) {
 }

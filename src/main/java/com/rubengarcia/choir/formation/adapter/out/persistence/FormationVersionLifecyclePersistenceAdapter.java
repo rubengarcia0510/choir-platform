@@ -198,7 +198,7 @@ public class FormationVersionLifecyclePersistenceAdapter
                     (formation_version_id, singer_id, singer_name_snapshot,
                      voice_part_snapshot, voice_section_id_snapshot,
                      voice_section_name_snapshot, division_number_snapshot,
-                     position_label, x_coordinate, y_coordinate)
+                     position_label, x_coordinate, y_coordinate, locked)
                 SELECT :draftVersionId,
                        fp.singer_id,
                        fp.singer_name_snapshot,
@@ -208,7 +208,8 @@ public class FormationVersionLifecyclePersistenceAdapter
                        fp.division_number_snapshot,
                        fp.position_label,
                        fp.x_coordinate,
-                       fp.y_coordinate
+                       fp.y_coordinate,
+                       fp.locked
                 FROM formation_positions fp
                 JOIN formation_versions source
                   ON source.id = fp.formation_version_id

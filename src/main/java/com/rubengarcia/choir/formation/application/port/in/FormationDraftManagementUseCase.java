@@ -40,6 +40,24 @@ public interface FormationDraftManagementUseCase {
             long versionId,
             List<PositionUpdate> positions);
 
+    Mono<Void> lockPosition(
+            String directorEmail,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId);
+
+    Mono<Void> unlockPosition(
+            String directorEmail,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId);
+
     record PositionUpdate(
             Long singerId,
             String positionLabel,

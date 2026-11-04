@@ -28,6 +28,8 @@ public class FormationPosition {
 
     private BigDecimal yCoordinate;
 
+    private boolean locked;
+
     private LocalDateTime createdAt;
 
     public FormationPosition() {
@@ -102,6 +104,14 @@ public class FormationPosition {
 
     public void setYCoordinate(BigDecimal yCoordinate) {
         this.yCoordinate = yCoordinate;
+    }
+
+    public boolean isLocked() {
+        return locked;
+    }
+
+    public void setLocked(boolean locked) {
+        this.locked = locked;
     }
 
     public LocalDateTime getCreatedAt() {

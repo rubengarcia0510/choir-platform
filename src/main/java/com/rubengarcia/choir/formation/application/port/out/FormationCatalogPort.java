@@ -36,6 +36,15 @@ public interface FormationCatalogPort {
             long versionId,
             List<PositionUpdate> positions);
 
+    Mono<Void> setPositionLocked(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId,
+            boolean locked);
+
     record PositionUpdate(
             Long singerId,
             String positionLabel,

@@ -3,6 +3,8 @@ package com.rubengarcia.choir.formation.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
@@ -52,6 +54,174 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void locksAndUnlocksDraftPositionIdempotently() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        assertPositionLocked(true);
+
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                false)
+                .block(TIMEOUT);
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                false)
+                .block(TIMEOUT);
+
+        assertPositionLocked(false);
+    }
+
+    @Test
+    void refusesToLockPositionInPublishedVersion() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET status = 'PUBLISHED', "
+                        + "published_at = CURRENT_TIMESTAMP WHERE id = ?",
+                fixture.versionId());
+
+        assertThatThrownBy(() -> adapter.setPositionLocked(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        originalPositionId(),
+                        true)
+                .block(TIMEOUT))
+                .isInstanceOf(FormationLifecycleConflictException.class);
+
+        assertPositionLocked(false);
+    }
+
+    @Test
+    void replacementPreservesLocksAndRejectsMovingLockedPositionsBeforeWrites() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Cambio rechazado",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT))
+                .isInstanceOf(FormationPositionLockedException.class);
+
+        assertOriginalPositionRemains();
+        assertPositionLocked(true);
+
+        DraftDetails result = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Etiqueta actualizada",
+                                new BigDecimal("10.000"),
+                                new BigDecimal("20.000"))))
+                .block(TIMEOUT);
+
+        assertThat(result.positions()).singleElement()
+                .satisfies(position -> {
+                    assertThat(position.getPositionLabel())
+                            .isEqualTo("Etiqueta actualizada");
+                    assertThat(position.isLocked()).isTrue();
+                });
+    }
+
+    @Test
+    void replacementCanRemoveLockedPositionAndNewPositionsStartUnlocked() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        DraftDetails emptied = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of())
+                .block(TIMEOUT);
+
+        assertThat(emptied.positions()).isEmpty();
+
+        Long newSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante desbloqueado " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                newSingerId,
+                fixture.divisionId());
+
+        DraftDetails withNewPosition = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                newSingerId,
+                                "Nueva posición",
+                                new BigDecimal("40"),
+                                new BigDecimal("50"))))
+                .block(TIMEOUT);
+
+        assertThat(withNewPosition.positions()).singleElement()
+                .satisfies(position -> assertThat(position.isLocked()).isFalse());
+    }
+
+    @Test
     void replacesAllDraftPositionsAndPersistsFreshSnapshots() {
         Long firstSingerId = fixture.singerId();
         Long secondSingerId = insertSinger(
@@ -93,6 +263,8 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat(result.positions())
                 .extracting(position -> position.getSingerId())
                 .containsExactlyInAnyOrder(firstSingerId, secondSingerId);
+        assertThat(result.positions())
+                .allSatisfy(position -> assertThat(position.isLocked()).isFalse());
 
         assertThat(result.positions())
                 .extracting(position -> position.getPositionLabel())
@@ -523,6 +695,10 @@ class FormationCatalogPersistenceAdapterTests {
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
         jdbcTemplate.update(
+                "UPDATE formation_positions SET locked = TRUE "
+                        + "WHERE formation_version_id = ?",
+                fixture.versionId());
+        jdbcTemplate.update(
                 "UPDATE formation_versions "
                         + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
                         + "WHERE id = ?",
@@ -564,7 +740,7 @@ class FormationCatalogPersistenceAdapterTests {
 
         Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
                 "SELECT singer_id, singer_name_snapshot, voice_part_snapshot, "
-                        + "position_label, x_coordinate, y_coordinate "
+                        + "position_label, x_coordinate, y_coordinate, locked "
                         + "FROM formation_positions WHERE id = ?",
                 copiedPositionId);
 
@@ -577,6 +753,7 @@ class FormationCatalogPersistenceAdapterTests {
                 .isEqualByComparingTo("10.000");
         assertThat((BigDecimal) copiedPosition.get("y_coordinate"))
                 .isEqualByComparingTo("20.000");
+        assertThat(copiedPosition.get("locked")).isEqualTo(false);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM formation_positions WHERE formation_version_id = ?",
@@ -1054,6 +1231,23 @@ class FormationCatalogPersistenceAdapterTests {
                 .isEqualByComparingTo("10.000");
         assertThat(new BigDecimal(position.get("y_coordinate").toString()))
                 .isEqualByComparingTo("20.000");
+    }
+
+    private void assertPositionLocked(boolean expected) {
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT locked FROM formation_positions WHERE id = ?",
+                Boolean.class,
+                originalPositionId()))
+                .isEqualTo(expected);
+    }
+
+    private Long originalPositionId() {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Long.class,
+                fixture.versionId(),
+                fixture.singerId());
     }
 
     private int countPositions(Long versionId) {

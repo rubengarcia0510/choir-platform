@@ -1,6 +1,7 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
 import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
@@ -41,6 +42,22 @@ class FormationPlanningServiceTests {
         assertThat(positions.get(0).voicePart()).isEqualTo("SOPRANO");
         assertThat(positions.get(0).voiceSectionName()).isEqualTo("Sopranos");
         assertThat(positions.get(0).divisionNumber()).isEqualTo(2);
+        assertThat(positions.get(0).locked()).isFalse();
+    }
+
+    @Test
+    void exposesLockedStateForFormationPosition() {
+        Fixture f = fixture("DRAFT");
+        jdbc.update(
+                "UPDATE formation_positions SET locked = TRUE WHERE id = ?",
+                f.positionId());
+
+        var positions = service.positionsForFormationVersion(f.versionId())
+                .collectList()
+                .block(Duration.ofSeconds(10));
+
+        assertThat(positions).hasSize(1);
+        assertThat(positions.get(0).locked()).isTrue();
     }
 
     @Test
@@ -87,6 +104,67 @@ class FormationPlanningServiceTests {
                 "SELECT position_label FROM formation_positions WHERE id = ?",
                 String.class, f.positionId()))
                 .isEqualTo("Posición original");
+    }
+
+    @Test
+    void rejectsUpdatesToLockedDraftPosition() {
+        Fixture f = fixture("DRAFT");
+        jdbc.update(
+                "UPDATE formation_positions SET locked = TRUE WHERE id = ?",
+                f.positionId());
+
+        assertThatThrownBy(() -> service.updateDraftPosition(
+                f.positionId(),
+                "Cambio no permitido",
+                new BigDecimal("8.000"),
+                new BigDecimal("9.000"))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(FormationPositionLockedException.class)
+                .hasMessage("No se puede mover una posición bloqueada");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT position_label FROM formation_positions WHERE id = ?",
+                String.class, f.positionId()))
+                .isEqualTo("Posición original");
+        assertThat(jdbc.queryForObject(
+                "SELECT x_coordinate FROM formation_positions WHERE id = ?",
+                BigDecimal.class, f.positionId()))
+                .isEqualByComparingTo("1.000");
+        assertThat(jdbc.queryForObject(
+                "SELECT y_coordinate FROM formation_positions WHERE id = ?",
+                BigDecimal.class, f.positionId()))
+                .isEqualByComparingTo("2.000");
+
+        service.updateDraftPosition(
+                f.positionId(),
+                "Etiqueta permitida",
+                new BigDecimal("1.000"),
+                new BigDecimal("2.000"))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT position_label FROM formation_positions WHERE id = ?",
+                String.class, f.positionId()))
+                .isEqualTo("Etiqueta permitida");
+
+        jdbc.update(
+                "UPDATE formation_positions SET locked = FALSE WHERE id = ?",
+                f.positionId());
+        service.updateDraftPosition(
+                f.positionId(),
+                "Posición desbloqueada",
+                new BigDecimal("8.000"),
+                new BigDecimal("9.000"))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(jdbc.queryForObject(
+                "SELECT x_coordinate FROM formation_positions WHERE id = ?",
+                BigDecimal.class, f.positionId()))
+                .isEqualByComparingTo("8.000");
+        assertThat(jdbc.queryForObject(
+                "SELECT y_coordinate FROM formation_positions WHERE id = ?",
+                BigDecimal.class, f.positionId()))
+                .isEqualByComparingTo("9.000");
     }
 
     @Test
