@@ -73,7 +73,14 @@ coreuta de la formación ni incluirlo en otra.
 - Validación local H2: `compileTestJava` y las suites
   `FormationCatalogPersistenceAdapterTests` (21), `FormationVersionLifecycleIntegrationTests` (8),
   `FormationPlanningServiceTests` (9) y `FormationDraftControllerTests` (6)
-  pasaron; 44 pruebas en total.
+- pasaron; 44 pruebas en total. Además, el caso solicitado en el issue GitHub
+  [#84](https://github.com/rubengarcia0510/choir-platform/issues/84),
+  `serializesConcurrentLockAndPositionUpdateWithoutPartialChanges`, pasó
+  individualmente en H2. Verifica los dos órdenes serializados, la integridad
+  de la actualización completa y el rechazo de movimientos posteriores al
+  bloqueo.
+- Pendiente para esa prueba: confirmación en PostgreSQL mediante el CI del PR
+  [#83](https://github.com/rubengarcia0510/choir-platform/pull/83).
 - Pendiente: fase 7 en el repositorio separado `choir-platform-web`; no está
   disponible en este workspace.
 - Pendiente para cierre: ejecutar CI, incluida la suite PostgreSQL, y completar

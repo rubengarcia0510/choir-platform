@@ -9,12 +9,18 @@ import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.PositionUpdate;
+import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +38,9 @@ class FormationCatalogPersistenceAdapterTests {
 
     @Autowired
     private FormationDuplicationPort duplicationPort;
+
+    @Autowired
+    private FormationPlanningPersistencePort planningPersistence;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -219,6 +228,80 @@ class FormationCatalogPersistenceAdapterTests {
 
         assertThat(withNewPosition.positions()).singleElement()
                 .satisfies(position -> assertThat(position.isLocked()).isFalse());
+    }
+
+    @Test
+    void serializesConcurrentLockAndPositionUpdateWithoutPartialChanges()
+            throws Exception {
+        Long positionId = originalPositionId();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            CompletableFuture<Void> lock = CompletableFuture.runAsync(() -> {
+                ready.countDown();
+                awaitStart(start);
+                adapter.setPositionLocked(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        positionId,
+                        true)
+                        .block(TIMEOUT);
+            }, executor);
+
+            CompletableFuture<Boolean> update = CompletableFuture.supplyAsync(() -> {
+                ready.countDown();
+                awaitStart(start);
+                try {
+                    planningPersistence.updateDraftPosition(
+                            positionId,
+                            "Actualización concurrente",
+                            new BigDecimal("30.000"),
+                            new BigDecimal("40.000"))
+                            .block(TIMEOUT);
+                    return true;
+                } catch (FormationPositionLockedException expected) {
+                    return false;
+                }
+            }, executor);
+
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            CompletableFuture.allOf(lock, update).get(30, TimeUnit.SECONDS);
+
+            PositionState stateAfterRace = positionState(positionId);
+            assertThat(stateAfterRace.locked()).isTrue();
+            if (update.join()) {
+                assertThat(stateAfterRace)
+                        .isEqualTo(new PositionState(
+                                true,
+                                "Actualización concurrente",
+                                new BigDecimal("30.000"),
+                                new BigDecimal("40.000")));
+            } else {
+                assertThat(stateAfterRace)
+                        .isEqualTo(new PositionState(
+                                true,
+                                "Posición anterior",
+                                new BigDecimal("10.000"),
+                                new BigDecimal("20.000")));
+            }
+
+            assertThatThrownBy(() -> planningPersistence.updateDraftPosition(
+                    positionId,
+                    "Actualización posterior",
+                    new BigDecimal("80.000"),
+                    new BigDecimal("90.000"))
+                    .block(TIMEOUT))
+                    .isInstanceOf(FormationPositionLockedException.class);
+            assertThat(positionState(positionId)).isEqualTo(stateAfterRace);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -1249,6 +1332,41 @@ class FormationCatalogPersistenceAdapterTests {
                 fixture.versionId(),
                 fixture.singerId());
     }
+
+    private PositionState positionState(Long positionId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT locked, position_label, x_coordinate, y_coordinate
+                FROM formation_positions
+                WHERE id = ?
+                """,
+                (resultSet, rowNumber) -> new PositionState(
+                        resultSet.getBoolean("locked"),
+                        resultSet.getString("position_label"),
+                        resultSet.getBigDecimal("x_coordinate"),
+                        resultSet.getBigDecimal("y_coordinate")),
+                positionId);
+    }
+
+    private static void awaitStart(CountDownLatch start) {
+        try {
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(
+                        "No se liberó la barrera de bloqueo y actualización");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrumpido al iniciar las operaciones concurrentes",
+                    exception);
+        }
+    }
+
+    private record PositionState(
+            boolean locked,
+            String label,
+            BigDecimal x,
+            BigDecimal y) {}
 
     private int countPositions(Long versionId) {
         return jdbcTemplate.queryForObject(
