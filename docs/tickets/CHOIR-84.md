@@ -83,6 +83,8 @@ coreuta de la formación ni incluirlo en otra.
   [#83](https://github.com/rubengarcia0510/choir-platform/pull/83).
 - Pendiente: fase 7 en el repositorio separado `choir-platform-web`; no está
   disponible en este workspace.
-- Pendiente para cierre: ejecutar CI, incluida la suite PostgreSQL, y completar
-  la integración del frontend antes de considerar terminado el alcance total
-  del ticket.
+- El CI del PR [#83](https://github.com/rubengarcia0510/choir-platform/pull/83)
+  para el commit `56c8183` pasó en H2 y PostgreSQL, incluida la prueba de
+  concurrencia agregada por el issue GitHub #84.
+- Pendiente para cierre: completar la integración del frontend antes de
+  considerar terminado el alcance total del ticket.
