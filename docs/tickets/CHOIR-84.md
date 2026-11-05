@@ -50,8 +50,12 @@ coreuta de la formación ni incluirlo en otra.
    autorización/aislamiento de coro, formación y versión, restricciones de
    estado, movimiento individual y reemplazo completo, eliminación, altas
    nuevas, herencia/duplicación, rollback y carrera entre bloqueo y movimiento.
-   Mantener JDBC limitado a migraciones y pruebas; las escrituras runtime
-   siguen en R2DBC.
+   La prueba de contención usa PostgreSQL real: una transacción JDBC de prueba
+   mantiene bloqueada la fila de versión, y `pg_stat_activity` confirma que
+   ambas operaciones esperan su `FOR UPDATE` antes de liberar la transacción.
+   Dos escenarios encolan primero el movimiento y primero el bloqueo. Mantener
+   JDBC limitado a migraciones y pruebas; las escrituras runtime siguen en
+   R2DBC.
 7. **Frontend (`choir-platform-web`):** en su repositorio y rama de ticket,
    extender el modelo/API/editor, indicador y acción accesible de lock,
    impedir drag, refrescar tras mutaciones y probar persistencia tras guardar y
@@ -70,21 +74,14 @@ coreuta de la formación ni incluirlo en otra.
 - Completadas en este repositorio: fases 1 a 6. El backend persiste y expone el
   bloqueo, autoriza las mutaciones, impide movimientos protegidos, conserva el
   estado al versionar y lo reinicia al duplicar otra formación.
-- Validación local H2: `compileTestJava` y las suites
-  `FormationCatalogPersistenceAdapterTests` (21), `FormationVersionLifecycleIntegrationTests` (8),
-  `FormationPlanningServiceTests` (9) y `FormationDraftControllerTests` (6)
-- pasaron; 44 pruebas en total. Además, el caso solicitado en el issue GitHub
-  [#84](https://github.com/rubengarcia0510/choir-platform/issues/84),
-  `serializesConcurrentLockAndPositionUpdateWithoutPartialChanges`, pasó
-  individualmente en H2. Verifica los dos órdenes serializados, la integridad
-  de la actualización completa y el rechazo de movimientos posteriores al
-  bloqueo.
-- Pendiente para esa prueba: confirmación en PostgreSQL mediante el CI del PR
-  [#83](https://github.com/rubengarcia0510/choir-platform/pull/83).
+- En respuesta al issue GitHub
+  [#85](https://github.com/rubengarcia0510/choir-platform/issues/85), la prueba
+  ahora observa con `pg_stat_activity` y `pg_blocking_pids` la espera real de
+  ambas consultas, ejercita primero el movimiento y luego el bloqueo y
+  viceversa, y comprueba el estado persistido. Se omite explícitamente en H2,
+  que no ofrece la misma semántica transaccional ni las vistas de PostgreSQL.
+- Pendiente: ejecutar el CI H2/PostgreSQL sobre esta corrección determinista.
 - Pendiente: fase 7 en el repositorio separado `choir-platform-web`; no está
   disponible en este workspace.
-- El CI del PR [#83](https://github.com/rubengarcia0510/choir-platform/pull/83)
-  para el commit `56c8183` pasó en H2 y PostgreSQL, incluida la prueba de
-  concurrencia agregada por el issue GitHub #84.
 - Pendiente para cierre: completar la integración del frontend antes de
   considerar terminado el alcance total del ticket.

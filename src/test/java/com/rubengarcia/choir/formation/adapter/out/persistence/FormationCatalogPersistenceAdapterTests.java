@@ -10,19 +10,23 @@ import com.rubengarcia.choir.formation.application.port.out.FormationDuplication
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.PositionUpdate;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,6 +48,9 @@ class FormationCatalogPersistenceAdapterTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     private final List<Long> directorIds = new ArrayList<>();
 
@@ -230,52 +237,63 @@ class FormationCatalogPersistenceAdapterTests {
                 .satisfies(position -> assertThat(position.isLocked()).isFalse());
     }
 
-    @Test
-    void serializesConcurrentLockAndPositionUpdateWithoutPartialChanges()
+    @RepeatedTest(3)
+    void serializesConcurrentPositionUpdateBeforeLock()
             throws Exception {
+        assertLockAndUpdateSerialization(true);
+    }
+
+    @RepeatedTest(3)
+    void serializesLockBeforeConcurrentPositionUpdate() throws Exception {
+        assertLockAndUpdateSerialization(false);
+    }
+
+    private void assertLockAndUpdateSerialization(boolean updateFirst)
+            throws Exception {
+        Assumptions.assumeTrue(
+                isPostgresql(),
+                "La contención de SELECT FOR UPDATE se valida en PostgreSQL");
+
         Long positionId = originalPositionId();
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        try {
-            CompletableFuture<Void> lock = CompletableFuture.runAsync(() -> {
-                ready.countDown();
-                awaitStart(start);
-                adapter.setPositionLocked(
-                        fixture.choirId(),
-                        fixture.concertId(),
-                        fixture.repertoireItemId(),
-                        fixture.formationId(),
-                        fixture.versionId(),
-                        positionId,
-                        true)
-                        .block(TIMEOUT);
-            }, executor);
-
-            CompletableFuture<Boolean> update = CompletableFuture.supplyAsync(() -> {
-                ready.countDown();
-                awaitStart(start);
-                try {
-                    planningPersistence.updateDraftPosition(
-                            positionId,
-                            "Actualización concurrente",
-                            new BigDecimal("30.000"),
-                            new BigDecimal("40.000"))
-                            .block(TIMEOUT);
-                    return true;
-                } catch (FormationPositionLockedException expected) {
-                    return false;
+        try (Connection blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            int blockerPid = backendPid(blocker);
+            try (var lockVersion = blocker.prepareStatement(
+                    "SELECT id FROM formation_versions WHERE id = ? FOR UPDATE")) {
+                lockVersion.setLong(1, fixture.versionId());
+                try (var result = lockVersion.executeQuery()) {
+                    assertThat(result.next()).isTrue();
                 }
-            }, executor);
+            }
 
-            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-            start.countDown();
+            CompletableFuture<Boolean> update = null;
+            CompletableFuture<Void> lock = null;
+
+            if (updateFirst) {
+                update = startPositionUpdate(positionId, executor);
+                int firstWaitingPid =
+                        awaitBlockedOperation(blockerPid, "%SELECT id, status%");
+                lock = startPositionLock(positionId, executor);
+                assertThat(awaitBlockedOperation("%version_number%"))
+                        .isNotEqualTo(firstWaitingPid);
+            } else {
+                lock = startPositionLock(positionId, executor);
+                int firstWaitingPid =
+                        awaitBlockedOperation(blockerPid, "%version_number%");
+                update = startPositionUpdate(positionId, executor);
+                assertThat(awaitBlockedOperation("%SELECT id, status%"))
+                        .isNotEqualTo(firstWaitingPid);
+            }
+
+            blocker.commit();
             CompletableFuture.allOf(lock, update).get(30, TimeUnit.SECONDS);
 
+            assertThat(update.join()).isEqualTo(updateFirst);
             PositionState stateAfterRace = positionState(positionId);
             assertThat(stateAfterRace.locked()).isTrue();
-            if (update.join()) {
+            if (updateFirst) {
                 assertThat(stateAfterRace)
                         .isEqualTo(new PositionState(
                                 true,
@@ -301,7 +319,104 @@ class FormationCatalogPersistenceAdapterTests {
             assertThat(positionState(positionId)).isEqualTo(stateAfterRace);
         } finally {
             executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    private CompletableFuture<Boolean> startPositionUpdate(
+            Long positionId,
+            ExecutorService executor) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                planningPersistence.updateDraftPosition(
+                        positionId,
+                        "Actualización concurrente",
+                        new BigDecimal("30.000"),
+                        new BigDecimal("40.000"))
+                        .block(TIMEOUT);
+                return true;
+            } catch (FormationPositionLockedException expected) {
+                return false;
+            }
+        }, executor);
+    }
+
+    private CompletableFuture<Void> startPositionLock(
+            Long positionId,
+            ExecutorService executor) {
+        return CompletableFuture.runAsync(() ->
+                adapter.setPositionLocked(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        positionId,
+                        true)
+                        .block(TIMEOUT), executor);
+    }
+
+    private boolean isPostgresql() throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            return "PostgreSQL".equalsIgnoreCase(
+                    connection.getMetaData().getDatabaseProductName());
+        }
+    }
+
+    private int backendPid(Connection connection) throws SQLException {
+        try (var statement = connection.createStatement();
+             var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+            result.next();
+            return result.getInt(1);
+        }
+    }
+
+    private int awaitBlockedOperation(int blockerPid, String queryPattern) {
+        return awaitBlockedOperation(
+                """
+                AND CAST(? AS integer) = ANY(pg_blocking_pids(pid))
+                """,
+                blockerPid,
+                queryPattern);
+    }
+
+    private int awaitBlockedOperation(String queryPattern) {
+        return awaitBlockedOperation(
+                "AND cardinality(pg_blocking_pids(pid)) > 0",
+                null,
+                queryPattern);
+    }
+
+    private int awaitBlockedOperation(
+            String blockerCondition,
+            Integer blockerPid,
+            String queryPattern) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            String sql = """
+                    SELECT pid
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND wait_event_type = 'Lock'
+                    """ + blockerCondition + " AND query ILIKE ?";
+            List<Integer> blockedPids = blockerPid == null
+                    ? jdbcTemplate.query(
+                            sql,
+                            (resultSet, rowNumber) -> resultSet.getInt("pid"),
+                            queryPattern)
+                    : jdbcTemplate.query(
+                            sql,
+                            (resultSet, rowNumber) -> resultSet.getInt("pid"),
+                            blockerPid,
+                            queryPattern);
+            if (!blockedPids.isEmpty()) {
+                return blockedPids.get(0);
+            }
+            Thread.yield();
+        }
+        throw new AssertionError(
+                "La operación no quedó esperando el lock de versión: "
+                        + queryPattern);
     }
 
     @Test
@@ -1346,20 +1461,6 @@ class FormationCatalogPersistenceAdapterTests {
                         resultSet.getBigDecimal("x_coordinate"),
                         resultSet.getBigDecimal("y_coordinate")),
                 positionId);
-    }
-
-    private static void awaitStart(CountDownLatch start) {
-        try {
-            if (!start.await(10, TimeUnit.SECONDS)) {
-                throw new IllegalStateException(
-                        "No se liberó la barrera de bloqueo y actualización");
-            }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(
-                    "Interrumpido al iniciar las operaciones concurrentes",
-                    exception);
-        }
     }
 
     private record PositionState(
