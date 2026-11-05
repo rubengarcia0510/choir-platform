@@ -80,7 +80,12 @@ coreuta de la formación ni incluirlo en otra.
   ambas consultas, ejercita primero el movimiento y luego el bloqueo y
   viceversa, y comprueba el estado persistido. Se omite explícitamente en H2,
   que no ofrece la misma semántica transaccional ni las vistas de PostgreSQL.
-- Pendiente: ejecutar el CI H2/PostgreSQL sobre esta corrección determinista.
+- Validación local H2: `compileTestJava` y
+  `FormationCatalogPersistenceAdapterTests` pasaron (21 pruebas ejecutadas;
+  las seis ejecuciones PostgreSQL-específicas fueron omitidas).
+- CI del PR [#83](https://github.com/rubengarcia0510/choir-platform/pull/83)
+  para el commit `cedfe02` pasó en H2 y PostgreSQL. Las dos órdenes de
+  concurrencia se ejecutaron tres veces cada una contra PostgreSQL real.
 - Pendiente: fase 7 en el repositorio separado `choir-platform-web`; no está
   disponible en este workspace.
 - Pendiente para cierre: completar la integración del frontend antes de
