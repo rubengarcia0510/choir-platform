@@ -69,7 +69,8 @@ inicial, además del nombre, la descripción, el número de versión y su estado
 Devuelve los datos de la formación, su versión de borrador y sus posiciones.
 
 Cada posición expone el identificador del cantante, los datos de identidad
-vocal guardados como snapshot, la etiqueta y las coordenadas.
+vocal guardados como snapshot, la etiqueta, las coordenadas y el campo
+booleano `locked`.
 
 Respuestas:
 
@@ -111,6 +112,10 @@ Reglas de cada posición:
 - No se admiten elementos nulos ni identificadores de cantante repetidos.
 - "positions" es obligatoria. Una lista vacía es válida y permite quitar
   todas las posiciones del borrador.
+- El cuerpo no acepta `locked`: las posiciones existentes conservan su estado
+  al reemplazarse, y las nuevas comienzan desbloqueadas.
+- Si una posición bloqueada se mantiene en la lista, sus coordenadas deben
+  permanecer iguales. Se permite cambiar su etiqueta o quitarla de la lista.
 
 Respuestas:
 
@@ -120,7 +125,39 @@ Respuestas:
 - "404 Not Found": la formación o versión no pertenece a la inclusión
   del repertorio solicitada o no es accesible para el director.
 - "409 Conflict": la versión no se encuentra en un estado que permita
-  modificar sus posiciones.
+  modificar sus posiciones, o el reemplazo intenta mover una posición
+  bloqueada.
+
+### Bloquear y desbloquear una posición
+
+`PUT {base}/formations/{formationId}/versions/{versionId}/positions/{positionId}/lock`
+
+Bloquea las coordenadas de la posición indicada en una versión `DRAFT`.
+Repetir la solicitud es idempotente.
+
+`DELETE {base}/formations/{formationId}/versions/{versionId}/positions/{positionId}/lock`
+
+Desbloquea la posición. Después de desbloquearla, puede cambiarse mediante la
+edición individual o el reemplazo completo del borrador. Repetir la solicitud
+también es idempotente.
+
+Ambas rutas requieren autenticación, protección CSRF y autorización del
+director sobre el coro, concierto e inclusión del repertorio indicados.
+Una posición perteneciente a otra versión o formación no está disponible en
+ese contexto.
+
+Respuestas de ambas operaciones:
+
+- "204 No Content": bloqueo o desbloqueo completado.
+- "400 Bad Request": identificadores inválidos.
+- "401 Unauthorized": falta autenticación válida.
+- "404 Not Found": la formación, versión o posición no pertenece a la
+  inclusión indicada o no está disponible para el director.
+- "409 Conflict": la versión no está en estado `DRAFT`.
+
+La edición individual de una posición bloqueada responde "409 Conflict" si
+las nuevas coordenadas son distintas; conservar sus coordenadas y actualizar
+su etiqueta sigue permitido.
 
 Autorización y aislamiento entre coros
 

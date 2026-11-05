@@ -19,3 +19,74 @@ coreuta de la formación ni incluirlo en otra.
 - El director puede desbloquearla y luego moverla.
 - El backend valida el bloqueo; no depende solo del frontend.
 - Se respetan las autorizaciones existentes.
+
+## Plan de implementación
+
+1. **Persistencia y dominio:** confirmar la siguiente versión Flyway disponible
+   (sin asumir V19), agregar `formation_positions.locked NOT NULL DEFAULT
+   FALSE` en las variantes de migración que use el proyecto, e incorporar el
+   campo en `FormationPosition`, entidad y mapper. Las posiciones históricas
+   deben migrar desbloqueadas.
+2. **Puerto y operaciones de aplicación:** definir operaciones cohesivas de
+   bloqueo/desbloqueo para una posición de un borrador identificado por coro,
+   formación y versión. El servicio conserva la autorización del director,
+   valida el contexto completo, solo permite versiones `DRAFT` y hace ambas
+   operaciones idempotentes.
+3. **Adaptador HTTP:** exponer bloqueo/desbloqueo con el estilo de rutas y
+   respuestas existente. La lectura de posiciones incluye `locked`; errores de
+   autorización, contexto inválido y versión publicada mantienen los códigos
+   HTTP del proyecto.
+4. **Protección persistente de movimientos:** actualizar el guardado completo y
+   la edición individual en los adaptadores. Preservar el bloqueo al guardar
+   posiciones existentes, rechazar coordenadas distintas con conflicto, crear
+   nuevas desbloqueadas y permitir omitir/eliminar una posición bloqueada. El
+   conflicto del guardado completo debe ocurrir antes de cualquier escritura.
+   Coordinar el cambio de coordenadas con el estado `locked` mediante escritura
+   condicional/transacción para cerrar carreras entre lock y move.
+5. **Ciclo de vida de versiones:** al crear un borrador desde una versión
+   publicada de la misma formación, copiar el bloqueo; una duplicación hacia
+   otra formación no hereda ese estado y comienza desbloqueada.
+6. **Pruebas backend:** cubrir migración default, DTO, idempotencia,
+   autorización/aislamiento de coro, formación y versión, restricciones de
+   estado, movimiento individual y reemplazo completo, eliminación, altas
+   nuevas, herencia/duplicación, rollback y carrera entre bloqueo y movimiento.
+   La prueba de contención usa PostgreSQL real: una transacción JDBC de prueba
+   mantiene bloqueada la fila de versión, y `pg_stat_activity` confirma que
+   ambas operaciones esperan su `FOR UPDATE` antes de liberar la transacción.
+   Dos escenarios encolan primero el movimiento y primero el bloqueo. Mantener
+   JDBC limitado a migraciones y pruebas; las escrituras runtime siguen en
+   R2DBC.
+7. **Frontend (`choir-platform-web`):** en su repositorio y rama de ticket,
+   extender el modelo/API/editor, indicador y acción accesible de lock,
+   impedir drag, refrescar tras mutaciones y probar persistencia tras guardar y
+   recargar. Integrar el cambio solo cuando los contratos backend estén
+   definidos y disponibles.
+8. **Cierre:** ejecutar pruebas enfocadas y suites H2/PostgreSQL del backend,
+   pruebas frontend, revisar `git diff --check`, documentar resultados y
+   completar CI antes del PR a `main`.
+
+### Estado de implementación
+
+- Plan derivado del issue GitHub [#82](https://github.com/rubengarcia0510/choir-platform/issues/82);
+  Jira no fue consultado.
+- Rama backend: `feature/CHOIR-84-lock-singer-positions`, creada desde `main`
+  actualizado.
+- Completadas en este repositorio: fases 1 a 6. El backend persiste y expone el
+  bloqueo, autoriza las mutaciones, impide movimientos protegidos, conserva el
+  estado al versionar y lo reinicia al duplicar otra formación.
+- En respuesta al issue GitHub
+  [#85](https://github.com/rubengarcia0510/choir-platform/issues/85), la prueba
+  ahora observa con `pg_stat_activity` y `pg_blocking_pids` la espera real de
+  ambas consultas, ejercita primero el movimiento y luego el bloqueo y
+  viceversa, y comprueba el estado persistido. Se omite explícitamente en H2,
+  que no ofrece la misma semántica transaccional ni las vistas de PostgreSQL.
+- Validación local H2: `compileTestJava` y
+  `FormationCatalogPersistenceAdapterTests` pasaron (21 pruebas ejecutadas;
+  las seis ejecuciones PostgreSQL-específicas fueron omitidas).
+- CI del PR [#83](https://github.com/rubengarcia0510/choir-platform/pull/83)
+  para el commit `cedfe02` pasó en H2 y PostgreSQL. Las dos órdenes de
+  concurrencia se ejecutaron tres veces cada una contra PostgreSQL real.
+- Pendiente: fase 7 en el repositorio separado `choir-platform-web`; no está
+  disponible en este workspace.
+- Pendiente para cierre: completar la integración del frontend antes de
+  considerar terminado el alcance total del ticket.

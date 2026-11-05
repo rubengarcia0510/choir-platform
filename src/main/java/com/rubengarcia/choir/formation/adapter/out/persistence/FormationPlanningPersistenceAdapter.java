@@ -4,11 +4,13 @@ import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionUpdateException;
 import com.rubengarcia.choir.formation.application.exception.PublishedFormationModificationException;
 import java.math.BigDecimal;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -34,7 +36,8 @@ public class FormationPlanningPersistenceAdapter
                        fp.division_number_snapshot,
                        fp.position_label,
                        fp.x_coordinate,
-                       fp.y_coordinate
+                       fp.y_coordinate,
+                       fp.locked
                 FROM formation_positions fp
                 JOIN formation_versions fv ON fv.id = fp.formation_version_id
                 WHERE fv.id = :versionId
@@ -51,7 +54,8 @@ public class FormationPlanningPersistenceAdapter
                         row.get("division_number_snapshot", Integer.class),
                         row.get("position_label", String.class),
                         row.get("x_coordinate", BigDecimal.class),
-                        row.get("y_coordinate", BigDecimal.class)))
+                        row.get("y_coordinate", BigDecimal.class),
+                        Boolean.TRUE.equals(row.get("locked", Boolean.class))))
                 .all();
     }
 
@@ -91,18 +95,73 @@ public class FormationPlanningPersistenceAdapter
     }
 
     @Override
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
     public Mono<Void> updateDraftPosition(
             long positionId,
             String positionLabel,
             BigDecimal xCoordinate,
             BigDecimal yCoordinate) {
+        return findPositionVersionId(positionId)
+                .flatMap(this::lockPositionVersion)
+                .switchIfEmpty(Mono.error(
+                        new FormationPositionNotFoundException(positionId)))
+                .flatMap(version -> {
+                    if (!"DRAFT".equals(version.status())) {
+                        return Mono.error("PUBLISHED".equals(version.status())
+                                ? new PublishedFormationModificationException()
+                                : new FormationPositionUpdateException());
+                    }
+                    return updateDraftPosition(
+                            positionId,
+                            version.id(),
+                            positionLabel,
+                            xCoordinate,
+                            yCoordinate);
+                });
+    }
 
+    private Mono<Long> findPositionVersionId(long positionId) {
+        return database.sql("""
+                SELECT formation_version_id
+                FROM formation_positions
+                WHERE id = :positionId
+                """)
+                .bind("positionId", positionId)
+                .map((row, metadata) -> row.get("formation_version_id", Long.class))
+                .one();
+    }
+
+    private Mono<PositionVersion> lockPositionVersion(long versionId) {
+        return database.sql("""
+                SELECT id, status
+                FROM formation_versions
+                WHERE id = :versionId
+                FOR UPDATE
+                """)
+                .bind("versionId", versionId)
+                .map((row, metadata) -> new PositionVersion(
+                        row.get("id", Long.class),
+                        row.get("status", String.class)))
+                .one();
+    }
+
+    private Mono<Void> updateDraftPosition(
+            long positionId,
+            long versionId,
+            String positionLabel,
+            BigDecimal xCoordinate,
+            BigDecimal yCoordinate) {
         DatabaseClient.GenericExecuteSpec update = database.sql("""
                 UPDATE formation_positions
                 SET position_label = :label,
                     x_coordinate = :x,
                     y_coordinate = :y
                 WHERE id = :positionId
+                  AND formation_version_id = :versionId
+                  AND (
+                      locked = FALSE
+                      OR (x_coordinate = :x AND y_coordinate = :y)
+                  )
                   AND EXISTS (
                       SELECT 1
                       FROM formation_versions fv
@@ -119,34 +178,46 @@ public class FormationPlanningPersistenceAdapter
                 .bind("x", xCoordinate)
                 .bind("y", yCoordinate)
                 .bind("positionId", positionId)
+                .bind("versionId", versionId)
                 .fetch()
                 .rowsUpdated()
                 .flatMap(updated -> {
                     if (updated > 0) {
                         return Mono.<Void>empty();
                     }
-                    return resolveUpdateFailure(positionId);
+                    return resolveUpdateFailure(positionId, versionId);
                 });
     }
 
-    private Mono<Void> resolveUpdateFailure(long positionId) {
+    private Mono<Void> resolveUpdateFailure(long positionId, long versionId) {
         return database.sql("""
-                SELECT fv.status
+                SELECT fv.status, fp.locked
                 FROM formation_positions fp
                 JOIN formation_versions fv ON fv.id = fp.formation_version_id
                 WHERE fp.id = :positionId
+                  AND fp.formation_version_id = :versionId
                 """)
                 .bind("positionId", positionId)
-                .map((row, metadata) -> row.get("status", String.class))
+                .bind("versionId", versionId)
+                .map((row, metadata) -> new PositionState(
+                        row.get("status", String.class),
+                        row.get("locked", Boolean.class)))
                 .one()
-                .<Void>flatMap(status -> {
-                    if ("PUBLISHED".equals(status)) {
+                .<Void>flatMap(state -> {
+                    if ("PUBLISHED".equals(state.status())) {
                         return Mono.error(
                                 new PublishedFormationModificationException());
+                    }
+                    if (state.locked()) {
+                        return Mono.error(new FormationPositionLockedException());
                     }
                     return Mono.error(new FormationPositionUpdateException());
                 })
                 .switchIfEmpty(Mono.error(
                         new FormationPositionNotFoundException(positionId)));
     }
+
+    private record PositionVersion(long id, String status) {}
+
+    private record PositionState(String status, boolean locked) {}
 }

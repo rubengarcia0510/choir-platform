@@ -1,6 +1,11 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
+import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
@@ -126,8 +131,52 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                     repertoireItemId,
                                     versionId,
                                     updates)
-                                    .flatMap(positions -> replacePositions(
-                                            formation, version, positions));
+                                    .flatMap(positions -> preservePositionLocks(
+                                            versionId, positions)
+                                            .flatMap(preserved -> replacePositions(
+                                                    formation, version, preserved)));
+                        }));
+    }
+
+    @Override
+    @Transactional(transactionManager = "connectionFactoryTransactionManager")
+    public Mono<Void> setPositionLocked(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId,
+            boolean locked) {
+        return findForOccurrence(choirId, concertId, repertoireItemId)
+                .filter(formation -> formation.getId().equals(formationId))
+                .next()
+                .switchIfEmpty(Mono.error(new FormationNotFoundException()))
+                .flatMap(formation -> lockVersion(formationId, versionId)
+                        .switchIfEmpty(Mono.error(
+                                new FormationVersionNotFoundException()))
+                        .flatMap(version -> {
+                            if (!"DRAFT".equals(version.getStatus())) {
+                                return Mono.error(new FormationLifecycleConflictException(
+                                        "Solo se pueden bloquear posiciones "
+                                                + "en versiones DRAFT"));
+                            }
+                            return databaseClient.sql("""
+                                            UPDATE formation_positions
+                                            SET locked = :locked
+                                            WHERE id = :positionId
+                                              AND formation_version_id = :versionId
+                                            """)
+                                    .bind("locked", locked)
+                                    .bind("positionId", positionId)
+                                    .bind("versionId", versionId)
+                                    .fetch()
+                                    .rowsUpdated()
+                                    .flatMap(updated -> updated == 1
+                                            ? Mono.<Void>empty()
+                                            : Mono.error(
+                                                    new FormationPositionNotFoundException(
+                                                            positionId)));
                         }));
     }
 
@@ -191,6 +240,35 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                         + " no existe, está inactivo o no pertenece al coro")))
                         .map(snapshot -> toFormationPosition(versionId, update, snapshot)))
                 .collectList();
+    }
+
+    private Mono<List<FormationPosition>> preservePositionLocks(
+            long versionId,
+            List<FormationPosition> replacements) {
+        return formationPositionRepository.findByFormationVersionId(versionId)
+                .map(FormationPersistenceMapper::toDomain)
+                .collectList()
+                .flatMap(existing -> {
+                    var existingBySinger = existing.stream()
+                            .collect(java.util.stream.Collectors.toMap(
+                                    FormationPosition::getSingerId,
+                                    position -> position));
+                    for (FormationPosition replacement : replacements) {
+                        FormationPosition current =
+                                existingBySinger.get(replacement.getSingerId());
+                        if (current == null || !current.isLocked()) {
+                            continue;
+                        }
+                        if (current.getXCoordinate().compareTo(
+                                        replacement.getXCoordinate()) != 0
+                                || current.getYCoordinate().compareTo(
+                                        replacement.getYCoordinate()) != 0) {
+                            return Mono.error(new FormationPositionLockedException());
+                        }
+                        replacement.setLocked(true);
+                    }
+                    return Mono.just(replacements);
+                });
     }
 
     private Mono<InitialPosition> findSingerSnapshot(

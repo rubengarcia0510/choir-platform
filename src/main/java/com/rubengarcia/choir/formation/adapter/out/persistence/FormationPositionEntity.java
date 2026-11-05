@@ -42,6 +42,9 @@ public class FormationPositionEntity {
     @Column("y_coordinate")
     private BigDecimal yCoordinate;
 
+    @Column("locked")
+    private boolean locked;
+
     @Column("created_at")
     private LocalDateTime createdAt;
 
@@ -67,6 +70,8 @@ public class FormationPositionEntity {
     public void setXCoordinate(BigDecimal value) { this.xCoordinate = value; }
     public BigDecimal getYCoordinate() { return yCoordinate; }
     public void setYCoordinate(BigDecimal value) { this.yCoordinate = value; }
+    public boolean isLocked() { return locked; }
+    public void setLocked(boolean value) { this.locked = value; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime value) { this.createdAt = value; }
 }

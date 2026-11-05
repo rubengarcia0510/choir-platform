@@ -166,6 +166,7 @@ public class FormationDuplicationPersistenceAdapter
         copy.setPositionLabel(source.getPositionLabel());
         copy.setXCoordinate(source.getXCoordinate());
         copy.setYCoordinate(source.getYCoordinate());
+        copy.setLocked(false);
         return copy;
     }
 }

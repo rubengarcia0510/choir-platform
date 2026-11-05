@@ -5,6 +5,7 @@ import com.rubengarcia.choir.formation.application.exception.FormationLifecycleC
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationOccurrenceNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionUpdateException;
 import com.rubengarcia.choir.formation.application.exception.FormationSelectionConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
@@ -61,7 +62,8 @@ public class FormationPlanningExceptionHandler {
             FormationLifecycleConflictException.class,
             FormationSelectionConflictException.class,
             PublishedFormationModificationException.class,
-            FormationPositionUpdateException.class
+            FormationPositionUpdateException.class,
+            FormationPositionLockedException.class
     })
     public ProblemDetail handleConflict(RuntimeException exception) {
         return problem(HttpStatus.CONFLICT, CONFLICT_DETAIL);

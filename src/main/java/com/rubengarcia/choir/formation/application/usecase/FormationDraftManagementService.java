@@ -132,6 +132,50 @@ public class FormationDraftManagementService
         });
     }
 
+    @Override
+    public Mono<Void> lockPosition(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId) {
+        return setPositionLocked(
+                email, choirId, concertId, repertoireItemId,
+                formationId, versionId, positionId, true);
+    }
+
+    @Override
+    public Mono<Void> unlockPosition(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId) {
+        return setPositionLocked(
+                email, choirId, concertId, repertoireItemId,
+                formationId, versionId, positionId, false);
+    }
+
+    private Mono<Void> setPositionLocked(
+            String email,
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long versionId,
+            long positionId,
+            boolean locked) {
+        return occurrenceAuthorization.requireOwnedOccurrence(
+                        email, choirId, concertId, repertoireItemId)
+                .then(formationCatalog.setPositionLocked(
+                        choirId, concertId, repertoireItemId,
+                        formationId, versionId, positionId, locked));
+    }
+
     private void validatePositions(
             List<FormationDraftManagementUseCase.PositionUpdate> positions) {
 

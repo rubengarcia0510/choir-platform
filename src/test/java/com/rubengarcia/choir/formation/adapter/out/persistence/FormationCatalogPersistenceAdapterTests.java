@@ -3,18 +3,30 @@ package com.rubengarcia.choir.formation.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.PositionUpdate;
+import com.rubengarcia.choir.formation.application.port.out.FormationPlanningPersistencePort;
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,7 +44,13 @@ class FormationCatalogPersistenceAdapterTests {
     private FormationDuplicationPort duplicationPort;
 
     @Autowired
+    private FormationPlanningPersistencePort planningPersistence;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     private final List<Long> directorIds = new ArrayList<>();
 
@@ -49,6 +67,356 @@ class FormationCatalogPersistenceAdapterTests {
             deleteDirectorData(directorId);
         }
         directorIds.clear();
+    }
+
+    @Test
+    void locksAndUnlocksDraftPositionIdempotently() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        assertPositionLocked(true);
+
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                false)
+                .block(TIMEOUT);
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                false)
+                .block(TIMEOUT);
+
+        assertPositionLocked(false);
+    }
+
+    @Test
+    void refusesToLockPositionInPublishedVersion() {
+        jdbcTemplate.update(
+                "UPDATE formation_versions SET status = 'PUBLISHED', "
+                        + "published_at = CURRENT_TIMESTAMP WHERE id = ?",
+                fixture.versionId());
+
+        assertThatThrownBy(() -> adapter.setPositionLocked(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        originalPositionId(),
+                        true)
+                .block(TIMEOUT))
+                .isInstanceOf(FormationLifecycleConflictException.class);
+
+        assertPositionLocked(false);
+    }
+
+    @Test
+    void replacementPreservesLocksAndRejectsMovingLockedPositionsBeforeWrites() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Cambio rechazado",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT))
+                .isInstanceOf(FormationPositionLockedException.class);
+
+        assertOriginalPositionRemains();
+        assertPositionLocked(true);
+
+        DraftDetails result = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Etiqueta actualizada",
+                                new BigDecimal("10.000"),
+                                new BigDecimal("20.000"))))
+                .block(TIMEOUT);
+
+        assertThat(result.positions()).singleElement()
+                .satisfies(position -> {
+                    assertThat(position.getPositionLabel())
+                            .isEqualTo("Etiqueta actualizada");
+                    assertThat(position.isLocked()).isTrue();
+                });
+    }
+
+    @Test
+    void replacementCanRemoveLockedPositionAndNewPositionsStartUnlocked() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        DraftDetails emptied = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of())
+                .block(TIMEOUT);
+
+        assertThat(emptied.positions()).isEmpty();
+
+        Long newSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante desbloqueado " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                newSingerId,
+                fixture.divisionId());
+
+        DraftDetails withNewPosition = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                newSingerId,
+                                "Nueva posición",
+                                new BigDecimal("40"),
+                                new BigDecimal("50"))))
+                .block(TIMEOUT);
+
+        assertThat(withNewPosition.positions()).singleElement()
+                .satisfies(position -> assertThat(position.isLocked()).isFalse());
+    }
+
+    @RepeatedTest(3)
+    void serializesConcurrentPositionUpdateBeforeLock()
+            throws Exception {
+        assertLockAndUpdateSerialization(true);
+    }
+
+    @RepeatedTest(3)
+    void serializesLockBeforeConcurrentPositionUpdate() throws Exception {
+        assertLockAndUpdateSerialization(false);
+    }
+
+    private void assertLockAndUpdateSerialization(boolean updateFirst)
+            throws Exception {
+        Assumptions.assumeTrue(
+                isPostgresql(),
+                "La contención de SELECT FOR UPDATE se valida en PostgreSQL");
+
+        Long positionId = originalPositionId();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try (Connection blocker = dataSource.getConnection()) {
+            blocker.setAutoCommit(false);
+            int blockerPid = backendPid(blocker);
+            try (var lockVersion = blocker.prepareStatement(
+                    "SELECT id FROM formation_versions WHERE id = ? FOR UPDATE")) {
+                lockVersion.setLong(1, fixture.versionId());
+                try (var result = lockVersion.executeQuery()) {
+                    assertThat(result.next()).isTrue();
+                }
+            }
+
+            CompletableFuture<Boolean> update = null;
+            CompletableFuture<Void> lock = null;
+
+            if (updateFirst) {
+                update = startPositionUpdate(positionId, executor);
+                int firstWaitingPid =
+                        awaitBlockedOperation(blockerPid, "%SELECT id, status%");
+                lock = startPositionLock(positionId, executor);
+                assertThat(awaitBlockedOperation("%version_number%"))
+                        .isNotEqualTo(firstWaitingPid);
+            } else {
+                lock = startPositionLock(positionId, executor);
+                int firstWaitingPid =
+                        awaitBlockedOperation(blockerPid, "%version_number%");
+                update = startPositionUpdate(positionId, executor);
+                assertThat(awaitBlockedOperation("%SELECT id, status%"))
+                        .isNotEqualTo(firstWaitingPid);
+            }
+
+            blocker.commit();
+            CompletableFuture.allOf(lock, update).get(30, TimeUnit.SECONDS);
+
+            assertThat(update.join()).isEqualTo(updateFirst);
+            PositionState stateAfterRace = positionState(positionId);
+            assertThat(stateAfterRace.locked()).isTrue();
+            if (updateFirst) {
+                assertThat(stateAfterRace)
+                        .isEqualTo(new PositionState(
+                                true,
+                                "Actualización concurrente",
+                                new BigDecimal("30.000"),
+                                new BigDecimal("40.000")));
+            } else {
+                assertThat(stateAfterRace)
+                        .isEqualTo(new PositionState(
+                                true,
+                                "Posición anterior",
+                                new BigDecimal("10.000"),
+                                new BigDecimal("20.000")));
+            }
+
+            assertThatThrownBy(() -> planningPersistence.updateDraftPosition(
+                    positionId,
+                    "Actualización posterior",
+                    new BigDecimal("80.000"),
+                    new BigDecimal("90.000"))
+                    .block(TIMEOUT))
+                    .isInstanceOf(FormationPositionLockedException.class);
+            assertThat(positionState(positionId)).isEqualTo(stateAfterRace);
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private CompletableFuture<Boolean> startPositionUpdate(
+            Long positionId,
+            ExecutorService executor) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                planningPersistence.updateDraftPosition(
+                        positionId,
+                        "Actualización concurrente",
+                        new BigDecimal("30.000"),
+                        new BigDecimal("40.000"))
+                        .block(TIMEOUT);
+                return true;
+            } catch (FormationPositionLockedException expected) {
+                return false;
+            }
+        }, executor);
+    }
+
+    private CompletableFuture<Void> startPositionLock(
+            Long positionId,
+            ExecutorService executor) {
+        return CompletableFuture.runAsync(() ->
+                adapter.setPositionLocked(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        positionId,
+                        true)
+                        .block(TIMEOUT), executor);
+    }
+
+    private boolean isPostgresql() throws SQLException {
+        try (Connection connection = dataSource.getConnection()) {
+            return "PostgreSQL".equalsIgnoreCase(
+                    connection.getMetaData().getDatabaseProductName());
+        }
+    }
+
+    private int backendPid(Connection connection) throws SQLException {
+        try (var statement = connection.createStatement();
+             var result = statement.executeQuery("SELECT pg_backend_pid()")) {
+            result.next();
+            return result.getInt(1);
+        }
+    }
+
+    private int awaitBlockedOperation(int blockerPid, String queryPattern) {
+        return awaitBlockedOperation(
+                """
+                AND CAST(? AS integer) = ANY(pg_blocking_pids(pid))
+                """,
+                blockerPid,
+                queryPattern);
+    }
+
+    private int awaitBlockedOperation(String queryPattern) {
+        return awaitBlockedOperation(
+                "AND cardinality(pg_blocking_pids(pid)) > 0",
+                null,
+                queryPattern);
+    }
+
+    private int awaitBlockedOperation(
+            String blockerCondition,
+            Integer blockerPid,
+            String queryPattern) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            String sql = """
+                    SELECT pid
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND wait_event_type = 'Lock'
+                    """ + blockerCondition + " AND query ILIKE ?";
+            List<Integer> blockedPids = blockerPid == null
+                    ? jdbcTemplate.query(
+                            sql,
+                            (resultSet, rowNumber) -> resultSet.getInt("pid"),
+                            queryPattern)
+                    : jdbcTemplate.query(
+                            sql,
+                            (resultSet, rowNumber) -> resultSet.getInt("pid"),
+                            blockerPid,
+                            queryPattern);
+            if (!blockedPids.isEmpty()) {
+                return blockedPids.get(0);
+            }
+            Thread.yield();
+        }
+        throw new AssertionError(
+                "La operación no quedó esperando el lock de versión: "
+                        + queryPattern);
     }
 
     @Test
@@ -93,6 +461,8 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat(result.positions())
                 .extracting(position -> position.getSingerId())
                 .containsExactlyInAnyOrder(firstSingerId, secondSingerId);
+        assertThat(result.positions())
+                .allSatisfy(position -> assertThat(position.isLocked()).isFalse());
 
         assertThat(result.positions())
                 .extracting(position -> position.getPositionLabel())
@@ -523,6 +893,10 @@ class FormationCatalogPersistenceAdapterTests {
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
         jdbcTemplate.update(
+                "UPDATE formation_positions SET locked = TRUE "
+                        + "WHERE formation_version_id = ?",
+                fixture.versionId());
+        jdbcTemplate.update(
                 "UPDATE formation_versions "
                         + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
                         + "WHERE id = ?",
@@ -564,7 +938,7 @@ class FormationCatalogPersistenceAdapterTests {
 
         Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
                 "SELECT singer_id, singer_name_snapshot, voice_part_snapshot, "
-                        + "position_label, x_coordinate, y_coordinate "
+                        + "position_label, x_coordinate, y_coordinate, locked "
                         + "FROM formation_positions WHERE id = ?",
                 copiedPositionId);
 
@@ -577,6 +951,7 @@ class FormationCatalogPersistenceAdapterTests {
                 .isEqualByComparingTo("10.000");
         assertThat((BigDecimal) copiedPosition.get("y_coordinate"))
                 .isEqualByComparingTo("20.000");
+        assertThat(copiedPosition.get("locked")).isEqualTo(false);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM formation_positions WHERE formation_version_id = ?",
@@ -1055,6 +1430,44 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat(new BigDecimal(position.get("y_coordinate").toString()))
                 .isEqualByComparingTo("20.000");
     }
+
+    private void assertPositionLocked(boolean expected) {
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT locked FROM formation_positions WHERE id = ?",
+                Boolean.class,
+                originalPositionId()))
+                .isEqualTo(expected);
+    }
+
+    private Long originalPositionId() {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Long.class,
+                fixture.versionId(),
+                fixture.singerId());
+    }
+
+    private PositionState positionState(Long positionId) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT locked, position_label, x_coordinate, y_coordinate
+                FROM formation_positions
+                WHERE id = ?
+                """,
+                (resultSet, rowNumber) -> new PositionState(
+                        resultSet.getBoolean("locked"),
+                        resultSet.getString("position_label"),
+                        resultSet.getBigDecimal("x_coordinate"),
+                        resultSet.getBigDecimal("y_coordinate")),
+                positionId);
+    }
+
+    private record PositionState(
+            boolean locked,
+            String label,
+            BigDecimal x,
+            BigDecimal y) {}
 
     private int countPositions(Long versionId) {
         return jdbcTemplate.queryForObject(

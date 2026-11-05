@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -133,6 +134,36 @@ public class FormationDraftController {
                                 HttpStatus.CONFLICT, error.getMessage(), error));
     }
 
+    @PutMapping("/{formationId}/versions/{versionId}/positions/{positionId}/lock")
+    public Mono<ResponseEntity<Void>> lockPosition(
+            Authentication authentication,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long concertId,
+            @PathVariable @Positive long repertoireItemId,
+            @PathVariable @Positive long formationId,
+            @PathVariable @Positive long versionId,
+            @PathVariable @Positive long positionId) {
+        return formationDraftManagement.lockPosition(
+                        authentication.getName(), choirId, concertId,
+                        repertoireItemId, formationId, versionId, positionId)
+                .thenReturn(ResponseEntity.noContent().build());
+    }
+
+    @DeleteMapping("/{formationId}/versions/{versionId}/positions/{positionId}/lock")
+    public Mono<ResponseEntity<Void>> unlockPosition(
+            Authentication authentication,
+            @PathVariable @Positive long choirId,
+            @PathVariable @Positive long concertId,
+            @PathVariable @Positive long repertoireItemId,
+            @PathVariable @Positive long formationId,
+            @PathVariable @Positive long versionId,
+            @PathVariable @Positive long positionId) {
+        return formationDraftManagement.unlockPosition(
+                        authentication.getName(), choirId, concertId,
+                        repertoireItemId, formationId, versionId, positionId)
+                .thenReturn(ResponseEntity.noContent().build());
+    }
+
     private static FormationSummaryResponse toSummary(Formation formation) {
         return new FormationSummaryResponse(
                 formation.getId(),
@@ -189,7 +220,8 @@ public class FormationDraftController {
                 position.getDivisionNumberSnapshot(),
                 position.getPositionLabel(),
                 position.getXCoordinate(),
-                position.getYCoordinate());
+                position.getYCoordinate(),
+                position.isLocked());
     }
 
     public record CreateFormationRequest(
@@ -245,6 +277,7 @@ public class FormationDraftController {
             Integer divisionNumberSnapshot,
             String positionLabel,
             BigDecimal x,
-            BigDecimal y) {
+            BigDecimal y,
+            boolean locked) {
     }
 }

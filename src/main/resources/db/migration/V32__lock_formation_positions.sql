@@ -1,0 +1,2 @@
+ALTER TABLE formation_positions
+    ADD COLUMN locked BOOLEAN NOT NULL DEFAULT FALSE;
