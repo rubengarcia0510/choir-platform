@@ -25,9 +25,7 @@ import reactor.core.publisher.Mono;
 @Component
 public class FormationCatalogPersistenceAdapter implements FormationCatalogPort {
 
-    private static final int GRID_COLUMNS = 9;
     private static final BigDecimal GRID_START = BigDecimal.TEN;
-    private static final BigDecimal GRID_STEP = BigDecimal.TEN;
     private static final BigDecimal GRID_END = BigDecimal.valueOf(90);
     private static final BigDecimal GRID_CENTER = BigDecimal.valueOf(50);
 
