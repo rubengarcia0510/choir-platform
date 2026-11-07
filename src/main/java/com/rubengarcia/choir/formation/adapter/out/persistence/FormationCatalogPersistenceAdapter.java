@@ -13,7 +13,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,9 +25,7 @@ import reactor.core.publisher.Mono;
 @Component
 public class FormationCatalogPersistenceAdapter implements FormationCatalogPort {
 
-    private static final int GRID_COLUMNS = 9;
     private static final BigDecimal GRID_START = BigDecimal.TEN;
-    private static final BigDecimal GRID_STEP = BigDecimal.TEN;
     private static final BigDecimal GRID_END = BigDecimal.valueOf(90);
     private static final BigDecimal GRID_CENTER = BigDecimal.valueOf(50);
 
@@ -439,30 +439,56 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
     private List<FormationPosition> createPositions(
             Long formationVersionId,
             List<InitialPosition> assignments) {
-        int rowCount = (assignments.size() + GRID_COLUMNS - 1) / GRID_COLUMNS;
-        List<FormationPosition> positions = new ArrayList<>(assignments.size());
+        if (assignments.isEmpty()) {
+            return List.of();
+        }
 
-        for (int index = 0; index < assignments.size(); index++) {
-            InitialPosition assignment = assignments.get(index);
-            FormationPosition position = new FormationPosition();
-            position.setFormationVersionId(formationVersionId);
-            position.setSingerId(assignment.singerId());
-            position.setSingerNameSnapshot(assignment.singerName());
-            position.setVoicePartSnapshot(assignment.voicePart());
-            position.setVoiceSectionIdSnapshot(assignment.voiceSectionId());
-            position.setVoiceSectionNameSnapshot(assignment.voiceSectionName());
-            position.setDivisionNumberSnapshot(assignment.divisionNumber());
-            position.setXCoordinate(xCoordinate(index));
-            position.setYCoordinate(yCoordinate(index, rowCount));
-            positions.add(position);
+        Map<Long, List<InitialPosition>> sectionAssignments = new LinkedHashMap<>();
+        for (InitialPosition assignment : assignments) {
+            sectionAssignments
+                    .computeIfAbsent(assignment.voiceSectionId(), ignored -> new ArrayList<>())
+                    .add(assignment);
+        }
+
+        List<FormationPosition> positions = new ArrayList<>(assignments.size());
+        List<List<InitialPosition>> orderedSections = new ArrayList<>(
+                sectionAssignments.values());
+        int sectionCount = orderedSections.size();
+
+        for (int sectionIndex = 0; sectionIndex < orderedSections.size(); sectionIndex++) {
+            List<InitialPosition> section = orderedSections.get(sectionIndex);
+            BigDecimal xCoordinate = xCoordinate(sectionIndex, sectionCount);
+            int sectionSize = section.size();
+
+            for (int assignmentIndex = 0; assignmentIndex < sectionSize; assignmentIndex++) {
+                InitialPosition assignment = section.get(assignmentIndex);
+                FormationPosition position = new FormationPosition();
+                position.setFormationVersionId(formationVersionId);
+                position.setSingerId(assignment.singerId());
+                position.setSingerNameSnapshot(assignment.singerName());
+                position.setVoicePartSnapshot(assignment.voicePart());
+                position.setVoiceSectionIdSnapshot(assignment.voiceSectionId());
+                position.setVoiceSectionNameSnapshot(assignment.voiceSectionName());
+                position.setDivisionNumberSnapshot(assignment.divisionNumber());
+                position.setXCoordinate(xCoordinate);
+                position.setYCoordinate(yCoordinate(assignmentIndex, sectionSize));
+                positions.add(position);
+            }
         }
 
         return positions;
     }
 
-    private BigDecimal xCoordinate(int index) {
-        int column = index % GRID_COLUMNS;
-        return GRID_START.add(GRID_STEP.multiply(BigDecimal.valueOf(column)));
+    private BigDecimal xCoordinate(int sectionIndex, int sectionCount) {
+        if (sectionCount <= 1) {
+            return GRID_START;
+        }
+
+        BigDecimal span = GRID_END.subtract(GRID_START);
+        BigDecimal sectionOffset = BigDecimal.valueOf(sectionIndex)
+                .multiply(span)
+                .divide(BigDecimal.valueOf(sectionCount - 1), 3, java.math.RoundingMode.HALF_UP);
+        return GRID_START.add(sectionOffset);
     }
 
     private BigDecimal yCoordinate(int index, int rowCount) {
@@ -470,10 +496,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             return GRID_CENTER;
         }
 
-        int row = index / GRID_COLUMNS;
         BigDecimal availableHeight = GRID_END.subtract(GRID_START);
-
-        return GRID_START.add(availableHeight.multiply(BigDecimal.valueOf(row))
+        return GRID_START.add(availableHeight.multiply(BigDecimal.valueOf(index))
                 .divide(
                         BigDecimal.valueOf(rowCount - 1),
                         3,
