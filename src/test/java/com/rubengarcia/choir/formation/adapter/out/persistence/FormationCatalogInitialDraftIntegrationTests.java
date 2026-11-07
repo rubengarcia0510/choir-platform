@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.CreatedFormation;
+import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -172,6 +174,151 @@ class FormationCatalogInitialDraftIntegrationTests {
                 .isEqualTo(1);
         assertThat(snapshot.get("x_coordinate").toString()).isEqualTo("10.000");
         assertThat(snapshot.get("y_coordinate").toString()).isEqualTo("50.000");
+    }
+
+    @Test
+    void groupsInitialPositionsBySectionSortOrderAndSectionIdentity() {
+        jdbc.update(
+                "INSERT INTO vocal_sections (choir_id, name, sort_order) VALUES (?, ?, ?)",
+                fixture.choirId(),
+                "Sección posterior CHOIR-109",
+                10);
+        Long lateSectionId = jdbc.queryForObject(
+                "SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?",
+                Long.class,
+                fixture.choirId(),
+                "Sección posterior CHOIR-109");
+
+        jdbc.update(
+                "INSERT INTO vocal_sections (choir_id, name, sort_order) VALUES (?, ?, ?)",
+                fixture.choirId(),
+                "Sección prioritaria CHOIR-109",
+                1);
+        Long earlySectionId = jdbc.queryForObject(
+                "SELECT id FROM vocal_sections WHERE choir_id = ? AND name = ?",
+                Long.class,
+                fixture.choirId(),
+                "Sección prioritaria CHOIR-109");
+
+        Long lateSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante posterior CHOIR-109",
+                "TENOR",
+                lateSectionId);
+        Long earlySingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante prioritaria CHOIR-109",
+                "ALTO",
+                earlySectionId);
+
+        Long vocalPlanId = jdbc.queryForObject(
+                "SELECT id FROM vocal_plans WHERE repertoire_item_id = ?",
+                Long.class,
+                fixture.repertoireItemId());
+        jdbc.update(
+                "INSERT INTO vocal_plan_divisions "
+                        + "(vocal_plan_id, choir_id, vocal_section_id, division_number) "
+                        + "VALUES (?, ?, ?, ?)",
+                vocalPlanId,
+                fixture.choirId(),
+                lateSectionId,
+                2);
+        Long lateDivisionId = jdbc.queryForObject(
+                "SELECT id FROM vocal_plan_divisions "
+                        + "WHERE vocal_plan_id = ? AND vocal_section_id = ? AND division_number = ?",
+                Long.class,
+                vocalPlanId,
+                lateSectionId,
+                2);
+
+        jdbc.update(
+                "INSERT INTO vocal_plan_divisions "
+                        + "(vocal_plan_id, choir_id, vocal_section_id, division_number) "
+                        + "VALUES (?, ?, ?, ?)",
+                vocalPlanId,
+                fixture.choirId(),
+                earlySectionId,
+                1);
+        Long earlyDivisionId = jdbc.queryForObject(
+                "SELECT id FROM vocal_plan_divisions "
+                        + "WHERE vocal_plan_id = ? AND vocal_section_id = ? AND division_number = ?",
+                Long.class,
+                vocalPlanId,
+                earlySectionId,
+                1);
+
+        jdbc.update(
+                """
+                INSERT INTO concert_vocal_assignments
+                    (concert_id, repertoire_item_id, singer_id,
+                     vocal_plan_division_id, choir_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                lateSingerId,
+                lateDivisionId,
+                fixture.choirId());
+        jdbc.update(
+                """
+                INSERT INTO concert_vocal_assignments
+                    (concert_id, repertoire_item_id, singer_id,
+                     vocal_plan_division_id, choir_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                earlySingerId,
+                earlyDivisionId,
+                fixture.choirId());
+
+        CreatedFormation created = adapter.createWithInitialDraft(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationName(),
+                        "Formación con secciones agrupadas")
+                .block(TIMEOUT);
+
+        assertThat(created).isNotNull();
+
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                """
+                SELECT voice_section_name_snapshot, x_coordinate, y_coordinate
+                FROM formation_positions
+                WHERE formation_version_id = ?
+                ORDER BY voice_section_name_snapshot
+                """,
+                created.draftVersion().getId());
+
+        BigDecimal earlySectionX = rows.stream()
+                .filter(row -> "Sección prioritaria CHOIR-109".equals(
+                        row.get("voice_section_name_snapshot")))
+                .map(row -> (java.math.BigDecimal) row.get("x_coordinate"))
+                .findFirst()
+                .orElseThrow();
+        BigDecimal lateSectionX = rows.stream()
+                .filter(row -> "Sección posterior CHOIR-109".equals(
+                        row.get("voice_section_name_snapshot")))
+                .map(row -> (java.math.BigDecimal) row.get("x_coordinate"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(earlySectionX).isLessThan(lateSectionX);
+        assertThat(rows.stream()
+                        .filter(row -> "Sección prioritaria CHOIR-109".equals(
+                                row.get("voice_section_name_snapshot")))
+                        .map(row -> (java.math.BigDecimal) row.get("x_coordinate"))
+                        .distinct()
+                        .count())
+                .isEqualTo(1L);
+        assertThat(rows.stream()
+                        .filter(row -> "Sección posterior CHOIR-109".equals(
+                                row.get("voice_section_name_snapshot")))
+                        .map(row -> (java.math.BigDecimal) row.get("x_coordinate"))
+                        .distinct()
+                        .count())
+                .isEqualTo(1L);
     }
 
     @Test
@@ -359,6 +506,27 @@ class FormationCatalogInitialDraftIntegrationTests {
                 sectionId,
                 sectionName,
                 formationName);
+    }
+
+    private Long insertSinger(
+            long choirId,
+            String singerName,
+            String voicePart,
+            Long sectionId) {
+        jdbc.update(
+                "INSERT INTO singers "
+                        + "(choir_id, display_name, voice_part, active, voice_section_id) "
+                        + "VALUES (?, ?, ?, TRUE, ?)",
+                choirId,
+                singerName,
+                voicePart,
+                sectionId);
+
+        return jdbc.queryForObject(
+                "SELECT id FROM singers WHERE choir_id = ? AND display_name = ?",
+                Long.class,
+                choirId,
+                singerName);
     }
 
     private int countFormations() {
