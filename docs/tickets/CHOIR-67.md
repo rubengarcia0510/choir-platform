@@ -1,64 +1,27 @@
 # CHOIR-67 — Integrar reglas especiales en la planificación de transiciones
 
-- Estado al snapshot: En curso.
-- Fuente: [CHOIR-67 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-67).
+- **Estado:** ⏳ Pendiente (Fase 2 — Reglas Especiales de Escena)
+- **Fuente de verdad:** [CHOIR-67 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-67)
+- **Dependencias técnicas previas:** CHOIR-20 (Reglas por canción), CHOIR-68 (Regresiones). CHOIR-97 figura como dependencia en la planificación, pero no tiene especificación local; verificar su existencia y alcance en Jira antes de considerarlo bloqueante.
+- **Desbloquea:** CHOIR-24 (Puntuación y cálculo de transiciones)
+- **Frontend consumidor:** `choir-platform-web` (Gestión de advertencias y aceptación de transiciones)
 
-## Objetivo
+---
 
-Integrar las reglas de escena de CHOIR-20, administradas/persistidas por
-CHOIR-65/66, al cálculo y recálculo entre versiones exactas de formaciones.
+## 1. Objetivo y Alcance
 
-## Contrato y criterios de aceptación
+Integrar el motor de reglas especiales de escena (CHOIR-20) en el proceso de **cálculo, recálculo y validación de transiciones escénicas** entre versiones exactas de formaciones (`fromFormationVersionId` $\to$ `toFormationVersionId`).
 
-- Identificar la obra de un concierto con `(concert_id, repertoire_item_id)`;
-  una obra puede aparecer una sola vez por concierto.
-- Usar versiones exactas de origen y destino, y validar su contexto de
-  coro/concierto/obra.
-- Evaluar reglas activas en su orden definido, soportando grupos identificados
-  y cantidades/orden, incluidos movimiento y simultaneidad.
-- Versionar de forma inmutable cada creación, edición, reordenamiento y
-  desactivación de reglas, conservando los grupos necesarios para reproducirla.
-  El cálculo y su resultado identifican las revisiones exactas utilizadas.
-- El recálculo vuelve a evaluar reglas activas con entradas explícitas y genera
-  un resultado nuevo; no muta publicaciones anteriores.
-- Las reglas desactivadas se excluyen de cálculos nuevos sin modificar su
-  historial.
-- Una regla activa incumplible produce una advertencia estructurada con
-  referencia a la regla y un motivo legible; no se ignora ni bloquea
-  automáticamente.
-- Ante advertencias, se exige una decisión explícita del director. Solo una
-  aceptación permite publicar; revisar o descartar impide publicar. La decisión
-  queda registrada y auditable en el mecanismo de publicación existente.
-- Una transición publicada conserva referencias exactas a obra, formaciones y
-  revisiones de reglas. Cambios posteriores no alteran su historial ni la
-  decisión registrada.
-- Con iguales obra, snapshots, revisiones y parámetros, el resultado funcional
-  es reproducible.
-- Hay pruebas de contexto inválido, reglas cumplidas/incumplidas, ambos modos de
-  salida, orden/simultaneidad, versionado/desactivación, recálculo, decisión e
-  inmutabilidad histórica.
-- Los cambios de esquema requeridos usan nuevas migraciones Flyway, sin editar
-  migraciones aplicadas ni inventar datos históricos no determinables.
+Cuando una regla especial no pueda satisfacerse (por ejemplo, una salida en tanda requiere 4 coreutas pero la disposición deja solo 3 disponibles sin cruce peligroso), el sistema **no debe fallar silenciosamente ni bloquear automáticamente**, sino emitir una **advertencia estructurada** (`warning`) requiriendo una decisión explícita del director antes de permitir la publicación.
 
-## Coordinación y límites
+---
 
-- CHOIR-20 define el contrato de dominio; CHOIR-65 persiste y CHOIR-66 ofrece
-  CRUD/autorización. No duplicar CRUD.
-- CHOIR-22 define formaciones por obra; CHOIR-31 define publicación/selección y
-  snapshots. Usar identificadores de versión exactos.
-- Coordinar con CHOIR-24 el cálculo determinista de coste/riesgo, sin duplicar
-  su algoritmo de distancias, cruces o puntuación.
-- CHOIR-25 genera y rankea alternativas; CHOIR-28/29 adapta ausencias. No
-  implementar esos algoritmos aquí.
-- CHOIR-68 cubre verificación transversal; este ticket incluye pruebas propias
-  de la integración que implementa.
-- Mantener `(concert_id, repertoire_item_id)`; no permitir repetición de una
-  obra en un mismo concierto agregando identidad de ocurrencia.
+## 2. Flujo y Criterios de Aceptación
 
-## Definición de terminado registrada en Jira
-
-Documentar en Jira el contrato y las decisiones de persistencia antes de
-cerrar. La implementación debe tener pruebas automatizadas relevantes y
-ejecución local/CI satisfactoria, sin duplicar CRUD ni el algoritmo de
-CHOIR-24/25; revisar mediante PR hacia la rama de integración acordada.
-CHOIR-68 completa después la regresión y documentación transversal.
+1. **Contexto Exacto:** Se valida que la obra pertenezca al concierto y que las formaciones de origen y destino correspondan a versiones publicadas/congeladas.
+2. **Evaluación Ordenada:** Las reglas activas se evalúan respetando estrictamente su `sort_order`.
+3. **Advertencias Estructuradas:** Si una regla no se cumple, se genera un registro inmutable de advertencia vinculando el ID de la regla y el motivo.
+4. **Decisiones del Director:**
+   * **Aceptar advertencia:** El director asume el riesgo escénico $\to$ permite publicar.
+   * **Revisar / Descartar:** Impide la publicación hasta que se modifique la formación o la regla.
+5. **Auditoría e Inmutabilidad:** Toda evaluación y decisión queda registrada en las tablas de auditoría de transiciones sin posibilidad de borrado (`DELETE`).
