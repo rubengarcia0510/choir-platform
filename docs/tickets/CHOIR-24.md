@@ -1,49 +1,61 @@
 # CHOIR-24 — Modelar y puntuar transiciones entre formaciones
 
-- Estado al snapshot: Por hacer.
-- Fuente: [CHOIR-24 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-24).
+- **Estado:** ⏳ Pendiente (Fase 3 — Cálculo y Optimización)
+- **Fuente de verdad:** [CHOIR-24 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-24)
+- **Dependencias técnicas previas:** CHOIR-67 (Reglas de escena), CHOIR-106 (Versionado y snapshots inmutables)
+- **Desbloquea:** CHOIR-25 (Ranking de alternativas), CHOIR-30 (Modo ensayo)
+- **Frontend consumidor:** `choir-platform-web` (Métricas de transición y modo ensayo)
 
-## Objetivo
+---
 
-Calcular determinísticamente el coste y los riesgos de una transición escénica
-entre dos versiones concretas de una formación, sin cambiar las decisiones
-artísticas del director.
+## 1. Objetivo y Alcance
 
-## Contrato de entrada
+Calcular de forma **determinística y reproducible** el coste físico y los riesgos espaciales de una transición entre dos versiones exactas de formaciones (`Version A` $\to$ `Version B`).
 
-- La transición usa una versión exacta de origen y otra de destino; no alcanza
-  con el nombre de una formación ni con consultar su versión actual.
-- Ambas versiones deben pertenecer al contexto válido de coro/concierto y sus
-  snapshots deben estar disponibles.
-- Se reciben las restricciones activas de la obra incluida en el concierto,
-  incluidas las reglas especiales CHOIR-20, identificando la versión evaluada.
-- Con los mismos snapshots, parámetros y versiones de restricciones, el
-  resultado debe ser reproducible.
+### Métricas a Calcular:
+1. **Distancia Total:** Suma de las distancias recorridas por todos los integrantes que cambian de lugar.
+2. **Cruces de Trayectoria:** Detección de intersecciones de vectores de movimiento entre coreutas que se desplazan simultáneamente.
+3. **Simultaneidad y Desplazamientos Críticos:** Número de integrantes en movimiento simultáneo y detección de coreutas que deben recorrer distancias excesivas en un tiempo escénico corto.
+4. **Evaluación de Reglas de Escena:** Incorporación de las advertencias derivadas de CHOIR-67.
 
-## Criterios de aceptación
+---
 
-- Se calcula la distancia total recorrida por el elenco.
-- Se contabilizan movimientos, cruces y movimientos simultáneos relevantes.
-- Se detectan trayectorias potencialmente conflictivas y se explican con
-  advertencias identificables.
-- Las reglas activas se evalúan en el contexto de la obra y las versiones
-  exactas. Una regla insatisfecha produce una advertencia comprensible; no se
-  ignora ni bloquea automáticamente la decisión artística.
-- El resultado identifica versiones de origen/destino y reglas consideradas,
-  además de métricas y advertencias.
-- Hay pruebas para movimientos/distancias, cruces, conflictos, reglas
-  satisfechas/insatisfechas, reproducibilidad y referencias de versión.
-- Una transición publicada conserva las referencias exactas de formación y
-  reglas; ediciones posteriores no cambian su interpretación histórica.
+## 2. Contrato HTTP
 
-## Límites y coordinación
+* `POST /api/choirs/{choirId}/concerts/{concertId}/transitions/evaluate`
+* Payload:
+```json
+{
+  "fromVersionId": 101,
+  "toVersionId": 102,
+  "repertoireItemId": 45
+}
+```
+* Respuesta (`200 OK`):
+```json
+{
+  "totalDistance": 42.6,
+  "maxIndividualDistance": 5.2,
+  "crossingCount": 2,
+  "movingSingersCount": 8,
+  "warnings": [
+    {
+      "code": "CROSSING_DETECTED",
+      "singers": [12, 19],
+      "message": "Cruce directo entre Pedro y Sofía en el sector central"
+    }
+  ],
+  "score": 82.5
+}
+```
 
-- CHOIR-22 define formaciones por inclusión de obra; CHOIR-31 gestiona versiones
-  y selección explícita de la versión publicada.
-- CHOIR-20/67 define reglas especiales e integración funcional; consumir sus
-  entradas/versiones sin duplicar CRUD.
-- CHOIR-25 genera y rankea alternativas; este ticket calcula y describe cada
-  transición, no decide cuál elige el director.
-- Adaptación por ausencias corresponde a CHOIR-28/29.
-- No inferir asociaciones históricas si la inclusión de obra no puede
-  determinarse de forma fiable.
+Los identificadores de versión son numéricos (`Long`) en el contrato de borradores existente. Confirmar la semántica y las rutas de transición en Jira antes de implementar este endpoint propuesto.
+
+---
+
+## 3. Criterios de Aceptación
+
+- [ ] Dados los mismos snapshots de entrada, el resultado de métricas y score es idéntico (reproducibilidad).
+- [ ] Calcula distancias euclidianas exactas en el plano del escenario.
+- [ ] Detecta intersecciones geométricas entre segmentos de desplazamiento.
+- [ ] No muta ninguna formación ni versión.
