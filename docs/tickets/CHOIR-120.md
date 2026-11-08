@@ -1,83 +1,206 @@
-# CHOIR-120 — Evaluar secuencias temporales de reglas de movimiento
+# CHOIR-120 — Implementar evaluación de secuencias temporales
 
-- Estado: Documentación inicial.
-- Tipo: Backend.
-- Padre: CHOIR-20.
-- Prioridad: Medium.
+**Jira:** https://rubengarcia0510.atlassian.net/browse/CHOIR-120
+**Repositorio:** https://github.com/rubengarcia0510/choir-platform
 
 ## Objetivo
 
-Completar la evaluación de reglas especiales de tipo `MOVEMENT` que requieren orden temporal (`OrderingMode.SEQUENTIAL`).
+Implementar la evaluación funcional de reglas MOVEMENT con
+OrderingMode.SEQUENTIAL. No entregar únicamente un análisis o propuesta.
 
-La evaluación debe utilizar información temporal explícita y verificable. No debe inferir el orden de los movimientos a partir de posiciones estáticas ni del estado actual de los coreutas.
+## Clases existentes y modificaciones obligatorias
 
-## Contexto
+### 1. SceneRuleEvaluator
 
-Actualmente, las reglas `CAST_DIVISION` con `OrderingMode.SEQUENTIAL` pueden evaluarse utilizando restricciones espaciales.
+Archivo:
+`src/main/java/com/rubengarcia/choir/scene/domain/SceneRuleEvaluator.java`
 
-En cambio, las reglas `MOVEMENT` con `OrderingMode.SEQUENTIAL` pueden resultar `NOT_EVALUABLE` porque los snapshots utilizados por la evaluación no contienen información temporal suficiente.
+Modificar `evaluate(Input input)`:
 
-El contrato actual de publicación bloquea las evaluaciones `NOT_EVALUABLE`. Este comportamiento debe mantenerse cuando falten datos temporales.
+- Eliminar el retorno incondicional TEMPORAL_SEQUENCE_UNAVAILABLE
+  para MOVEMENT + SEQUENTIAL.
+- Incorporar la evaluación de secuencias temporales explícitas.
+- Mantener la evaluación espacial existente para los demás casos.
+- No utilizar posiciones FROM/TO como evidencia temporal.
 
-## Alcance
+Incorporar un método privado:
 
-1. Revisar el contrato actual de snapshots y los inputs utilizados por el evaluador de reglas.
-2. Definir una representación explícita de la información temporal necesaria para evaluar movimientos secuenciales.
-3. Implementar el traslado y la preservación de esa información a través del flujo de evaluación.
-4. Evaluar correctamente las reglas `MOVEMENT` con `OrderingMode.SEQUENTIAL` cuando exista información temporal suficiente.
-5. Mantener el resultado `NOT_EVALUABLE` cuando los datos temporales sean inexistentes o incompletos.
-6. Preservar la relación entre evaluación, snapshots y versiones concretas.
-7. Mantener la inmutabilidad de la evidencia de publicaciones históricas.
-8. Actualizar la documentación del contrato de evaluación y snapshots.
+`evaluateSequentialMovement(Input input, SceneRuleCondition condition)`
+
+Debe:
+- Validar que existan pasos temporales.
+- Validar que estén completos y ordenados.
+- Comprobar que los participantes correspondan a la regla.
+- Devolver SATISFIED para una secuencia válida.
+- Devolver VIOLATED para una secuencia completa que incumpla la regla.
+- Devolver NOT_EVALUABLE cuando falten datos o sean inconsistentes.
+
+Modificar el record `Input` para incluir la información temporal explícita.
+Actualizar todos sus constructores y usos de producción y tests.
+
+### 2. SceneRuleCondition
+
+Archivo:
+`src/main/java/com/rubengarcia/choir/scene/domain/SceneRuleCondition.java`
+
+Modificar el record para representar explícitamente la secuencia esperada
+de movimientos de una regla.
+
+Agregar un modelo inmutable de paso esperado que identifique:
+- Orden del paso.
+- Participantes involucrados.
+- Acción o tipo de movimiento esperado.
+
+Validar datos incompletos y órdenes inválidos.
+
+Preservar los campos y comportamientos actuales de las condiciones espaciales
+y de salida.
+
+### 3. SceneRuleRevisionSnapshot
+
+Archivo:
+`src/main/java/com/rubengarcia/choir/scene/domain/SceneRuleRevisionSnapshot.java`
+
+Asegurar que la secuencia esperada forme parte del snapshot inmutable
+de la revisión evaluada.
+
+No reconstruir la definición histórica a partir de la regla actualmente activa.
+
+### 4. TransitionPlanningServiceImpl
+
+Archivo:
+`src/main/java/com/rubengarcia/choir/transition/application/usecase/TransitionPlanningServiceImpl.java`
+
+Modificar:
+
+- `evaluateTransitionVersion(long transitionId, long transitionVersionId)`
+- `evaluateTransitionVersion(long transitionId, long transitionVersionId, List<CountGroupAssignment> assignments)`
+- `evaluateAndSave(...)`
+
+Incorporar la recuperación de los pasos temporales asociados a la versión
+de transición.
+
+Antes de evaluar:
+- Verificar transitionVersionId.
+- Verificar fromFormationVersionId.
+- Verificar toFormationVersionId.
+- Rechazar datos pertenecientes a otra transición o versiones.
+
+En `evaluateAndSave(...)`, construir el Input con los pasos temporales
+y conservar la persistencia de TransitionRuleEvaluationSnapshot.
+
+No introducir SQL en este servicio.
+
+### 5. Contratos y persistencia nuevos
+
+Crear:
+
+`src/main/java/com/rubengarcia/choir/transition/domain/TransitionMovementStep.java`
+
+Representar como mínimo:
+- transitionVersionId.
+- fromFormationVersionId.
+- toFormationVersionId.
+- Identificador del participante.
+- Número de secuencia.
+- Referencia temporal explícita.
+- Acción o tipo de movimiento.
+
+Crear:
+
+`src/main/java/com/rubengarcia/choir/transition/application/port/out/TransitionMovementStepRepository.java`
+
+Contrato:
+
+`Flux<TransitionMovementStep> findByTransitionVersionId(long transitionVersionId);`
+
+Crear el adapter:
+
+`src/main/java/com/rubengarcia/choir/transition/adapter/out/persistence/R2dbcTransitionMovementStepRepository.java`
+
+Implementar la lectura y persistencia de pasos temporales con SQL
+exclusivamente en el adapter.
+
+Crear la migración Flyway correspondiente con claves foráneas,
+restricciones de integridad e índices.
+
+La captura de movimientos debe integrarse al flujo de aplicación existente.
+Si no existe un endpoint adecuado, agregar el contrato HTTP y su caso de uso.
+No generar pasos artificiales ni inferirlos desde posiciones estáticas.
+
+### 6. Tests del evaluador
+
+Archivo existente:
+
+`src/test/java/com/rubengarcia/choir/scene/domain/SceneRuleEvaluatorSequentialOrderingTests.java`
+
+Reemplazar `sequentialMovementRemainsNotEvaluableWithoutTemporalData()`
+y agregar pruebas para:
+
+- Secuencia válida: SATISFIED.
+- Secuencia completa incumplida: VIOLATED.
+- Pasos ausentes: NOT_EVALUABLE.
+- Pasos incompletos: NOT_EVALUABLE.
+- Participantes desconocidos.
+- Pasos duplicados.
+- Orden temporal ambiguo.
+- Datos de otra transición o versión.
+- No inferir secuencia desde posiciones.
+
+Mantener y verificar:
+
+`sequentialCastDivisionEvaluatesItsSpatialConstraintWithoutTemporalData()`
+
+### 7. Tests de integración
+
+Agregar pruebas para:
+
+- Capturar y persistir pasos temporales.
+- Recuperarlos por transitionVersionId.
+- Verificar la asociación con las versiones FROM y TO.
+- Transportarlos hasta SceneRuleEvaluator.
+- Guardar el resultado de evaluación.
+- Consultar la evidencia histórica.
+- Verificar que modificaciones posteriores no alteren publicaciones anteriores.
+- Rollback ante fallos de persistencia.
+
+Validar H2 y PostgreSQL.
+
+## Reglas de arquitectura
+
+- Mantener arquitectura hexagonal.
+- Lógica de evaluación en dominio.
+- Orquestación en aplicación.
+- SQL exclusivamente en adapters.
+- No introducir dependencias de infraestructura en dominio.
+- Mantener compatibilidad con el comportamiento actual de EXIT y CAST_DIVISION.
+- No permitir publicar evaluaciones NOT_EVALUABLE.
+- No modificar evidencia histórica ya publicada.
+
+## Documentación
+
+Actualizar:
+
+`docs/transition-version-publication-contract.md`
+
+Documentar captura, persistencia, asociación a versiones, evaluación
+y preservación de evidencia temporal.
 
 ## Criterios de aceptación
 
-- [ ] Una regla `MOVEMENT` secuencial con información temporal suficiente puede evaluarse como `SATISFIED` o `VIOLATED`, según corresponda.
-- [ ] La evaluación distingue correctamente una secuencia válida de una secuencia incumplida.
-- [ ] La ausencia de información temporal produce `NOT_EVALUABLE`.
-- [ ] La información temporal incompleta produce `NOT_EVALUABLE` con una advertencia accionable.
-- [ ] No se infiere el orden temporal a partir de posiciones estáticas ni del estado actual de los coreutas.
-- [ ] La evaluación utiliza los snapshots y versiones concretos que corresponden.
-- [ ] Las publicaciones históricas conservan su evidencia original y no cambian ante modificaciones posteriores.
-- [ ] Existen pruebas unitarias para secuencias válidas, incumplidas, ausentes e incompletas.
-- [ ] Existen pruebas de integración para el flujo de evaluación y publicación.
-- [ ] La implementación se valida en H2 y PostgreSQL.
-- [ ] La documentación refleja el contrato temporal implementado.
+- Una secuencia completa válida produce SATISFIED.
+- Una secuencia completa incumplida produce VIOLATED.
+- Datos ausentes o incompletos producen NOT_EVALUABLE con advertencia.
+- No se infiere temporalidad desde posiciones.
+- Se utilizan las versiones concretas de la transición.
+- Las publicaciones históricas conservan su evidencia original.
+- Tests unitarios e integración pasan.
+- H2 y PostgreSQL quedan validados.
+- Documentación actualizada.
 
-## Fuera de alcance
+## Entrega
 
-- Modificar el CRUD o la autorización de reglas especiales (CHOIR-65 y CHOIR-66).
-- Modificar el versionado de reglas o su historial append-only (CHOIR-67).
-- Cambiar la evaluación espacial de `CAST_DIVISION` con `OrderingMode.SEQUENTIAL`.
-- Implementar ranking o restricciones artísticas de CHOIR-24 y CHOIR-25.
-- Inferir secuencias temporales a partir de posiciones o estados actuales.
-- Modificar el contrato general de publicación para permitir publicar evaluaciones `NOT_EVALUABLE`.
+Implementar todos los cambios, ejecutar las pruebas, corregir los fallos,
+crear commit, subir la rama y abrir un PR contra main.
 
-## Consideraciones de arquitectura
-
-- Mantener la arquitectura hexagonal por dominio.
-- La lógica de evaluación debe permanecer en el dominio correspondiente.
-- El acceso a datos y las consultas SQL deben permanecer en los adapters.
-- Evitar acoplar el evaluador a detalles de persistencia.
-- Preservar la trazabilidad entre snapshots, evaluaciones y evidencia publicada.
-
-## Validaciones requeridas
-
-| Escenario | Resultado esperado |
-|---|---|
-| Secuencia temporal completa y válida | SATISFIED |
-| Secuencia temporal completa pero incumplida | VIOLATED |
-| Información temporal ausente | NOT_EVALUABLE |
-| Información temporal incompleta | NOT_EVALUABLE |
-| Modificación posterior de datos de origen | La evidencia histórica no cambia |
-
-## Dependencias
-
-- CHOIR-65: Modelar y persistir reglas especiales de escena por canción.
-- CHOIR-66: Implementar CRUD y autorización de reglas especiales.
-- CHOIR-67: Integrar reglas especiales en la planificación de transiciones.
-- CHOIR-68: Verificar reglas especiales y documentación de CHOIR-20.
-
-## Definición de terminado
-
-La tarea se considera terminada cuando todos los criterios de aceptación están cubiertos, las pruebas pasan en H2 y PostgreSQL, la documentación está actualizada y los cambios están integrados mediante PR.
+No detenerse después de investigar ni entregar solamente una propuesta.
