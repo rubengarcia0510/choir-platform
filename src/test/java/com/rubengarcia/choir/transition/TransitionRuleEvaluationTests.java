@@ -7,10 +7,14 @@ import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.formation.application.usecase.FormationVersionSelectionUseCase;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
+import com.rubengarcia.choir.transition.application.model.TransitionMovementStepInput;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -99,8 +103,16 @@ class TransitionRuleEvaluationTests {
                     WHERE transition_version_id = ?
                     """, transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluation_warnings WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_movement_steps
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?
+                    )
+                    """, transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluation_results WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluations WHERE transition_version_id = ?", transitionVersionId);
+            jdbc.update("DELETE FROM transition_movement_steps WHERE transition_version_id = ?", transitionVersionId);
         }
         if (transitionId != null) jdbc.update("DELETE FROM transition_versions WHERE transition_id = ?", transitionId);
         if (sceneRuleId != null) jdbc.update("DELETE FROM scene_rule_revisions WHERE scene_rule_id = ?", sceneRuleId);
@@ -281,6 +293,161 @@ class TransitionRuleEvaluationTests {
                   AND status = 'VIOLATED'
                 """, Integer.class, evaluation.id()))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void capturesAndEvaluatesTemporalStepsAndKeepsHistoricalEvidenceImmutable() {
+        createFixture();
+        installSequentialMovementRule();
+        List<TransitionMovementStepInput> capturedInput = List.of(
+                movementInput(1, singerOneId, "2026-01-01T10:00:00", "ENTER"),
+                movementInput(2, singerTwoId, "2026-01-01T10:00:01", "TURN"));
+
+        List<TransitionMovementStep> captured = authorizedPlanningService
+                .replaceMovementSteps(
+                        email, choirId, transitionId, transitionVersionId, capturedInput)
+                .block();
+
+        assertThat(captured).hasSize(2);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_movement_steps
+                WHERE transition_version_id = ?
+                """, Integer.class, transitionVersionId))
+                .isEqualTo(2);
+
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+        assertThat(evaluation).isNotNull();
+        assertThat(evaluation.results()).singleElement().satisfies(result ->
+                assertThat(result.status()).isEqualTo(Status.SATISFIED));
+        assertThat(evaluation.movementSteps()).containsExactlyElementsOf(captured);
+
+        TransitionRuleEvaluationSnapshot recovered =
+                evaluationHistoryPort.findById(evaluation.id()).block();
+        assertThat(recovered.movementSteps()).containsExactlyElementsOf(captured);
+
+        List<TransitionMovementStep> replacement = authorizedPlanningService
+                .replaceMovementSteps(
+                        email,
+                        choirId,
+                        transitionId,
+                        transitionVersionId,
+                        List.of(
+                                movementInput(1, singerOneId, "2026-01-01T10:00:00", "TURN"),
+                                movementInput(2, singerTwoId, "2026-01-01T10:00:01", "ENTER")))
+                .block();
+        assertThat(replacement).hasSize(2);
+        assertThat(evaluationHistoryPort.findById(evaluation.id()).block()
+                .movementSteps())
+                .containsExactlyElementsOf(captured);
+
+        TransitionRuleEvaluationSnapshot replacementEvaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+        assertThat(replacementEvaluation.results()).singleElement().satisfies(result ->
+                assertThat(result.status()).isEqualTo(Status.VIOLATED));
+        assertThat(replacementEvaluation.movementSteps())
+                .containsExactlyElementsOf(replacement);
+    }
+
+    @Test
+    void evaluationMovementEvidenceRollsBackWhenSnapshotPersistenceFails() {
+        createFixture();
+        TransitionRuleEvaluationSnapshot invalid = new TransitionRuleEvaluationSnapshot(
+                null,
+                transitionVersionId,
+                transitionId,
+                fromVersionId,
+                toVersionId,
+                repertoireItemId,
+                1,
+                new BigDecimal("0.05"),
+                Status.NOT_EVALUABLE,
+                LocalDateTime.now(),
+                List.of(),
+                List.of(),
+                List.of(new TransitionMovementStep(
+                        transitionId,
+                        transitionVersionId + 999,
+                        fromVersionId,
+                        toVersionId,
+                        singerOneId,
+                        1,
+                        OffsetDateTime.parse("2026-01-01T10:00:00Z"),
+                        "ENTER")));
+
+        assertThatThrownBy(() -> evaluationHistoryPort.save(invalid).block())
+                .isInstanceOf(RuntimeException.class);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_rule_evaluations
+                WHERE transition_version_id = ?
+                """, Integer.class, transitionVersionId))
+                .isZero();
+    }
+
+    @Test
+    void publicationRequiresCurrentMovementEvidenceAndFreezesPublishedSteps() {
+        createFixture();
+        List<TransitionMovementStep> firstSteps = authorizedPlanningService
+                .replaceMovementSteps(
+                        email,
+                        choirId,
+                        transitionId,
+                        transitionVersionId,
+                        List.of(movementInput(
+                                1, singerOneId, "2026-01-01T10:00:00", "ENTER")))
+                .block();
+        TransitionRuleEvaluationSnapshot stale = evaluationWithMovementSteps(firstSteps);
+        TransitionRuleEvaluationSnapshot savedStale =
+                evaluationHistoryPort.save(stale).block();
+
+        List<TransitionMovementStep> currentSteps = authorizedPlanningService
+                .replaceMovementSteps(
+                        email,
+                        choirId,
+                        transitionId,
+                        transitionVersionId,
+                        List.of(movementInput(
+                                1, singerOneId, "2026-01-01T10:00:00", "TURN")))
+                .block();
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email,
+                choirId,
+                transitionId,
+                transitionVersionId,
+                savedStale.id(),
+                List.of()).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("movimientos cambiaron");
+
+        TransitionRuleEvaluationSnapshot current =
+                evaluationHistoryPort.save(evaluationWithMovementSteps(currentSteps))
+                        .block();
+        TransitionVersion published = lifecycleService.publish(
+                email,
+                choirId,
+                transitionId,
+                transitionVersionId,
+                current.id(),
+                List.of()).block();
+
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+        assertThatThrownBy(() -> authorizedPlanningService.replaceMovementSteps(
+                email,
+                choirId,
+                transitionId,
+                transitionVersionId,
+                List.of(movementInput(
+                        1, singerOneId, "2026-01-01T10:00:00", "ENTER")))
+                .block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("DRAFT");
+        assertThat(evaluationHistoryPort.findById(current.id()).block()
+                .movementSteps())
+                .containsExactlyElementsOf(currentSteps);
     }
 
     @Test
@@ -558,6 +725,57 @@ class TransitionRuleEvaluationTests {
                         "FROM:" + fromVersionId,
                         "TO:" + toVersionId,
                         "TO:" + toVersionId);
+    }
+
+    private void installSequentialMovementRule() {
+        String conditionJson = """
+                {"orderingMode":"SEQUENTIAL","expectedMovementSteps":[
+                  {"order":1,"participants":[
+                    {"type":"SINGER","singerId":%d}],"action":"ENTER"},
+                  {"order":2,"participants":[
+                    {"type":"SINGER","singerId":%d}],"action":"TURN"}
+                ]}
+                """.formatted(singerOneId, singerTwoId);
+        jdbc.update("""
+                UPDATE scene_rules
+                SET condition_json = ?, definition_status = 'READY'
+                WHERE id = ?
+                """, conditionJson, sceneRuleId);
+        jdbc.update("""
+                UPDATE scene_rule_revisions
+                SET condition_json = ?, definition_status = 'READY'
+                WHERE id = ?
+                """, conditionJson, ruleRevisionId);
+    }
+
+    private TransitionMovementStepInput movementInput(
+            int sequenceNumber,
+            long singerId,
+            String temporalReference,
+            String action) {
+        return new TransitionMovementStepInput(
+                singerId,
+                sequenceNumber,
+                OffsetDateTime.parse(temporalReference + "Z"),
+                action);
+    }
+
+    private TransitionRuleEvaluationSnapshot evaluationWithMovementSteps(
+            List<TransitionMovementStep> movementSteps) {
+        return new TransitionRuleEvaluationSnapshot(
+                null,
+                transitionVersionId,
+                transitionId,
+                fromVersionId,
+                toVersionId,
+                repertoireItemId,
+                1,
+                new BigDecimal("0.05"),
+                Status.SATISFIED,
+                LocalDateTime.now(),
+                List.of(),
+                List.of(),
+                movementSteps);
     }
 
     private void createFixture() {

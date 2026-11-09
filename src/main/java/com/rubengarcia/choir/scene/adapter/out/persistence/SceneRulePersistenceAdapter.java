@@ -437,6 +437,11 @@ public class SceneRulePersistenceAdapter
                         }
                     });
         }
+        if (condition.expectedMovementSteps() != null) {
+            condition.expectedMovementSteps().stream()
+                    .filter(step -> step != null && step.participants() != null)
+                    .forEach(step -> participants.addAll(step.participants()));
+        }
         return participants.stream()
                 .filter(participant -> participant != null
                         && participant.type()

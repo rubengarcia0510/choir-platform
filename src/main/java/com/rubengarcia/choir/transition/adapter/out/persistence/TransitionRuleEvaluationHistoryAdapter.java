@@ -2,9 +2,13 @@ package com.rubengarcia.choir.transition.adapter.out.persistence;
 
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -14,8 +18,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Component
 public class TransitionRuleEvaluationHistoryAdapter
@@ -34,6 +36,8 @@ public class TransitionRuleEvaluationHistoryAdapter
         return insertEvaluation(snapshot)
                 .flatMap(saved -> saveResults(saved.id(), snapshot.results())
                         .then(saveWarnings(saved.id(), allWarnings(snapshot)))
+                        .then(saveMovementSteps(
+                                saved.id(), snapshot.movementSteps()))
                         .thenReturn(new TransitionRuleEvaluationSnapshot(
                                 saved.id(),
                                 snapshot.transitionVersionId(),
@@ -46,7 +50,8 @@ public class TransitionRuleEvaluationHistoryAdapter
                                 snapshot.status(),
                                 snapshot.evaluatedAt(),
                                 snapshot.results(),
-                                snapshot.warnings())));
+                                snapshot.warnings(),
+                                snapshot.movementSteps())));
     }
 
     @Override
@@ -107,8 +112,34 @@ public class TransitionRuleEvaluationHistoryAdapter
             EvaluationRow evaluation) {
         return Mono.zip(
                         loadResults(evaluation.id()),
-                        loadWarnings(evaluation.id()))
-                .map(data -> assembleEvaluation(evaluation, data.getT1(), data.getT2()));
+                        loadWarnings(evaluation.id()),
+                        loadMovementSteps(evaluation))
+                .map(data -> assembleEvaluation(
+                        evaluation, data.getT1(), data.getT2(), data.getT3()));
+    }
+
+    private Mono<List<TransitionMovementStep>> loadMovementSteps(
+            EvaluationRow evaluation) {
+        return database.sql("""
+                SELECT transition_id, transition_version_id,
+                       from_formation_version_id, to_formation_version_id,
+                       singer_id, sequence_number, temporal_reference, action
+                FROM transition_rule_evaluation_movement_steps
+                WHERE evaluation_id = :evaluationId
+                ORDER BY sequence_number, singer_id
+                """)
+                .bind("evaluationId", evaluation.id())
+                .map((row, metadata) -> new TransitionMovementStep(
+                        row.get("transition_id", Long.class),
+                        row.get("transition_version_id", Long.class),
+                        row.get("from_formation_version_id", Long.class),
+                        row.get("to_formation_version_id", Long.class),
+                        row.get("singer_id", Long.class),
+                        row.get("sequence_number", Integer.class),
+                        row.get("temporal_reference", OffsetDateTime.class),
+                        row.get("action", String.class)))
+                .all()
+                .collectList();
     }
 
     private Mono<List<ResultRow>> loadResults(long evaluationId) {
@@ -153,7 +184,8 @@ public class TransitionRuleEvaluationHistoryAdapter
     private TransitionRuleEvaluationSnapshot assembleEvaluation(
             EvaluationRow evaluation,
             List<ResultRow> resultRows,
-            List<Warning> warnings) {
+            List<Warning> warnings,
+            List<TransitionMovementStep> movementSteps) {
         List<RuleResult> results = resultRows.stream()
                 .map(result -> new RuleResult(
                         result.order(),
@@ -186,7 +218,8 @@ public class TransitionRuleEvaluationHistoryAdapter
                 evaluation.status(),
                 evaluation.evaluatedAt(),
                 results,
-                globalWarnings);
+                globalWarnings,
+                movementSteps);
     }
 
     private Mono<InsertedEvaluation> insertEvaluation(
@@ -246,6 +279,39 @@ public class TransitionRuleEvaluationHistoryAdapter
                                 ? Mono.empty()
                                 : Mono.error(new IllegalStateException(
                                         "No se pudo guardar un resultado de evaluación"))))
+                .then();
+    }
+
+    private Mono<Void> saveMovementSteps(
+            long evaluationId,
+            List<TransitionMovementStep> movementSteps) {
+        return Flux.fromIterable(movementSteps)
+                .concatMap(step -> database.sql("""
+                        INSERT INTO transition_rule_evaluation_movement_steps (
+                            evaluation_id, transition_version_id, transition_id,
+                            from_formation_version_id, to_formation_version_id,
+                            singer_id, sequence_number, temporal_reference, action
+                        ) VALUES (
+                            :evaluationId, :transitionVersionId, :transitionId,
+                            :fromVersionId, :toVersionId, :singerId,
+                            :sequenceNumber, :temporalReference, :action
+                        )
+                        """)
+                        .bind("evaluationId", evaluationId)
+                        .bind("transitionVersionId", step.transitionVersionId())
+                        .bind("transitionId", step.transitionId())
+                        .bind("fromVersionId", step.fromFormationVersionId())
+                        .bind("toVersionId", step.toFormationVersionId())
+                        .bind("singerId", step.singerId())
+                        .bind("sequenceNumber", step.sequenceNumber())
+                        .bind("temporalReference", step.temporalReference())
+                        .bind("action", step.action())
+                        .fetch()
+                        .rowsUpdated()
+                        .flatMap(rows -> rows == 1
+                                ? Mono.empty()
+                                : Mono.error(new IllegalStateException(
+                                        "No se pudo guardar la evidencia temporal de evaluación"))))
                 .then();
     }
 

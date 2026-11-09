@@ -1,6 +1,7 @@
 package com.rubengarcia.choir.scene.domain;
 
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Direction;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ExpectedMovementStep;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
@@ -8,13 +9,16 @@ import com.rubengarcia.choir.scene.domain.SceneRuleCondition.SpatialConstraint;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Stage;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 public final class SceneRuleEvaluator {
 
@@ -55,17 +59,15 @@ public final class SceneRuleEvaluator {
                     "FORMATION_SNAPSHOT_INVALID",
                     "Las versiones FROM y TO no son válidas");
         }
-        if (input.fromPositions() == null || input.toPositions() == null) {
+        boolean sequentialMovement = "MOVEMENT".equals(revision.ruleType())
+                && condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL;
+        List<SpatialConstraint> constraints = condition.spatialConstraints();
+        boolean hasSpatialConstraints = constraints != null && !constraints.isEmpty();
+        if ((!sequentialMovement || hasSpatialConstraints)
+                && (input.fromPositions() == null || input.toPositions() == null)) {
             return notEvaluable(
                     "FORMATION_POSITIONS_MISSING",
                     "Faltan posiciones de los snapshots FROM o TO");
-        }
-        if ("MOVEMENT".equals(revision.ruleType())
-                && condition.orderingMode() == SceneRuleCondition.OrderingMode.SEQUENTIAL) {
-            return notEvaluable(
-                    revision,
-                    "TEMPORAL_SEQUENCE_UNAVAILABLE",
-                    "Los snapshots no incluyen datos para verificar una secuencia temporal");
         }
 
         if ("EXIT".equals(revision.ruleType())) {
@@ -75,6 +77,9 @@ public final class SceneRuleEvaluator {
         }
 
         List<Check> checks = new ArrayList<>();
+        if (sequentialMovement) {
+            checks.add(evaluateSequentialMovement(input, condition));
+        }
         if (condition.exitParticipants() != null
                 && !condition.exitParticipants().isEmpty()) {
             checks.add(Check.notEvaluable(
@@ -82,7 +87,6 @@ public final class SceneRuleEvaluator {
                     "La condición de salida no corresponde al tipo de regla"));
         }
 
-        List<SpatialConstraint> constraints = condition.spatialConstraints();
         if (constraints != null) {
             for (SpatialConstraint constraint : constraints) {
                 checks.add(evaluateConstraint(input, constraint));
@@ -94,6 +98,181 @@ public final class SceneRuleEvaluator {
                     "La condición no contiene criterios evaluables");
         }
         return aggregate(revision, checks);
+    }
+
+    private Check evaluateSequentialMovement(
+            Input input, SceneRuleCondition condition) {
+        List<ExpectedMovementStep> expectedSteps = condition.expectedMovementSteps();
+        if (expectedSteps == null || expectedSteps.isEmpty()) {
+            return Check.notEvaluable(
+                    "EXPECTED_MOVEMENT_SEQUENCE_MISSING",
+                    "La regla no define una secuencia esperada de movimientos");
+        }
+
+        List<Set<Long>> expectedParticipants = new ArrayList<>();
+        Set<Long> allExpectedParticipants = new HashSet<>();
+        for (int index = 0; index < expectedSteps.size(); index++) {
+            ExpectedMovementStep expected = expectedSteps.get(index);
+            if (expected == null || expected.order() != index + 1
+                    || expected.action() == null || expected.action().isBlank()
+                    || expected.participants() == null
+                    || expected.participants().isEmpty()) {
+                return Check.notEvaluable(
+                        "EXPECTED_MOVEMENT_SEQUENCE_INVALID",
+                        "La secuencia esperada está incompleta o desordenada");
+            }
+
+            Set<Long> stepParticipants = new HashSet<>();
+            for (ParticipantRef participant : expected.participants()) {
+                Resolution resolution = resolveMembers(
+                        input.revision(), participant, input.resolvedGroupMembers());
+                if (!resolution.evaluable()) {
+                    return Check.notEvaluable(
+                            resolution.code(), resolution.explanation());
+                }
+                for (Long singerId : resolution.singerIds()) {
+                    if (!stepParticipants.add(singerId)) {
+                        return Check.notEvaluable(
+                                "EXPECTED_MOVEMENT_PARTICIPANT_DUPLICATED",
+                                "Un participante aparece más de una vez en el mismo paso esperado");
+                    }
+                    allExpectedParticipants.add(singerId);
+                }
+            }
+            expectedParticipants.add(Set.copyOf(stepParticipants));
+        }
+
+        List<TemporalMovementStep> movementSteps = input.movementSteps();
+        if (movementSteps == null || movementSteps.isEmpty()) {
+            return Check.notEvaluable(
+                    "TEMPORAL_MOVEMENT_STEPS_MISSING",
+                    "No hay pasos temporales capturados para esta versión");
+        }
+        if (input.transitionId() <= 0 || input.transitionVersionId() <= 0) {
+            return Check.notEvaluable(
+                    "TRANSITION_SNAPSHOT_INVALID",
+                    "La evaluación no identifica la versión concreta de transición");
+        }
+
+        Map<Integer, List<TemporalMovementStep>> actualBySequence = new TreeMap<>();
+        Set<String> uniqueParticipantsBySequence = new HashSet<>();
+        for (TemporalMovementStep step : movementSteps) {
+            if (step == null
+                    || step.transitionId() != input.transitionId()
+                    || step.transitionVersionId() != input.transitionVersionId()
+                    || step.fromFormationVersionId() != input.fromFormationVersionId()
+                    || step.toFormationVersionId() != input.toFormationVersionId()) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_VERSION_MISMATCH",
+                        "Hay pasos asociados a otra transición o a otras versiones de formación");
+            }
+            if (step.singerId() <= 0 || step.sequenceNumber() <= 0
+                    || step.temporalReference() == null
+                    || step.action() == null || step.action().isBlank()) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_STEP_INCOMPLETE",
+                        "Un paso temporal no tiene participante, orden, referencia temporal o acción válida");
+            }
+            if (!allExpectedParticipants.contains(step.singerId())) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_PARTICIPANT_UNKNOWN",
+                        "Un participante capturado no pertenece a la regla evaluada");
+            }
+            String participantKey = step.sequenceNumber() + ":" + step.singerId();
+            if (!uniqueParticipantsBySequence.add(participantKey)) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_STEP_DUPLICATED",
+                        "Hay participantes duplicados dentro del mismo paso temporal");
+            }
+            actualBySequence.computeIfAbsent(
+                    step.sequenceNumber(), ignored -> new ArrayList<>()).add(step);
+        }
+
+        OffsetDateTime previousReference = null;
+        for (int index = 0; index < actualBySequence.size(); index++) {
+            List<TemporalMovementStep> steps =
+                    actualBySequence.get(index + 1);
+            if (steps == null) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_SEQUENCE_INCOMPLETE",
+                        "La secuencia capturada contiene saltos en la numeración");
+            }
+            OffsetDateTime sequenceReference = steps.getFirst().temporalReference();
+            if (steps.stream().anyMatch(step ->
+                    !sequenceReference.toInstant()
+                            .equals(step.temporalReference().toInstant()))) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_ORDER_AMBIGUOUS",
+                        "Los participantes de un mismo paso tienen referencias temporales distintas");
+            }
+            if (previousReference != null
+                    && !sequenceReference.isAfter(previousReference)) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_ORDER_AMBIGUOUS",
+                        "No se puede determinar un orden temporal estricto entre los pasos");
+            }
+            previousReference = sequenceReference;
+        }
+
+        Map<Long, Integer> expectedOccurrences = new HashMap<>();
+        expectedParticipants.forEach(stepParticipants -> stepParticipants.forEach(
+                singerId -> expectedOccurrences.merge(singerId, 1, Integer::sum)));
+        Map<Long, Integer> actualOccurrences = new HashMap<>();
+        actualBySequence.values().stream().flatMap(List::stream)
+                .forEach(step -> actualOccurrences.merge(step.singerId(), 1, Integer::sum));
+        if (expectedOccurrences.entrySet().stream().anyMatch(expected ->
+                actualOccurrences.getOrDefault(expected.getKey(), 0) < expected.getValue())) {
+            return Check.notEvaluable(
+                    "TEMPORAL_MOVEMENT_SEQUENCE_INCOMPLETE",
+                    "Faltan movimientos de participantes de la secuencia esperada");
+        }
+
+        if (actualBySequence.size() < expectedSteps.size()) {
+            return Check.notEvaluable(
+                    "TEMPORAL_MOVEMENT_SEQUENCE_INCOMPLETE",
+                    "Faltan pasos de la secuencia temporal esperada");
+        }
+
+        boolean violated = actualBySequence.size() > expectedSteps.size();
+        for (int index = 0; index < expectedSteps.size(); index++) {
+            ExpectedMovementStep expected = expectedSteps.get(index);
+            List<TemporalMovementStep> actual = actualBySequence.get(index + 1);
+            if (actual == null) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_SEQUENCE_INCOMPLETE",
+                        "Falta un paso de la secuencia temporal esperada");
+            }
+
+            Set<Long> actualParticipants = new HashSet<>();
+            Set<String> actions = new HashSet<>();
+            for (TemporalMovementStep step : actual) {
+                actualParticipants.add(step.singerId());
+                actions.add(step.action().trim().toUpperCase(java.util.Locale.ROOT));
+            }
+            Set<Long> expectedForStep = expectedParticipants.get(index);
+            if (!actualParticipants.equals(expectedForStep)) {
+                violated = true;
+                continue;
+            }
+            if (actions.size() != 1) {
+                return Check.notEvaluable(
+                        "TEMPORAL_MOVEMENT_ACTION_INCONSISTENT",
+                        "Los participantes de un mismo paso registran acciones distintas");
+            }
+            String expectedAction = expected.action().trim()
+                    .toUpperCase(java.util.Locale.ROOT);
+            if (!actions.contains(expectedAction)) {
+                violated = true;
+            }
+        }
+
+        return violated
+                ? Check.violated(
+                        "TEMPORAL_MOVEMENT_SEQUENCE_VIOLATED",
+                        "Los movimientos capturados no cumplen el orden esperado")
+                : Check.satisfied(
+                        "TEMPORAL_MOVEMENT_SEQUENCE_SATISFIED",
+                        "Los movimientos capturados cumplen la secuencia esperada");
     }
 
     private boolean isSupportedRuleType(String ruleType) {
@@ -639,7 +818,48 @@ public final class SceneRuleEvaluator {
             long toFormationVersionId,
             List<Position> toPositions,
             Map<Integer, List<Long>> resolvedGroupMembers,
-            BigDecimal globalSeparationThreshold) {
+            BigDecimal globalSeparationThreshold,
+            long transitionId,
+            long transitionVersionId,
+            List<TemporalMovementStep> movementSteps) {
+
+        public Input {
+            movementSteps = movementSteps == null
+                    ? null
+                    : Collections.unmodifiableList(new ArrayList<>(movementSteps));
+        }
+
+        public Input(
+                SceneRuleRevisionSnapshot revision,
+                long fromFormationVersionId,
+                List<Position> fromPositions,
+                long toFormationVersionId,
+                List<Position> toPositions,
+                Map<Integer, List<Long>> resolvedGroupMembers,
+                BigDecimal globalSeparationThreshold) {
+            this(
+                    revision,
+                    fromFormationVersionId,
+                    fromPositions,
+                    toFormationVersionId,
+                    toPositions,
+                    resolvedGroupMembers,
+                    globalSeparationThreshold,
+                    0,
+                    0,
+                    List.of());
+        }
+    }
+
+    public record TemporalMovementStep(
+            long transitionId,
+            long transitionVersionId,
+            long fromFormationVersionId,
+            long toFormationVersionId,
+            long singerId,
+            int sequenceNumber,
+            OffsetDateTime temporalReference,
+            String action) {
     }
 
     public record Position(Long singerId, BigDecimal xCoordinate, BigDecimal yCoordinate) {

@@ -6,6 +6,8 @@ import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.GroupDefinition;
 import com.rubengarcia.choir.scene.application.port.out.SceneRulePersistencePort.RuleDefinition;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ExpectedMovementStep;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.OrderingMode;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
@@ -206,13 +208,42 @@ public class SceneRuleServiceImpl implements SceneRuleService {
             return false;
         }
         if ("EXIT".equals(ruleType)) {
-            return condition.exitParticipants() == null
-                    || condition.exitParticipants().stream()
-                            .allMatch(participant -> validParticipant(
-                                    participant, groupCount));
+            if (condition.exitParticipants() != null
+                    && condition.exitParticipants().stream()
+                            .anyMatch(participant -> !validParticipant(
+                                    participant, groupCount))) {
+                return false;
+            }
+        } else if (condition.exitParticipants() != null
+                && !condition.exitParticipants().isEmpty()) {
+            return false;
         }
-        return condition.exitParticipants() == null
-                || condition.exitParticipants().isEmpty();
+        List<ExpectedMovementStep> expectedSteps =
+                condition.expectedMovementSteps();
+        if (expectedSteps == null || expectedSteps.isEmpty()) {
+            return true;
+        }
+        if (!"MOVEMENT".equals(ruleType)
+                || condition.orderingMode() != OrderingMode.SEQUENTIAL) {
+            return false;
+        }
+        for (int index = 0; index < expectedSteps.size(); index++) {
+            ExpectedMovementStep step = expectedSteps.get(index);
+            if (step == null || step.order() != index + 1
+                    || step.action() != null
+                            && (step.action().isBlank() || step.action().length() > 100)
+                    || step.participants() != null
+                            && step.participants().stream().anyMatch(participant ->
+                                    !validParticipant(participant, groupCount))) {
+                return false;
+            }
+            if (step.participants() != null
+                    && new HashSet<>(step.participants()).size()
+                            != step.participants().size()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean validConstraint(SpatialConstraint constraint, int groupCount) {
@@ -284,6 +315,31 @@ public class SceneRuleServiceImpl implements SceneRuleService {
         if ("EXIT".equals(ruleType)) {
             return condition.exitParticipants() != null
                     && !condition.exitParticipants().isEmpty();
+        }
+        if ("MOVEMENT".equals(ruleType)
+                && condition.orderingMode() == OrderingMode.SEQUENTIAL) {
+            List<ExpectedMovementStep> expectedSteps =
+                    condition.expectedMovementSteps();
+            if (expectedSteps == null || expectedSteps.isEmpty()
+                    || expectedSteps.stream().anyMatch(step ->
+                            step.action() == null || step.action().isBlank()
+                                    || step.participants() == null
+                                    || step.participants().isEmpty())) {
+                return false;
+            }
+            List<SpatialConstraint> sequentialConstraints =
+                    condition.spatialConstraints();
+            if (sequentialConstraints == null || sequentialConstraints.isEmpty()) {
+                return true;
+            }
+            if (sequentialConstraints.stream().anyMatch(
+                    constraint -> !completeConstraint(constraint))) {
+                return false;
+            }
+            return sequentialConstraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.FROM)
+                    && sequentialConstraints.stream().anyMatch(
+                            constraint -> constraint.stage() == SceneRuleCondition.Stage.TO);
         }
         List<SpatialConstraint> constraints = condition.spatialConstraints();
         if (constraints == null || constraints.isEmpty()

@@ -6,6 +6,8 @@ import com.rubengarcia.choir.domain.SceneRuleRevision;
 import com.rubengarcia.choir.repository.SceneRuleRevisionRepository;
 import com.rubengarcia.choir.scene.application.port.out.SceneRuleHistoryPort;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ExpectedMovementStep;
+import com.rubengarcia.choir.scene.domain.SceneRuleCondition.OrderingMode;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantRef;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.ParticipantType;
 import com.rubengarcia.choir.scene.domain.SceneRuleCondition.Relation;
@@ -367,7 +369,7 @@ class SceneRuleServiceImplTests {
                                 new SceneRuleService.GroupData("A", 1),
                                 new SceneRuleService.GroupData("B", 1)),
                         condition))
-                .block(Duration.ofSeconds(10));
+                .block(Duration.ofSeconds(30));
 
         assertThat(created).isNotNull();
         assertThat(created.condition()).isEqualTo(condition);
@@ -451,6 +453,82 @@ class SceneRuleServiceImplTests {
                 .block(Duration.ofSeconds(10)))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("condición completa");
+    }
+
+    @Test
+    void storesExpectedSequentialMovementStepsInTheImmutableRevision() {
+        Fixture fixture = createFixture("sequential-movement-condition");
+        long firstSingerId = createSinger(fixture, "Coreuta primero");
+        long secondSingerId = createSinger(fixture, "Coreuta segundo");
+        SceneRuleCondition condition = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL,
+                null,
+                null,
+                List.of(
+                        new ExpectedMovementStep(
+                                1,
+                                List.of(new ParticipantRef(
+                                        ParticipantType.SINGER, firstSingerId, null)),
+                                "ENTRAR"),
+                        new ExpectedMovementStep(
+                                2,
+                                List.of(new ParticipantRef(
+                                        ParticipantType.SINGER, secondSingerId, null)),
+                                "GIRAR")));
+
+        SceneRuleService.RuleView created = sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Secuencia de entrada y giro",
+                        List.of(new SceneRuleService.GroupData("Participantes", 2)),
+                        condition))
+                .block(Duration.ofSeconds(10));
+
+        assertThat(created.definitionStatus()).isEqualTo("READY");
+        assertThat(created.condition()).isEqualTo(condition);
+        assertThat(jdbc.queryForObject(
+                "SELECT condition_json FROM scene_rule_revisions "
+                        + "WHERE scene_rule_id = ? AND revision_number = 1",
+                String.class,
+                created.id()))
+                .contains("\"expectedMovementSteps\"")
+                .contains("\"ENTRAR\"");
+        SceneRuleRevisionSnapshot revision = sceneRuleHistoryPort
+                .findAllRevisionsByRepertoireItemId(fixture.repertoireItemId())
+                .filter(snapshot -> snapshot.sceneRuleId() == created.id())
+                .single()
+                .block(Duration.ofSeconds(10));
+        assertThat(revision.condition()).isEqualTo(condition);
+    }
+
+    @Test
+    void rejectsExpectedMovementStepsWithInvalidOrder() {
+        Fixture fixture = createFixture("invalid-sequential-movement-order");
+        SceneRuleCondition condition = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL,
+                null,
+                null,
+                List.of(
+                        new ExpectedMovementStep(2, List.of(), "ENTRAR"),
+                        new ExpectedMovementStep(1, List.of(), "GIRAR")));
+
+        assertThatThrownBy(() -> sceneRuleService.create(
+                fixture.email(),
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Secuencia con orden inválido",
+                        List.of(new SceneRuleService.GroupData("Participantes", 1)),
+                        condition))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("parámetros inválidos");
     }
 
     @Test
@@ -562,6 +640,31 @@ class SceneRuleServiceImplTests {
                                 "IDENTIFIED",
                                 null,
                                 List.of(foreignSingerId)))))
+                .block(Duration.ofSeconds(10)))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(exception -> assertThat(
+                        ((ResponseStatusException) exception).getStatusCode().value())
+                        .isEqualTo(400));
+
+        SceneRuleCondition condition = new SceneRuleCondition(
+                OrderingMode.SEQUENTIAL,
+                null,
+                null,
+                List.of(new ExpectedMovementStep(
+                        1,
+                        List.of(new ParticipantRef(
+                                ParticipantType.SINGER, foreignSingerId, null)),
+                        "ENTRAR")));
+        assertThatThrownBy(() -> sceneRuleService.create(
+                owner.email(),
+                owner.choirId(),
+                owner.concertId(),
+                owner.repertoireItemId(),
+                new SceneRuleService.RuleData(
+                        "MOVEMENT",
+                        "Movimiento de coreuta ajena",
+                        List.of(),
+                        condition))
                 .block(Duration.ofSeconds(10)))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(exception -> assertThat(

@@ -3,6 +3,8 @@ package com.rubengarcia.choir.formation.application.usecase;
 import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
+import com.rubengarcia.choir.transition.application.model.TransitionMovementStepInput;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
@@ -20,6 +22,19 @@ public interface FormationPlanningAuthorizationService {
 
     Flux<TransitionPlanningPosition> positionsForTransitionVersion(
             String email, long choirId, long transitionVersionId);
+
+    Flux<TransitionMovementStep> movementStepsForTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId);
+
+    Mono<List<TransitionMovementStep>> replaceMovementSteps(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId,
+            List<TransitionMovementStepInput> steps);
 
     Mono<TransitionRuleEvaluationSnapshot> evaluateTransitionVersion(
             String email,
