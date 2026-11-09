@@ -59,3 +59,17 @@ Los identificadores de versión son numéricos (`Long`) en el contrato de borrad
 - [ ] Calcula distancias euclidianas exactas en el plano del escenario.
 - [ ] Detecta intersecciones geométricas entre segmentos de desplazamiento.
 - [ ] No muta ninguna formación ni versión.
+
+---
+
+## Límites entre dominios
+
+- `formation` mantiene posiciones, bloqueos y restricciones de proximidad, movilidad y visibilidad.
+- `transition` compara snapshots, calcula distancias y detecta cruces y conflictos temporales.
+- `scene` mantiene las reglas especiales de escena de CHOIR-20/67.
+- CHOIR-121/122 no importan validadores ni clases internas de `formation`.
+- CHOIR-123 integra los cálculos de transición con las reglas de `scene`.
+- CHOIR-24 no incorpora el motor de restricciones de formación.
+- Una integración futura con restricciones de formación requiere alcance y contrato explícitos.
+
+Consultar `docs/architecture/domain-boundaries.md`.
