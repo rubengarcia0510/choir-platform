@@ -15,7 +15,7 @@ Calcular de forma **determinística y reproducible** el coste físico y los ries
 ### Métricas a Calcular:
 1. **Distancia Total:** Suma de las distancias recorridas por todos los integrantes que cambian de lugar.
 2. **Cruces de Trayectoria:** Detección de intersecciones de vectores de movimiento entre coreutas que se desplazan simultáneamente.
-3. **Simultaneidad y Desplazamientos Críticos:** Número de integrantes en movimiento simultáneo y detección de coreutas que deben recorrer distancias excesivas en un tiempo escénico corto.
+3. **Evidencia temporal:** cantidad de integrantes por paso y conflictos de simultaneidad, únicamente cuando existan timestamps explícitos registrados mediante CHOIR-120.
 4. **Evaluación de Reglas de Escena:** Incorporación de las advertencias derivadas de CHOIR-67.
 
 ---
@@ -44,18 +44,19 @@ Calcular de forma **determinística y reproducible** el coste físico y los ries
       "singers": [12, 19],
       "message": "Cruce directo entre Pedro y Sofía en el sector central"
     }
-  ],
-  "score": 82.5
+  ]
 }
 ```
 
 Los identificadores de versión son numéricos (`Long`) en el contrato de borradores existente. Confirmar la semántica y las rutas de transición en Jira antes de implementar este endpoint propuesto.
+\n\
+CHOIR-24 calcula métricas y advertencias reproducibles, pero no calcula score ni ranking de alternativas; esa responsabilidad corresponde a CHOIR-25/26. No inferir velocidades, duraciones ni simultaneidad cuando no exista evidencia temporal explícita.
 
 ---
 
 ## 3. Criterios de Aceptación
 
-- [ ] Dados los mismos snapshots de entrada, el resultado de métricas y score es idéntico (reproducibilidad).
+- [ ] Dados los mismos snapshots de entrada, el resultado de métricas y advertencias es idéntico (reproducibilidad).
 - [ ] Calcula distancias euclidianas exactas en el plano del escenario.
 - [ ] Detecta intersecciones geométricas entre segmentos de desplazamiento.
 - [ ] No muta ninguna formación ni versión.
