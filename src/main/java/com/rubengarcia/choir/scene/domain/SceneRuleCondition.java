@@ -8,7 +8,8 @@ import java.util.List;
 public record SceneRuleCondition(
         OrderingMode orderingMode,
         List<SpatialConstraint> spatialConstraints,
-        List<ParticipantRef> exitParticipants) {
+        List<ParticipantRef> exitParticipants,
+        List<ExpectedMovementStep> expectedMovementSteps) {
 
     public SceneRuleCondition {
         spatialConstraints = spatialConstraints == null
@@ -17,6 +18,16 @@ public record SceneRuleCondition(
         exitParticipants = exitParticipants == null
                 ? null
                 : Collections.unmodifiableList(new ArrayList<>(exitParticipants));
+        expectedMovementSteps = expectedMovementSteps == null
+                ? null
+                : Collections.unmodifiableList(new ArrayList<>(expectedMovementSteps));
+    }
+
+    public SceneRuleCondition(
+            OrderingMode orderingMode,
+            List<SpatialConstraint> spatialConstraints,
+            List<ParticipantRef> exitParticipants) {
+        this(orderingMode, spatialConstraints, exitParticipants, null);
     }
 
     public enum OrderingMode {
@@ -52,6 +63,18 @@ public record SceneRuleCondition(
             ParticipantType type,
             Long singerId,
             Integer groupOrder) {
+    }
+
+    public record ExpectedMovementStep(
+            int order,
+            List<ParticipantRef> participants,
+            String action) {
+
+        public ExpectedMovementStep {
+            participants = participants == null
+                    ? null
+                    : Collections.unmodifiableList(new ArrayList<>(participants));
+        }
     }
 
     public record SpatialConstraint(

@@ -4,7 +4,9 @@ import com.rubengarcia.choir.formation.application.model.PlanningPosition;
 import com.rubengarcia.choir.formation.application.model.VocalAssignment;
 import com.rubengarcia.choir.formation.application.port.out.FormationPlanningResourceAuthorizationPort;
 import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
+import com.rubengarcia.choir.transition.application.model.TransitionMovementStepInput;
 import com.rubengarcia.choir.transition.application.usecase.TransitionPlanningService;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import java.math.BigDecimal;
@@ -62,6 +64,33 @@ public class FormationPlanningAuthorizationServiceImpl
                 .thenMany(Flux.defer(() ->
                         transitionPlanningService.positionsForTransitionVersion(
                                 transitionVersionId)));
+    }
+
+    @Override
+    public Flux<TransitionMovementStep> movementStepsForTransitionVersion(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId) {
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
+                .thenMany(Flux.defer(() -> transitionPlanningService
+                        .movementStepsForTransitionVersion(
+                                transitionId, transitionVersionId)));
+    }
+
+    @Override
+    public Mono<List<TransitionMovementStep>> replaceMovementSteps(
+            String email,
+            long choirId,
+            long transitionId,
+            long transitionVersionId,
+            List<TransitionMovementStepInput> steps) {
+        return authorizationPort
+                .requireOwnedTransitionVersion(email, choirId, transitionVersionId)
+                .then(Mono.defer(() -> transitionPlanningService
+                        .replaceMovementSteps(
+                                transitionId, transitionVersionId, steps)));
     }
 
     @Override

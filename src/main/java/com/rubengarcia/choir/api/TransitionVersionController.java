@@ -3,8 +3,10 @@ package com.rubengarcia.choir.api;
 import com.rubengarcia.choir.domain.TransitionVersion;
 import com.rubengarcia.choir.formation.application.usecase.FormationPlanningAuthorizationService;
 import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
+import com.rubengarcia.choir.transition.application.model.TransitionMovementStepInput;
 import com.rubengarcia.choir.transition.application.port.out.TransitionVersionPublicationPort.WarningAcceptance;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -12,12 +14,14 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -84,6 +88,36 @@ public class TransitionVersionController {
                 assignments);
     }
 
+    @GetMapping("/{transitionVersionId}/movement-steps")
+    public Flux<TransitionMovementStep> movementSteps(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @PathVariable long transitionVersionId,
+            Authentication authentication) {
+        return planningService.movementStepsForTransitionVersion(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                transitionVersionId);
+    }
+
+    @PutMapping("/{transitionVersionId}/movement-steps")
+    public Mono<List<TransitionMovementStep>> replaceMovementSteps(
+            @PathVariable long choirId,
+            @PathVariable long transitionId,
+            @PathVariable long transitionVersionId,
+            @Valid @RequestBody MovementStepsRequest request,
+            Authentication authentication) {
+        return planningService.replaceMovementSteps(
+                authentication.getName(),
+                choirId,
+                transitionId,
+                transitionVersionId,
+                request.steps().stream()
+                        .map(MovementStepRequest::toInput)
+                        .toList());
+    }
+
     @GetMapping("/{transitionVersionId}/rule-evaluations")
     public Flux<TransitionRuleEvaluationSnapshot> ruleEvaluationHistory(
             @PathVariable long choirId,
@@ -121,6 +155,22 @@ public class TransitionVersionController {
 
     public record RuleEvaluationRequest(
             @Size(max = 1000) List<@NotNull @Valid CountGroupAssignment> assignments) {
+    }
+
+    public record MovementStepsRequest(
+            @NotNull @Size(max = 500) List<@NotNull @Valid MovementStepRequest> steps) {
+    }
+
+    public record MovementStepRequest(
+            @Positive long singerId,
+            @Positive int sequenceNumber,
+            @NotNull OffsetDateTime temporalReference,
+            @NotBlank @Size(max = 100) String action) {
+
+        private TransitionMovementStepInput toInput() {
+            return new TransitionMovementStepInput(
+                    singerId, sequenceNumber, temporalReference, action);
+        }
     }
 
     public record PublishRequest(

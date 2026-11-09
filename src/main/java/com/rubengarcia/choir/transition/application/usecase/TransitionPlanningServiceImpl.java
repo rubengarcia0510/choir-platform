@@ -6,17 +6,22 @@ import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Evaluation;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Input;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Position;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
+import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.TemporalMovementStep;
 import com.rubengarcia.choir.scene.domain.SceneRuleRevisionSnapshot;
 import com.rubengarcia.choir.transition.application.model.CountGroupAssignment;
+import com.rubengarcia.choir.transition.application.model.TransitionMovementStepInput;
 import com.rubengarcia.choir.transition.application.port.out.SceneRuleSeparationSettingsPort;
+import com.rubengarcia.choir.transition.application.port.out.TransitionMovementStepRepository;
 import com.rubengarcia.choir.transition.application.port.out.TransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningContext;
+import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -30,13 +35,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple3;
+import reactor.util.function.Tuple4;
 
 @Service
 public class TransitionPlanningServiceImpl
         implements TransitionPlanningService {
 
     private final TransitionPlanningPositionRepository positionRepository;
+    private final TransitionMovementStepRepository movementStepRepository;
     private final SceneRuleHistoryPort sceneRuleHistoryPort;
     private final SceneRuleSeparationSettingsPort settingsPort;
     private final TransitionRuleEvaluationHistoryPort evaluationHistoryPort;
@@ -44,10 +50,12 @@ public class TransitionPlanningServiceImpl
 
     public TransitionPlanningServiceImpl(
             TransitionPlanningPositionRepository positionRepository,
+            TransitionMovementStepRepository movementStepRepository,
             SceneRuleHistoryPort sceneRuleHistoryPort,
             SceneRuleSeparationSettingsPort settingsPort,
             TransitionRuleEvaluationHistoryPort evaluationHistoryPort) {
         this.positionRepository = positionRepository;
+        this.movementStepRepository = movementStepRepository;
         this.sceneRuleHistoryPort = sceneRuleHistoryPort;
         this.settingsPort = settingsPort;
         this.evaluationHistoryPort = evaluationHistoryPort;
@@ -57,6 +65,45 @@ public class TransitionPlanningServiceImpl
     public Flux<TransitionPlanningPosition> positionsForTransitionVersion(
             long transitionVersionId) {
         return positionRepository.findByTransitionVersionId(transitionVersionId);
+    }
+
+    @Override
+    public Flux<TransitionMovementStep> movementStepsForTransitionVersion(
+            long transitionId, long transitionVersionId) {
+        return findPlanningContext(transitionId, transitionVersionId)
+                .flatMapMany(context -> movementStepRepository
+                        .findByTransitionVersionId(context.transitionVersionId()));
+    }
+
+    @Override
+    public Mono<List<TransitionMovementStep>> replaceMovementSteps(
+            long transitionId,
+            long transitionVersionId,
+            List<TransitionMovementStepInput> steps) {
+        return findPlanningContext(transitionId, transitionVersionId)
+                .flatMap(context -> {
+                    List<TransitionMovementStepInput> safeSteps =
+                            steps == null ? null : new ArrayList<>(steps);
+                    return validateMovementSteps(safeSteps)
+                            .then(Mono.defer(() -> {
+                                List<TransitionMovementStep> captured =
+                                        safeSteps.stream()
+                                                .map(step -> new TransitionMovementStep(
+                                                        context.transitionId(),
+                                                        context.transitionVersionId(),
+                                                        context.fromFormationVersionId(),
+                                                        context.toFormationVersionId(),
+                                                        step.singerId(),
+                                                        step.sequenceNumber(),
+                                                        step.temporalReference()
+                                                                .withOffsetSameInstant(
+                                                                        ZoneOffset.UTC),
+                                                        step.action().trim()))
+                                                .toList();
+                                return movementStepRepository
+                                        .replaceForDraftVersion(context, captured);
+                            }));
+                });
     }
 
     @Override
@@ -77,11 +124,7 @@ public class TransitionPlanningServiceImpl
         List<CountGroupAssignment> safeAssignments =
                 assignments == null ? List.of() : new ArrayList<>(assignments);
 
-        return positionRepository.findPlanningContext(transitionVersionId)
-                .filter(context -> context.transitionId() == transitionId)
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La versión no pertenece a la transición o no tiene snapshots válidos")))
+        return findPlanningContext(transitionId, transitionVersionId)
                 .flatMap(context -> Mono.zip(
                                 positionRepository
                                         .findByTransitionVersionId(transitionVersionId)
@@ -90,7 +133,10 @@ public class TransitionPlanningServiceImpl
                                         .findAllRevisionsByRepertoireItemId(
                                                 context.repertoireItemId())
                                         .collectList(),
-                                settingsPort.getCurrent())
+                                settingsPort.getCurrent(),
+                                movementStepRepository
+                                        .findByTransitionVersionId(transitionVersionId)
+                                        .collectList())
                         .flatMap(data -> evaluateAndSave(
                                 context,
                                 data,
@@ -101,11 +147,7 @@ public class TransitionPlanningServiceImpl
     public Flux<TransitionRuleEvaluationSnapshot> evaluationHistory(
             long transitionId,
             long transitionVersionId) {
-        return positionRepository.findPlanningContext(transitionVersionId)
-                .filter(context -> context.transitionId() == transitionId)
-                .switchIfEmpty(Mono.error(new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "La versión no pertenece a la transición")))
+        return findPlanningContext(transitionId, transitionVersionId)
                 .flatMapMany(context -> evaluationHistoryPort
                         .findAllByTransitionVersionId(
                                 context.transitionVersionId()));
@@ -113,10 +155,11 @@ public class TransitionPlanningServiceImpl
 
     private Mono<TransitionRuleEvaluationSnapshot> evaluateAndSave(
             TransitionPlanningContext context,
-            Tuple3<
+            Tuple4<
                     List<TransitionPlanningPosition>,
                     List<SceneRuleRevisionSnapshot>,
-                    SceneRuleSeparationSettingsPort.Setting> data,
+                    SceneRuleSeparationSettingsPort.Setting,
+                    List<TransitionMovementStep>> data,
             List<CountGroupAssignment> assignments) {
 
         List<SceneRuleRevisionSnapshot> activeRevisions =
@@ -133,6 +176,17 @@ public class TransitionPlanningServiceImpl
                 context.toFormationVersionId());
 
         List<RuleResult> results = new ArrayList<>();
+        List<TemporalMovementStep> temporalSteps = data.getT4().stream()
+                .map(step -> new TemporalMovementStep(
+                        step.transitionId(),
+                        step.transitionVersionId(),
+                        step.fromFormationVersionId(),
+                        step.toFormationVersionId(),
+                        step.singerId(),
+                        step.sequenceNumber(),
+                        step.temporalReference(),
+                        step.action()))
+                .toList();
 
         List<Warning> globalWarnings = List.of(new Warning(
                 null,
@@ -154,7 +208,10 @@ public class TransitionPlanningServiceImpl
                     context.toFormationVersionId(),
                     toPositions,
                     revisionAssignments,
-                    data.getT3().threshold()));
+                    data.getT3().threshold(),
+                    context.transitionId(),
+                    context.transitionVersionId(),
+                    temporalSteps));
 
             int resultOrder = order;
 
@@ -197,9 +254,53 @@ public class TransitionPlanningServiceImpl
                         overallStatus,
                         LocalDateTime.now(),
                         results,
-                        globalWarnings);
+                        globalWarnings,
+                        data.getT4());
 
         return evaluationHistoryPort.save(snapshot);
+    }
+
+    private Mono<TransitionPlanningContext> findPlanningContext(
+            long transitionId, long transitionVersionId) {
+        if (transitionId <= 0 || transitionVersionId <= 0) {
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Los identificadores de transición y versión deben ser positivos"));
+        }
+        return positionRepository.findPlanningContext(transitionVersionId)
+                .filter(context -> context.transitionId() == transitionId
+                        && context.transitionVersionId() == transitionVersionId
+                        && context.fromFormationVersionId() > 0
+                        && context.toFormationVersionId() > 0
+                        && context.fromFormationVersionId()
+                                != context.toFormationVersionId())
+                .switchIfEmpty(Mono.error(new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "La versión no pertenece a la transición o no tiene snapshots válidos")));
+    }
+
+    private Mono<Void> validateMovementSteps(
+            List<TransitionMovementStepInput> steps) {
+        if (steps == null || steps.size() > 500
+                || steps.stream().anyMatch(step -> step == null
+                        || step.singerId() <= 0
+                        || step.sequenceNumber() <= 0
+                        || step.temporalReference() == null
+                        || step.action() == null
+                        || step.action().isBlank()
+                        || step.action().length() > 100)) {
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Los pasos requieren participantes, secuencias y acciones válidas"));
+        }
+        Set<String> uniqueParticipantsBySequence = new HashSet<>();
+        if (steps.stream().anyMatch(step -> !uniqueParticipantsBySequence.add(
+                step.sequenceNumber() + ":" + step.singerId()))) {
+            return Mono.error(new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Un participante no puede aparecer más de una vez en el mismo paso"));
+        }
+        return Mono.empty();
     }
 
     private Map<Integer, List<Long>> assignmentsForRevision(

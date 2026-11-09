@@ -17,11 +17,42 @@ public record TransitionRuleEvaluationSnapshot(
         Status status,
         LocalDateTime evaluatedAt,
         List<RuleResult> results,
-        List<Warning> warnings) {
+        List<Warning> warnings,
+        List<TransitionMovementStep> movementSteps) {
 
     public TransitionRuleEvaluationSnapshot {
         results = List.copyOf(results);
         warnings = List.copyOf(warnings);
+        movementSteps = List.copyOf(movementSteps);
+    }
+
+    public TransitionRuleEvaluationSnapshot(
+            Long id,
+            long transitionVersionId,
+            long transitionId,
+            long fromFormationVersionId,
+            long toFormationVersionId,
+            long repertoireItemId,
+            long separationSettingsRevision,
+            BigDecimal globalSeparationThreshold,
+            Status status,
+            LocalDateTime evaluatedAt,
+            List<RuleResult> results,
+            List<Warning> warnings) {
+        this(
+                id,
+                transitionVersionId,
+                transitionId,
+                fromFormationVersionId,
+                toFormationVersionId,
+                repertoireItemId,
+                separationSettingsRevision,
+                globalSeparationThreshold,
+                status,
+                evaluatedAt,
+                results,
+                warnings,
+                List.of());
     }
 
     public record RuleResult(

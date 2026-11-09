@@ -133,8 +133,9 @@ public class R2dbcTransitionVersionPublicationAdapter
                     "No se puede publicar mientras existan reglas no evaluables"));
         }
 
-        return validateAcceptances(command.acceptedWarnings(), warnings,
-                        evaluation.results())
+        return requireCurrentMovementEvidence(evaluation)
+                .then(validateAcceptances(command.acceptedWarnings(), warnings,
+                        evaluation.results()))
                 .flatMap(accepted -> {
                     LocalDateTime publishedAt = LocalDateTime.now();
                     return saveDecisions(
@@ -143,6 +144,68 @@ public class R2dbcTransitionVersionPublicationAdapter
                             .then(markPublished(version.id(), publishedAt))
                             .thenReturn(toEntity(version, publishedAt));
                 });
+    }
+
+    private Mono<Void> requireCurrentMovementEvidence(
+            TransitionRuleEvaluationSnapshot evaluation) {
+        return database.sql("""
+                SELECT 1
+                FROM transition_versions version
+                WHERE version.id = :versionId
+                  AND (EXISTS (
+                    SELECT 1
+                    FROM transition_movement_steps current_step
+                    WHERE current_step.transition_version_id = :versionId
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM transition_rule_evaluation_movement_steps evidence
+                          WHERE evidence.evaluation_id = :evaluationId
+                            AND evidence.transition_version_id =
+                                current_step.transition_version_id
+                            AND evidence.transition_id = current_step.transition_id
+                            AND evidence.from_formation_version_id =
+                                current_step.from_formation_version_id
+                            AND evidence.to_formation_version_id =
+                                current_step.to_formation_version_id
+                            AND evidence.singer_id = current_step.singer_id
+                            AND evidence.sequence_number =
+                                current_step.sequence_number
+                            AND evidence.temporal_reference =
+                                current_step.temporal_reference
+                            AND evidence.action = current_step.action
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM transition_rule_evaluation_movement_steps evidence
+                    WHERE evidence.evaluation_id = :evaluationId
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM transition_movement_steps current_step
+                          WHERE current_step.transition_version_id = :versionId
+                            AND current_step.transition_version_id =
+                                evidence.transition_version_id
+                            AND current_step.transition_id = evidence.transition_id
+                            AND current_step.from_formation_version_id =
+                                evidence.from_formation_version_id
+                            AND current_step.to_formation_version_id =
+                                evidence.to_formation_version_id
+                            AND current_step.singer_id = evidence.singer_id
+                            AND current_step.sequence_number =
+                                evidence.sequence_number
+                            AND current_step.temporal_reference =
+                                evidence.temporal_reference
+                            AND current_step.action = evidence.action
+                      ))
+                )
+                """)
+                .bind("versionId", evaluation.transitionVersionId())
+                .bind("evaluationId", evaluation.id())
+                .fetch()
+                .first()
+                .flatMap(row -> Mono.error(conflict(
+                        "Los movimientos cambiaron después de esta evaluación")))
+                .then();
     }
 
     private List<Warning> collectWarnings(

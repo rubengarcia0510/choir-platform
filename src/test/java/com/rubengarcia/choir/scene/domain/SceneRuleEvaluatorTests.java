@@ -330,7 +330,7 @@ class SceneRuleEvaluatorTests {
     }
 
     @Test
-    void sequentialMovementIsNotEvaluableWithoutTemporalData() {
+    void sequentialMovementWithoutExpectedSequenceIsNotEvaluable() {
         SpatialConstraint near = constraint(
                 Relation.NEAR,
                 Stage.TO,
@@ -353,7 +353,7 @@ class SceneRuleEvaluatorTests {
         assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
         assertThat(result.warnings())
                 .extracting(SceneRuleEvaluator.Warning::code)
-                .containsExactly("TEMPORAL_SEQUENCE_UNAVAILABLE");
+                .contains("EXPECTED_MOVEMENT_SEQUENCE_MISSING");
     }
 
     @Test
