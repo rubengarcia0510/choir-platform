@@ -135,6 +135,18 @@ class SceneRuleEvaluatorSequentialOrderingTests {
     }
 
     @Test
+    void reversedTemporalReferencesAreNotEvaluable() {
+        Evaluation result = evaluateMovement(List.of(
+                movement(1, 1, "2026-01-01T10:00:01", "ENTER"),
+                movement(2, 2, "2026-01-01T10:00:00", "TURN")));
+
+        assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(result.warnings())
+                .extracting(SceneRuleEvaluator.Warning::code)
+                .contains("TEMPORAL_MOVEMENT_ORDER_AMBIGUOUS");
+    }
+
+    @Test
     void formationPositionsDoNotSubstituteForMissingTemporalSteps() {
         Evaluation result = evaluate("MOVEMENT");
 
