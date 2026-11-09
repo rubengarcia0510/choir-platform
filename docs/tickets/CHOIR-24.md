@@ -49,7 +49,7 @@ Calcular de forma **determinística y reproducible** el coste físico y los ries
 ```
 
 Los identificadores de versión son numéricos (`Long`) en el contrato de borradores existente. Confirmar la semántica y las rutas de transición en Jira antes de implementar este endpoint propuesto.
-\n\
+
 CHOIR-24 calcula métricas y advertencias reproducibles, pero no calcula score ni ranking de alternativas; esa responsabilidad corresponde a CHOIR-25/26. No inferir velocidades, duraciones ni simultaneidad cuando no exista evidencia temporal explícita.
 
 ---
