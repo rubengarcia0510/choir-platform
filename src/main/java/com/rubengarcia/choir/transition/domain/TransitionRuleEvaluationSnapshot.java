@@ -18,7 +18,9 @@ public record TransitionRuleEvaluationSnapshot(
         LocalDateTime evaluatedAt,
         List<RuleResult> results,
         List<Warning> warnings,
-        List<TransitionMovementStep> movementSteps) {
+        List<TransitionMovementStep> movementSteps,
+        TransitionDisplacementMetrics displacementMetrics,
+        TransitionTrajectoryAnalysis trajectoryAnalysis) {
 
     public TransitionRuleEvaluationSnapshot {
         results = List.copyOf(results);
@@ -52,7 +54,41 @@ public record TransitionRuleEvaluationSnapshot(
                 evaluatedAt,
                 results,
                 warnings,
-                List.of());
+                List.of(),
+                null,
+                null);
+    }
+
+    public TransitionRuleEvaluationSnapshot(
+            Long id,
+            long transitionVersionId,
+            long transitionId,
+            long fromFormationVersionId,
+            long toFormationVersionId,
+            long repertoireItemId,
+            long separationSettingsRevision,
+            BigDecimal globalSeparationThreshold,
+            Status status,
+            LocalDateTime evaluatedAt,
+            List<RuleResult> results,
+            List<Warning> warnings,
+            List<TransitionMovementStep> movementSteps) {
+        this(
+                id,
+                transitionVersionId,
+                transitionId,
+                fromFormationVersionId,
+                toFormationVersionId,
+                repertoireItemId,
+                separationSettingsRevision,
+                globalSeparationThreshold,
+                status,
+                evaluatedAt,
+                results,
+                warnings,
+                movementSteps,
+                null,
+                null);
     }
 
     public record RuleResult(

@@ -11,11 +11,14 @@ import com.rubengarcia.choir.transition.application.model.TransitionMovementStep
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLifecycleService;
 import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -24,14 +27,21 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseCookie;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.test.web.reactive.server.WebTestClient;
 
 @SpringBootTest
+@AutoConfigureWebTestClient
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TransitionRuleEvaluationTests {
@@ -46,6 +56,12 @@ class TransitionRuleEvaluationTests {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private WebTestClient web;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     private TransitionRuleEvaluationHistoryPort evaluationHistoryPort;
@@ -103,6 +119,12 @@ class TransitionRuleEvaluationTests {
                     WHERE transition_version_id = ?
                     """, transitionVersionId);
             jdbc.update("DELETE FROM transition_rule_evaluation_warnings WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_displacement_issues WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_singer_distances WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_displacement_metrics WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_trajectory_crossings WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_trajectory_issues WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
+            jdbc.update("DELETE FROM transition_rule_evaluation_trajectory_analyses WHERE evaluation_id IN (SELECT id FROM transition_rule_evaluations WHERE transition_version_id = ?)", transitionVersionId);
             jdbc.update("""
                     DELETE FROM transition_rule_evaluation_movement_steps
                     WHERE evaluation_id IN (
@@ -173,6 +195,23 @@ class TransitionRuleEvaluationTests {
         assertThat(first.fromFormationVersionId()).isEqualTo(fromVersionId);
         assertThat(first.toFormationVersionId()).isEqualTo(toVersionId);
         assertThat(first.repertoireItemId()).isEqualTo(repertoireItemId);
+        assertThat(first.displacementMetrics()).isNotNull();
+        assertThat(first.displacementMetrics().transitionVersionId())
+                .isEqualTo(transitionVersionId);
+        assertThat(first.displacementMetrics().fromFormationVersionId())
+                .isEqualTo(fromVersionId);
+        assertThat(first.displacementMetrics().toFormationVersionId())
+                .isEqualTo(toVersionId);
+        assertThat(first.displacementMetrics().totalDistance())
+                .isEqualByComparingTo("0.000000");
+        assertThat(first.displacementMetrics())
+                .isEqualTo(second.displacementMetrics());
+        assertThat(first.trajectoryAnalysis()).isNotNull();
+        assertThat(first.trajectoryAnalysis().transitionVersionId())
+                .isEqualTo(transitionVersionId);
+        assertThat(first.trajectoryAnalysis().crossings()).isEmpty();
+        assertThat(first.trajectoryAnalysis())
+                .isEqualTo(second.trajectoryAnalysis());
         assertThat(first.results()).hasSize(1);
         assertThat(first.results().getFirst().ruleRevisionId())
                 .isEqualTo(ruleRevisionId);
@@ -216,6 +255,10 @@ class TransitionRuleEvaluationTests {
         assertThat(recovered).isNotNull();
         assertThat(recovered.id()).isEqualTo(first.id());
         assertThat(recovered.transitionVersionId()).isEqualTo(transitionVersionId);
+        assertThat(recovered.displacementMetrics())
+                .isEqualTo(first.displacementMetrics());
+        assertThat(recovered.trajectoryAnalysis())
+                .isEqualTo(first.trajectoryAnalysis());
         assertThat(recovered.results())
                 .extracting(TransitionRuleEvaluationSnapshot.RuleResult::ruleRevisionId)
                 .containsExactly(ruleRevisionId);
@@ -244,6 +287,163 @@ class TransitionRuleEvaluationTests {
                 WHERE transition_version_id = ?
                 """, Integer.class, transitionVersionId))
                 .isEqualTo(2);
+    }
+
+    @Test
+    void evaluationEndpointReturnsAndRecoversCompleteTransitionContract() {
+        createFixture();
+        jdbc.update("""
+                UPDATE directors SET password_hash = ?, email_verified = TRUE
+                WHERE id = ?
+                """, passwordEncoder.encode("Transition-Evaluation-Test-2026!"), directorId);
+        Session session = login();
+        String path = "/api/choirs/" + choirId + "/transitions/" + transitionId
+                + "/versions/" + transitionVersionId + "/rule-evaluations";
+
+        web.post()
+                .uri(path)
+                .cookie("SESSION", session.id())
+                .header("X-CSRF-TOKEN", session.csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody()
+                .jsonPath("$.transitionId").isEqualTo(transitionId)
+                .jsonPath("$.transitionVersionId").isEqualTo(transitionVersionId)
+                .jsonPath("$.fromFormationVersionId").isEqualTo(fromVersionId)
+                .jsonPath("$.toFormationVersionId").isEqualTo(toVersionId)
+                .jsonPath("$.repertoireItemId").isEqualTo(repertoireItemId)
+                .jsonPath("$.displacementMetrics.movingSingerCount").isEqualTo(0)
+                .jsonPath("$.trajectoryAnalysis.crossings").isArray();
+
+        web.get()
+                .uri(path)
+                .cookie("SESSION", session.id())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$[0].displacementMetrics.transitionVersionId")
+                .isEqualTo(transitionVersionId)
+                .jsonPath("$[0].trajectoryAnalysis.transitionVersionId")
+                .isEqualTo(transitionVersionId)
+                .jsonPath("$[0].results[0].ruleRevisionId")
+                .isEqualTo(ruleRevisionId);
+    }
+
+    @Test
+    void integratesCrossingConflictAndPersistsExactFunctionalEvidence() {
+        createFixture();
+        jdbc.update("""
+                UPDATE formation_positions SET x_coordinate = 0, y_coordinate = 0
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, fromVersionId, singerOneId);
+        jdbc.update("""
+                UPDATE formation_positions SET x_coordinate = 0, y_coordinate = 1
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, fromVersionId, singerTwoId);
+        jdbc.update("""
+                UPDATE formation_positions SET x_coordinate = 1, y_coordinate = 1
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, toVersionId, singerOneId);
+        jdbc.update("""
+                UPDATE formation_positions SET x_coordinate = 1, y_coordinate = 0
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, toVersionId, singerTwoId);
+        authorizedPlanningService.replaceMovementSteps(
+                email,
+                choirId,
+                transitionId,
+                transitionVersionId,
+                List.of(
+                        movementInput(1, singerOneId, "2026-01-01T10:00:00", "MOVE"),
+                        movementInput(1, singerTwoId, "2026-01-01T10:00:00", "MOVE")))
+                .block();
+
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+
+        assertThat(evaluation.status()).isEqualTo(Status.VIOLATED);
+        assertThat(evaluation.displacementMetrics().movingSingerCount()).isEqualTo(2);
+        assertThat(evaluation.displacementMetrics().totalDistance())
+                .isEqualByComparingTo("2.828428");
+        assertThat(evaluation.trajectoryAnalysis().crossings())
+                .singleElement()
+                .satisfies(crossing -> {
+                    assertThat(crossing.firstSingerId()).isEqualTo(singerOneId);
+                    assertThat(crossing.secondSingerId()).isEqualTo(singerTwoId);
+                    assertThat(crossing.temporalConflictStatus().name())
+                            .isEqualTo("CONFIRMED");
+                });
+        assertThat(evaluation.warnings())
+                .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
+                .contains("TRAJECTORY_CONFLICT_CONFIRMED");
+        assertThat(evaluation.results()).singleElement().satisfies(result -> {
+            assertThat(result.ruleRevisionId()).isEqualTo(ruleRevisionId);
+            assertThat(result.status()).isEqualTo(Status.VIOLATED);
+        });
+        TransitionRuleEvaluationSnapshot recovered =
+                evaluationHistoryPort.findById(evaluation.id()).block();
+        assertThat(recovered.displacementMetrics())
+                .isEqualTo(evaluation.displacementMetrics());
+        assertThat(recovered.trajectoryAnalysis())
+                .isEqualTo(evaluation.trajectoryAnalysis());
+        assertThat(recovered.results().getFirst().ruleRevisionId())
+                .isEqualTo(ruleRevisionId);
+    }
+
+    @Test
+    void incompleteSnapshotsAreReportedAndRemainImmutableInHistory() {
+        createFixture();
+        jdbc.update("""
+                DELETE FROM formation_positions
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, toVersionId, singerTwoId);
+
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+        assertThat(evaluation.results()).singleElement().satisfies(result -> {
+            assertThat(result.ruleRevisionId()).isEqualTo(ruleRevisionId);
+            assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE);
+        });
+        assertThat(evaluation.displacementMetrics().dataIssues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.code())
+                            .isEqualTo(TransitionDisplacementMetrics.DataIssueCode
+                                    .MISSING_COUNTERPART);
+                    assertThat(issue.stage())
+                            .isEqualTo(TransitionDisplacementMetrics.Stage.TO);
+                    assertThat(issue.singerId()).isEqualTo(singerTwoId);
+                });
+        assertThat(evaluation.trajectoryAnalysis().geometryIssues())
+                .anySatisfy(issue -> {
+                    assertThat(issue.code())
+                            .isEqualTo(TransitionTrajectoryAnalysis.GeometryIssueCode
+                                    .MISSING_COUNTERPART);
+                    assertThat(issue.stage()).isEqualTo("TO");
+                    assertThat(issue.singerId()).isEqualTo(singerTwoId);
+                });
+        assertThat(evaluation.warnings())
+                .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
+                .contains("DISPLACEMENT_MISSING_COUNTERPART",
+                        "TRAJECTORY_MISSING_COUNTERPART");
+
+        jdbc.update("""
+                INSERT INTO formation_positions (
+                    formation_version_id, singer_id, singer_name_snapshot,
+                    voice_part_snapshot, position_label, x_coordinate, y_coordinate
+                ) VALUES (?, ?, 'Restored singer', 'SOPRANO', 'Restored', 0.9, 0.9)
+                """, toVersionId, singerTwoId);
+        TransitionRuleEvaluationSnapshot recovered =
+                evaluationHistoryPort.findById(evaluation.id()).block();
+        assertThat(recovered.displacementMetrics())
+                .isEqualTo(evaluation.displacementMetrics());
+        assertThat(recovered.trajectoryAnalysis())
+                .isEqualTo(evaluation.trajectoryAnalysis());
     }
 
     @Test
@@ -921,6 +1121,42 @@ class TransitionRuleEvaluationTests {
                 ) VALUES (?, ?, ?, 'SOPRANO', 'Evaluation position', ?, ?)
                 """, versionId, singerId, "Singer " + singerId,
                 new BigDecimal(x), new BigDecimal(y));
+    }
+
+    private Session login() {
+        var csrfResponse = web.get()
+                .uri("/api/auth/csrf")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(new ParameterizedTypeReference<Map<String, String>>() {})
+                .returnResult();
+
+        ResponseCookie initialCookie =
+                csrfResponse.getResponseCookies().getFirst("SESSION");
+        assertThat(initialCookie).isNotNull();
+        String csrf = csrfResponse.getResponseBody().get("token");
+        assertThat(csrf).isNotBlank();
+
+        var loginResponse = web.post()
+                .uri("/api/auth/login")
+                .cookie("SESSION", initialCookie.getValue())
+                .header("X-CSRF-TOKEN", csrf)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of(
+                        "email", email,
+                        "password", "Transition-Evaluation-Test-2026!"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult();
+
+        ResponseCookie authenticatedCookie =
+                loginResponse.getResponseCookies().getFirst("SESSION");
+        assertThat(authenticatedCookie).isNotNull();
+        return new Session(authenticatedCookie.getValue(), csrf);
+    }
+
+    private record Session(String id, String csrf) {
     }
 
 }

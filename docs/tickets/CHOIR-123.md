@@ -29,14 +29,30 @@ Componer los resultados geométricos y temporales con la evaluación existente d
 
 ## Contrato HTTP
 
-No asumir como definitivo el endpoint propuesto en `docs/tickets/CHOIR-24.md`.
+Se extiende el flujo existente de evaluación; no se agrega otro endpoint:
 
-Antes de implementar:
-- Revisar controladores y contratos HTTP existentes.
-- Identificar el flujo actual de planificación y evaluación.
-- Confirmar cómo se identifican versiones y transiciones.
-- Definir la ruta y el contrato final sin duplicar endpoints ni casos de uso.
-- Documentar la decisión en este ticket y en la especificación REST.
+- `POST /api/choirs/{choirId}/transitions/{transitionId}/versions/{transitionVersionId}/rule-evaluations`
+  crea una evaluación y conserva el request existente de asignaciones opcionales.
+- `GET` sobre la misma ruta devuelve el historial en orden de creación.
+- Ambos endpoints identifican la transición y versión exactas en la ruta y
+  requieren autenticación/autorización del director propietario.
+- El snapshot agrega `displacementMetrics` y `trajectoryAnalysis`, junto con
+  las referencias ya existentes a snapshots, regla y revisión exacta. Cada
+  cruce conserva su estado temporal; advertencias globales siguen en
+  `warnings` y las de una regla en `results[].warnings`.
+- `CONFIRMED` se expone como advertencia `VIOLATED` y afecta el estado global;
+  `NOT_CONCURRENT` se expone como advertencia `SATISFIED`; evidencia temporal
+  insuficiente o inconsistente se expone como `NOT_EVALUABLE`. La política de
+  publicación vigente bloquea cualquier advertencia no evaluable y requiere
+  aceptación explícita para las violaciones ordinarias.
+- Las evaluaciones históricas creadas antes de esta extensión devuelven
+  `null` en los dos campos nuevos: no se reconstruyen a partir de snapshots
+  actuales.
+
+Esta ruta corresponde al `POST` y `GET` ya implementados en
+`TransitionVersionController`; no duplica el caso de uso ni crea un endpoint
+paralelo. El contrato REST detallado está en
+`docs/transition-version-publication-contract.md`.
 
 ## Historia e inmutabilidad
 

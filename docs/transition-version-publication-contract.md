@@ -11,6 +11,33 @@ The authenticated director identity comes from the security context, never
 from the request body. The application service authorizes choir ownership
 before invoking the persistence port.
 
+## Evaluation result (CHOIR-123)
+
+The existing evaluation and history routes are also the REST contract for the
+composed CHOIR-121/122 result:
+
+- `POST /api/choirs/{choirId}/transitions/{transitionId}/versions/{transitionVersionId}/rule-evaluations`
+  accepts the existing optional rule-group `assignments` and returns `201`
+  with the immutable evaluation snapshot.
+- `GET` on that same URI returns `200` with the evaluation-history array in
+  creation order. Neither route introduces a parallel evaluation operation.
+- The snapshot retains its transition, exact transition-version, FROM/TO
+  formation-version, repertoire-item and rule-revision references. It adds
+  `displacementMetrics` (individual distances, totals, moving-singer count and
+  geometry data issues) and `trajectoryAnalysis` (geometric crossings with
+  temporal status and geometry issues). Top-level warnings are global;
+  warnings associated with a rule remain nested under that exact rule result.
+- A confirmed temporal conflict maps to a global `VIOLATED` warning and makes
+  the overall evaluation `VIOLATED`. A geometric crossing with sufficient
+  evidence proving non-concurrency maps to a `SATISFIED` warning. Missing or
+  inconsistent geometry/evidence maps to `NOT_EVALUABLE`. The evaluation
+  status prioritizes violations, but publication still rejects any
+  `NOT_EVALUABLE` warning; an ordinary violation requires the existing
+  warning-specific acceptance.
+- Evaluations created before CHOIR-123 have `null` values for the two added
+  fields in history. History is read from the evaluation's persisted output;
+  it is never reconstructed from current snapshots or rules.
+
 ## Request intent
 
 A publication request identifies one persisted rule evaluation by ID. It may
