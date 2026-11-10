@@ -146,6 +146,42 @@ class TransitionRuleEvaluationHistoricalImmutabilityTests {
                         WHERE transition_version_id = ?)
                     """, transitionVersionId);
             jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_displacement_issues
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_singer_distances
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_displacement_metrics
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_trajectory_crossings
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_trajectory_issues
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
+                    DELETE FROM transition_rule_evaluation_trajectory_analyses
+                    WHERE evaluation_id IN (
+                        SELECT id FROM transition_rule_evaluations
+                        WHERE transition_version_id = ?)
+                    """, transitionVersionId);
+            jdbc.update("""
                     DELETE FROM transition_rule_evaluation_results
                     WHERE evaluation_id IN (
                         SELECT id FROM transition_rule_evaluations
