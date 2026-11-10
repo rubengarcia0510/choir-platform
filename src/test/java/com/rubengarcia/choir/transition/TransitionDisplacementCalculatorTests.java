@@ -60,19 +60,29 @@ class TransitionDisplacementCalculatorTests {
     }
 
     @Test
-    void countsOnlyPositiveNormalizedDistancesAsMovement() {
+    void countsGeometricMovementIndependentlyOfDistanceRounding() {
         TransitionDisplacementMetrics result = calculator.calculate(
                 context(),
                 List.of(
-                        position("FROM", 10, 1L, "1.25", "2"),
-                        position("TO", 11, 1L, "1.25", "2")));
+                        position("FROM", 10, 1L, "0", "0"),
+                        position("FROM", 10, 2L, "0", "0"),
+                        position("FROM", 10, 3L, "0", "0"),
+                        position("FROM", 10, 4L, "0", "0"),
+                        position("TO", 11, 1L, "0", "0"),
+                        position("TO", 11, 2L, "0.0000004", "0"),
+                        position("TO", 11, 3L, "0.000001", "0"),
+                        position("TO", 11, 4L, "0.0000014", "0")));
 
         assertThat(result.singerDistances())
-                .extracting("distance")
-                .containsExactly(distance("0.000000"));
-        assertThat(result.totalDistance()).isEqualTo(distance("0.000000"));
-        assertThat(result.maxIndividualDistance()).isEqualTo(distance("0.000000"));
-        assertThat(result.movingSingerCount()).isZero();
+                .extracting("singerId", "distance")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1L, distance("0.000000")),
+                        org.assertj.core.groups.Tuple.tuple(2L, distance("0.000000")),
+                        org.assertj.core.groups.Tuple.tuple(3L, distance("0.000001")),
+                        org.assertj.core.groups.Tuple.tuple(4L, distance("0.000001")));
+        assertThat(result.totalDistance()).isEqualTo(distance("0.000002"));
+        assertThat(result.maxIndividualDistance()).isEqualTo(distance("0.000001"));
+        assertThat(result.movingSingerCount()).isEqualTo(3);
     }
 
     @Test

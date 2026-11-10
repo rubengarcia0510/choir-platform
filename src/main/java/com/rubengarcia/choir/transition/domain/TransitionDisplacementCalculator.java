@@ -106,7 +106,7 @@ public final class TransitionDisplacementCalculator {
             if (distance.compareTo(maxIndividualDistance) > 0) {
                 maxIndividualDistance = distance;
             }
-            if (distance.compareTo(ZERO) > 0) {
+            if (hasGeometricMovement(from.getFirst(), to.getFirst())) {
                 movingSingerCount++;
             }
         }
@@ -196,5 +196,12 @@ public final class TransitionDisplacementCalculator {
                 .add(dy.multiply(dy))
                 .sqrt(SQRT_CONTEXT)
                 .setScale(DISTANCE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private static boolean hasGeometricMovement(
+            TransitionPlanningPosition from,
+            TransitionPlanningPosition to) {
+        return from.xCoordinate().compareTo(to.xCoordinate()) != 0
+                || from.yCoordinate().compareTo(to.yCoordinate()) != 0;
     }
 }

@@ -65,7 +65,15 @@ Calcular métricas determinísticas de movimiento comparando los snapshots exact
 
 - Cada distancia individual se redondea a seis decimales con `HALF_UP`.
 - La distancia total suma las distancias individuales ya normalizadas; el
-  máximo individual y el conteo de movimientos usan esos mismos valores.
+  máximo individual usa esos mismos valores.
+- `movingSingerCount` cuenta todo coreuta cuyas coordenadas FROM y TO difieren
+  geométricamente, antes del redondeo. Una distancia positiva menor que media
+  unidad de la sexta cifra decimal puede mostrarse como `0.000000` y aun así
+  contar como movimiento. En `0.000001` y por encima se muestra al menos
+  `0.000001`; el conteo no aplica un umbral de distancia.
+- Por ello, el conteo describe el movimiento geométrico y las distancias
+  describen magnitudes redondeadas para presentación; un conteo positivo con
+  total normalizado cero es válido. Ambos resultados son determinísticos.
 - Se excluyen del cálculo y se reportan las identidades inválidas, posiciones
   duplicadas, coordenadas ausentes y participantes sin contraparte.
 - El resultado conserva los IDs exactos de transición y de ambos snapshots.
