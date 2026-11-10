@@ -45,3 +45,35 @@ Usá puertos o interfaces en los límites cuando aporten desacoplamiento útil y
 - No agregues dependencias ni cambies límites entre JDBC y R2DBC sin una necesidad concreta.
 
 Consultá [README.md](../README.md) para los requisitos, comandos y límites de persistencia, y [docs/domain-model.md](../docs/domain-model.md) para las reglas del dominio y las decisiones de persistencia.
+
+## Límites entre dominios y colaboración
+
+Los dominios principales tienen responsabilidades independientes:
+
+- `formation`: posiciones, bloqueos, restricciones de proximidad, movilidad y visibilidad, y validación de movimientos.
+- `transition`: comparación de snapshots, distancias, geometría de trayectorias, cruces y evidencia temporal.
+- `scene`: reglas especiales de escena y su evaluación.
+
+Reglas obligatorias:
+
+1. No importar clases internas, repositorios concretos, adapters ni entidades de persistencia de otro dominio.
+2. No utilizar tablas o consultas SQL compartidas como contratos de integración.
+3. Toda integración entre dominios requiere un contrato explícito, pequeño y cohesivo.
+4. Revisar la dirección de dependencia antes de definir el paquete del contrato.
+5. No crear interfaces genéricas ni paquetes comunes para anticipar necesidades hipotéticas.
+6. Mantener los validadores y sus modelos de violación dentro de su dominio.
+7. Usar Strategy para validadores independientes cuando existan implementaciones reales.
+8. Usar Composite cuando sea necesario ejecutar varios validadores y recopilar todas las violaciones.
+9. No usar Chain of Responsibility cuando se deban informar todas las violaciones.
+10. Agregar pruebas de arquitectura para proteger los límites de dependencia.
+11. Antes de modificar clases de otro dominio, acordar el contrato o abrir un ticket de integración.
+
+Coordinación de los tickets actuales:
+
+- CHOIR-85/86/87/88: `formation`.
+- CHOIR-121/122/123: `transition`.
+- CHOIR-20/67: `scene`.
+
+CHOIR-24 integra métricas de transición con reglas de escena. No incorpora el motor de restricciones de formación.
+
+Consultar `docs/architecture/domain-boundaries.md`.

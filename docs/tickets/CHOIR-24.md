@@ -173,3 +173,15 @@ debe elegir el director.
 - Las pruebas relevantes pasan con H2 y PostgreSQL.
 - El contrato REST queda documentado.
 
+
+## Límites entre dominios
+
+- `formation` mantiene posiciones, bloqueos y restricciones de proximidad, movilidad y visibilidad.
+- `transition` compara snapshots, calcula distancias y detecta cruces y conflictos temporales con evidencia explícita.
+- `scene` mantiene las reglas especiales de escena de CHOIR-20/67.
+- CHOIR-121/122 no importan validadores ni clases internas de `formation`.
+- CHOIR-123 integra los cálculos de transición con las reglas de `scene`.
+- CHOIR-24 no incorpora el motor de restricciones de formación.
+- Una integración futura con restricciones de formación requiere alcance y contrato explícitos.
+
+Consultar `docs/architecture/domain-boundaries.md`.
