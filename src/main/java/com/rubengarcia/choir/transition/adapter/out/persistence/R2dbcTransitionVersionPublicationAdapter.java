@@ -9,6 +9,7 @@ import com.rubengarcia.choir.transition.application.port.out.TransitionVersionPu
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,6 +26,9 @@ import reactor.core.publisher.Mono;
 @Component
 public class R2dbcTransitionVersionPublicationAdapter
         implements TransitionVersionPublicationPort {
+
+    private static final String INFORMATIONAL_WARNING_CODE =
+            "DIRECTOR_VISIBILITY_NOT_EVALUABLE";
 
     private final DatabaseClient database;
     private final TransitionRuleEvaluationHistoryPort evaluationHistory;
@@ -107,12 +111,22 @@ public class R2dbcTransitionVersionPublicationAdapter
                     "La evaluación no corresponde a esta versión de transición"));
         }
 
-        if (evaluation.status() == Status.NOT_EVALUABLE) {
+        List<Warning> warnings = collectWarnings(evaluation);
+
+        if (warnings.stream().anyMatch(this::hasInvalidInformationalClassification)) {
+            return Mono.error(conflict(
+                    "Solo DIRECTOR_VISIBILITY_NOT_EVALUABLE puede ser informativa"));
+        }
+
+        boolean hasInformationalNotEvaluableWarning = warnings.stream()
+                .anyMatch(warning -> warning.status() == Status.NOT_EVALUABLE
+                        && isApprovedInformationalWarning(warning));
+
+        if (evaluation.status() == Status.NOT_EVALUABLE
+                && !hasInformationalNotEvaluableWarning) {
             return Mono.error(conflict(
                     "No se puede publicar una evaluación no evaluable"));
         }
-
-        List<Warning> warnings = collectWarnings(evaluation);
 
         if (evaluation.status() == Status.VIOLATED
                 && warnings.stream().noneMatch(warning ->
@@ -121,16 +135,17 @@ public class R2dbcTransitionVersionPublicationAdapter
                     "Una evaluación VIOLATED requiere advertencias VIOLATED aceptables"));
         }
 
-        if (warnings.stream().anyMatch(warning ->
-                warning.status() == Status.NOT_EVALUABLE)) {
-            return Mono.error(conflict(
-                    "No se puede publicar mientras existan advertencias no evaluables"));
-        }
-
         if (evaluation.results().stream().anyMatch(result ->
                 result.status() == Status.NOT_EVALUABLE)) {
             return Mono.error(conflict(
                     "No se puede publicar mientras existan reglas no evaluables"));
+        }
+
+        if (warnings.stream().anyMatch(warning ->
+                warning.status() == Status.NOT_EVALUABLE
+                        && warning.publicationImpact() == PublicationImpact.BLOCKING)) {
+            return Mono.error(conflict(
+                    "No se puede publicar mientras existan advertencias no evaluables bloqueantes"));
         }
 
         return requireCurrentMovementEvidence(evaluation)
@@ -144,6 +159,16 @@ public class R2dbcTransitionVersionPublicationAdapter
                             .then(markPublished(version.id(), publishedAt))
                             .thenReturn(toEntity(version, publishedAt));
                 });
+    }
+
+    private boolean hasInvalidInformationalClassification(Warning warning) {
+        return warning.publicationImpact() == PublicationImpact.INFORMATIONAL
+                && !isApprovedInformationalWarning(warning);
+    }
+
+    private boolean isApprovedInformationalWarning(Warning warning) {
+        return INFORMATIONAL_WARNING_CODE.equals(warning.code())
+                && warning.status() == Status.NOT_EVALUABLE;
     }
 
     private Mono<Void> requireCurrentMovementEvidence(
@@ -245,9 +270,7 @@ public class R2dbcTransitionVersionPublicationAdapter
                     warnings, acceptance.resultOrder(), acceptance.warningOrder());
 
             if (matched == null
-                    || matched.status() != Status.VIOLATED
-                    || "VISIBILITY_UNVERIFIED".equals(matched.code())
-                    || "DIRECTOR_VISIBILITY_NOT_EVALUABLE".equals(matched.code())) {
+                    || matched.status() != Status.VIOLATED) {
                 return Mono.error(badRequest(
                         "La aceptación debe referenciar una advertencia VIOLATED existente"));
             }

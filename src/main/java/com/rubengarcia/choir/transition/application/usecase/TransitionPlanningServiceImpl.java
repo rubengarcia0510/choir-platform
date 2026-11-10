@@ -22,6 +22,7 @@ import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.TemporalConflictStatus;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalyzer;
@@ -213,7 +214,8 @@ public class TransitionPlanningServiceImpl
                 0,
                 "DIRECTOR_VISIBILITY_NOT_EVALUABLE",
                 "La visibilidad física del director no puede verificarse con la geometría relativa",
-                Status.NOT_EVALUABLE)));
+                Status.NOT_EVALUABLE,
+                PublicationImpact.INFORMATIONAL)));
         addDisplacementWarnings(globalWarnings, displacementMetrics);
         addTrajectoryWarnings(globalWarnings, trajectoryAnalysis);
 

@@ -13,6 +13,7 @@ import com.rubengarcia.choir.transition.application.usecase.TransitionVersionLif
 import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -290,6 +291,129 @@ class TransitionRuleEvaluationTests {
     }
 
     @Test
+    void informationalDirectorVisibilityWarningRemainsInHistoryAndAllowsPublication() {
+        createFixture();
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+
+        assertThat(evaluation.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(evaluation.warnings()).singleElement().satisfies(warning -> {
+            assertThat(warning.code())
+                    .isEqualTo("DIRECTOR_VISIBILITY_NOT_EVALUABLE");
+            assertThat(warning.status()).isEqualTo(Status.NOT_EVALUABLE);
+            assertThat(warning.publicationImpact())
+                    .isEqualTo(PublicationImpact.INFORMATIONAL);
+        });
+        assertThat(jdbc.queryForMap("""
+                SELECT status, publication_impact
+                FROM transition_rule_evaluation_warnings
+                WHERE evaluation_id = ? AND code = 'DIRECTOR_VISIBILITY_NOT_EVALUABLE'
+                """, evaluation.id()))
+                .containsEntry("STATUS", "NOT_EVALUABLE")
+                .containsEntry("PUBLICATION_IMPACT", "INFORMATIONAL");
+
+        TransitionRuleEvaluationSnapshot recovered =
+                evaluationHistoryPort.findById(evaluation.id()).block();
+        assertThat(recovered.warnings()).containsExactlyElementsOf(evaluation.warnings());
+
+        TransitionVersion published = lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of()).block();
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_evidence
+                WHERE transition_version_id = ? AND evaluation_id = ?
+                """, Integer.class, transitionVersionId, evaluation.id()))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE transition_version_id = ?
+                """, Integer.class, transitionVersionId))
+                .isZero();
+        assertThat(evaluationHistoryPort.findById(evaluation.id()).block().warnings())
+                .containsExactlyElementsOf(evaluation.warnings());
+    }
+
+    @Test
+    void mandatoryNonEvaluableSceneRuleStillBlocksWithInformationalVisibilityWarning() {
+        createFixture();
+        installSequentialMovementRule();
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+
+        assertThat(evaluation.status()).isEqualTo(Status.NOT_EVALUABLE);
+        assertThat(evaluation.results()).singleElement().satisfies(result ->
+                assertThat(result.status()).isEqualTo(Status.NOT_EVALUABLE));
+        assertThat(evaluation.warnings())
+                .extracting(TransitionRuleEvaluationSnapshot.Warning::publicationImpact)
+                .containsExactly(PublicationImpact.INFORMATIONAL);
+
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of()).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("reglas no evaluables");
+        assertThat(jdbc.queryForObject("""
+                SELECT status FROM transition_versions WHERE id = ?
+                """, String.class, transitionVersionId)).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void violatedWarningsRequireOneValidAcceptance() {
+        createFixture();
+        jdbc.update("""
+                UPDATE formation_positions
+                SET x_coordinate = 0.90
+                WHERE formation_version_id = ? AND singer_id = ?
+                """, toVersionId, singerTwoId);
+        TransitionRuleEvaluationSnapshot evaluation =
+                authorizedPlanningService.evaluateTransitionVersion(
+                        email, choirId, transitionId, transitionVersionId)
+                        .block();
+        assertThat(evaluation.status()).isEqualTo(Status.VIOLATED);
+        assertThat(evaluation.results()).singleElement().satisfies(result ->
+                assertThat(result.status()).isEqualTo(Status.VIOLATED));
+
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of()).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("aceptarse explícitamente");
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(),
+                List.of(new com.rubengarcia.choir.transition.application.port.out
+                        .TransitionVersionPublicationPort.WarningAcceptance(
+                                9, 0, "Aceptación inexistente"))).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("existente");
+
+        var acceptance = new com.rubengarcia.choir.transition.application.port.out
+                .TransitionVersionPublicationPort.WarningAcceptance(
+                        0, 0, "Aceptación explícita de la regla violada");
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of(acceptance, acceptance)).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("dos veces");
+
+        TransitionVersion published = lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of(acceptance)).block();
+        assertThat(published.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM transition_publication_decisions
+                WHERE evaluation_id = ? AND result_order = 0
+                  AND warning_order = 0 AND decision = 'ACCEPTED'
+                """, Integer.class, evaluation.id()))
+                .isEqualTo(1);
+    }
+
+    @Test
     void evaluationEndpointReturnsAndRecoversCompleteTransitionContract() {
         createFixture();
         jdbc.update("""
@@ -315,6 +439,9 @@ class TransitionRuleEvaluationTests {
                 .jsonPath("$.toFormationVersionId").isEqualTo(toVersionId)
                 .jsonPath("$.repertoireItemId").isEqualTo(repertoireItemId)
                 .jsonPath("$.displacementMetrics.movingSingerCount").isEqualTo(0)
+                .jsonPath("$.warnings[0].status").isEqualTo("NOT_EVALUABLE")
+                .jsonPath("$.warnings[0].publicationImpact")
+                .isEqualTo("INFORMATIONAL")
                 .jsonPath("$.trajectoryAnalysis.crossings").isArray();
 
         web.get()
@@ -431,6 +558,11 @@ class TransitionRuleEvaluationTests {
                 .extracting(TransitionRuleEvaluationSnapshot.Warning::code)
                 .contains("DISPLACEMENT_MISSING_COUNTERPART",
                         "TRAJECTORY_MISSING_COUNTERPART");
+        assertThatThrownBy(() -> lifecycleService.publish(
+                email, choirId, transitionId, transitionVersionId,
+                evaluation.id(), List.of()).block())
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("reglas no evaluables");
 
         jdbc.update("""
                 INSERT INTO formation_positions (
