@@ -110,6 +110,31 @@ public record TransitionRuleEvaluationSnapshot(
             int warningOrder,
             String code,
             String explanation,
-            Status status) {
+            Status status,
+            PublicationImpact publicationImpact) {
+
+        public Warning {
+            java.util.Objects.requireNonNull(publicationImpact, "publicationImpact");
+        }
+
+        public Warning(
+                Integer resultOrder,
+                int warningOrder,
+                String code,
+                String explanation,
+                Status status) {
+            this(
+                    resultOrder,
+                    warningOrder,
+                    code,
+                    explanation,
+                    status,
+                    PublicationImpact.BLOCKING);
+        }
+
+        public enum PublicationImpact {
+            BLOCKING,
+            INFORMATIONAL
+        }
     }
 }

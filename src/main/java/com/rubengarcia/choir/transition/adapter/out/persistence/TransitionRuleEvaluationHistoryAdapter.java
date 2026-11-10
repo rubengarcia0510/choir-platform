@@ -11,6 +11,7 @@ import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics.Sta
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.GeometryIssue;
 import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.GeometryIssueCode;
@@ -320,7 +321,8 @@ public class TransitionRuleEvaluationHistoryAdapter
 
     private Mono<List<Warning>> loadWarnings(long evaluationId) {
         return database.sql("""
-                SELECT result_order, warning_order, code, explanation, status
+                SELECT result_order, warning_order, code, explanation, status,
+                       publication_impact
                 FROM transition_rule_evaluation_warnings
                 WHERE evaluation_id = :evaluationId
                 ORDER BY result_order, warning_order
@@ -331,7 +333,9 @@ public class TransitionRuleEvaluationHistoryAdapter
                         row.get("warning_order", Integer.class),
                         row.get("code", String.class),
                         row.get("explanation", String.class),
-                        Status.valueOf(row.get("status", String.class))))
+                        Status.valueOf(row.get("status", String.class)),
+                        PublicationImpact.valueOf(
+                                row.get("publication_impact", String.class))))
                 .all()
                 .collectList();
     }
@@ -637,17 +641,18 @@ public class TransitionRuleEvaluationHistoryAdapter
         DatabaseClient.GenericExecuteSpec insert = database.sql("""
                 INSERT INTO transition_rule_evaluation_warnings (
                     evaluation_id, result_order, warning_order,
-                    code, explanation, status
+                    code, explanation, status, publication_impact
                 ) VALUES (
                     :evaluationId, :resultOrder, :warningOrder,
-                    :code, :explanation, :status
+                    :code, :explanation, :status, :publicationImpact
                 )
                 """)
                 .bind("evaluationId", evaluationId)
                 .bind("warningOrder", warning.warningOrder())
                 .bind("code", warning.code())
                 .bind("explanation", warning.explanation())
-                .bind("status", warning.status().name());
+                .bind("status", warning.status().name())
+                .bind("publicationImpact", warning.publicationImpact().name());
         insert = warning.resultOrder() == null
                 ? insert.bindNull("resultOrder", Integer.class)
                 : insert.bind("resultOrder", warning.resultOrder());

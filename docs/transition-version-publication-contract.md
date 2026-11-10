@@ -31,9 +31,15 @@ composed CHOIR-121/122 result:
   the overall evaluation `VIOLATED`. A geometric crossing with sufficient
   evidence proving non-concurrency maps to a `SATISFIED` warning. Missing or
   inconsistent geometry/evidence maps to `NOT_EVALUABLE`. The evaluation
-  status prioritizes violations, but publication still rejects any
-  `NOT_EVALUABLE` warning; an ordinary violation requires the existing
-  warning-specific acceptance.
+  status prioritizes violations. `DIRECTOR_VISIBILITY_NOT_EVALUABLE` remains
+  `NOT_EVALUABLE` and is retained in history, but its explicit
+  `publicationImpact: INFORMATIONAL` does not block publication. Other
+  not-evaluable warnings are `BLOCKING` by default.
+- For compatibility and to preserve historical evaluation contents, V35 gives
+  existing warning rows the `BLOCKING` default without rewriting them. New
+  evaluations mark only the director-visibility warning as `INFORMATIONAL`;
+  reevaluate a draft before publication if its selected legacy evaluation has
+  the old blocking classification.
 - Evaluations created before CHOIR-123 have `null` values for the two added
   fields in history. History is read from the evaluation's persisted output;
   it is never reconstructed from current snapshots or rules.
@@ -55,14 +61,18 @@ and writes in one reactive transaction:
    that transition and remains DRAFT.
 2. The evaluation exists and belongs to this exact transition version; its
    FROM/TO formation version IDs match the version.
-3. NOT_EVALUABLE always blocks publication.
-4. Any NOT_EVALUABLE warning blocks publication, including director visibility.
-   Director visibility is never eligible for acceptance because the relative
-   geometry model cannot establish physical visibility.
-5. An ordinary VIOLATED warning may be accepted only when the request identifies
-   that exact warning. The original evaluation/result remains VIOLATED.
-6. Every unaccepted ordinary violation blocks publication. Unknown, satisfied,
-   duplicated, or non-violated warning references are rejected.
+3. An evaluation with status `NOT_EVALUABLE` may be published only when its
+   non-evaluable warnings are explicitly `INFORMATIONAL`, and it has no
+   `NOT_EVALUABLE` rule result. All other non-evaluable evaluation states block.
+4. A `NOT_EVALUABLE` warning with `publicationImpact: BLOCKING` blocks
+   publication. The director-visibility warning is explicitly informational;
+   geometry/evidence warnings and rule warnings remain blocking. The warning
+   status and original evaluation snapshot are not rewritten.
+5. A `VIOLATED` warning requires an acceptance identifying that exact warning.
+   The original evaluation/result remains `VIOLATED`. Acceptances for missing,
+   satisfied, or not-evaluable warnings are rejected.
+6. Every unaccepted violation blocks publication. Duplicate acceptances are
+   rejected, as are unknown or non-violated references.
 7. Accepted decisions, immutable publication evidence and the DRAFT-to-PUBLISHED
    update happen in one transaction. Any failure rolls back all writes and leaves
    the version in DRAFT.
@@ -132,10 +142,12 @@ remain available only to spatial constraints.
   its child rows roll back together.
 - Run the movement migration and integration coverage on H2 and PostgreSQL.
 - Publish a satisfied evaluation without acceptances.
+- Publish an evaluation whose only non-evaluable warning is informational
+  director visibility; verify the warning remains `NOT_EVALUABLE` in history.
 - Reject missing/foreign evaluations and evaluations belonging to another version.
-- Reject NOT_EVALUABLE evaluations or warnings, including visibility.
+- Reject evaluations with non-evaluable rules and blocking non-evaluable warnings.
 - Reject an ordinary violation without explicit acceptance.
-- Reject acceptance of unknown or non-violated warnings.
+- Reject duplicate, unknown, satisfied, or not-evaluable warning acceptances.
 - Publish an ordinary violation only with a reasoned acceptance of the exact warning.
 - Verify evidence and decisions refer to the exact evaluation and snapshots.
 - Inject a persistence failure and verify rollback leaves the version DRAFT with

@@ -59,10 +59,13 @@ evaluaciones ni evidencia de publicación existentes. Una regla activa
 incumplida produce estado `VIOLATED` y advertencias con código y explicación;
 no se descarta ni bloquea silenciosamente. Para publicar con esas advertencias,
 el director debe aceptar explícitamente cada una y la decisión queda auditada
-contra la advertencia y evaluación exactas. Esto no permite aceptar resultados
-`NOT_EVALUABLE`: por ejemplo, la visibilidad física del director no puede
-validarse con los snapshots geométricos disponibles y sigue impidiendo publicar
-hasta que ese criterio sea evaluable.
+contra la advertencia y evaluación exactas. Una regla `NOT_EVALUABLE` o una
+advertencia no evaluable marcada `publicationImpact: BLOCKING` impide publicar.
+La visibilidad física del director sigue siendo `NOT_EVALUABLE` y conserva su
+advertencia inmutable, pero `DIRECTOR_VISIBILITY_NOT_EVALUABLE` se clasifica
+explícitamente como `INFORMATIONAL`; si no existen otros bloqueos, se permite
+publicar sin aceptación de esa advertencia. El estado original de la evaluación
+y su historial no se reescriben.
 
 El endpoint `POST /api/choirs/{choirId}/concerts/{concertId}/publish` delega en `ConcertPublicationService`. El servicio comprueba que el concierto pertenezca al coro indicado, que el director autenticado sea su propietario y que el concierto esté en estado `PLANNED` o `REHEARSAL`.
 
