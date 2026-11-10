@@ -23,35 +23,72 @@ Reglas:
 
 - Cada concierto mantiene su propia configuración.
 - Las preferencias no se comparten ni heredan entre conciertos.
-- Si un concierto no tiene configuración explícita, se utilizan valores predeterminados deterministas.
+- Si un concierto no tiene configuración explícita, se utilizan los valores predeterminados.
 - Cambiar la formación de un concierto no debe modificar ni trasladar sus preferencias.
 
-## 3. Criterios artísticos
+## 3. Criterios artísticos y pesos
 
-La configuración contempla estos cuatro criterios:
+La configuración contempla cuatro criterios:
 
-1. **Distancia:** minimizar el desplazamiento de los coreutas.
-2. **Cruces:** reducir o evitar cruces de trayectorias.
-3. **Compactación:** favorecer una distribución escénica compacta.
-4. **Continuidad de secciones:** favorecer la cohesión de las secciones vocales durante la transición.
+| Criterio | Campo | Valor predeterminado |
+| --- | --- | --- |
+| Distancia | distance | 25 |
+| Cruces | crossings | 25 |
+| Compactación | compactness | 25 |
+| Continuidad de secciones | sectionContinuity | 25 |
 
-El contrato debe representar estos criterios de forma estructurada.
+Reglas:
 
-Los rangos, normalización, valores predeterminados y representación HTTP definitiva deben quedar definidos antes de implementar la persistencia. No asumir una suma de pesos ni agregar criterios adicionales sin decisión explícita.
+- Cada peso es un entero entre 0 y 100, inclusive.
+- La suma de los cuatro pesos debe ser exactamente 100.
+- Un peso igual a 0 desactiva la influencia de ese criterio.
+- La ausencia de configuración equivale a los cuatro valores predeterminados de 25.
+- Los valores predeterminados no se persisten implícitamente al consultar las preferencias.
 
-## 4. Responsabilidades backend
+La comparación de contribuciones requiere métricas normalizadas a una escala comparable. Su definición debe respetar las capacidades existentes y el contrato de ranking de CHOIR-25. No implementar una fórmula de ranking paralela.
+
+## 4. Contrato HTTP acordado
+
+### Consultar preferencias
+
+`GET /api/choirs/{choirId}/concerts/{concertId}/optimization-preferences`
+
+- Devuelve la configuración persistida del concierto.
+- Si no existe configuración, devuelve correctamente los valores predeterminados:
+  - `distance=25`
+  - `crossings=25`
+  - `compactness=25`
+  - `sectionContinuity=25`
+- La consulta no crea ni persiste una configuración implícita.
+
+### Crear o reemplazar preferencias
+
+`PUT /api/choirs/{choirId}/concerts/{concertId}/optimization-preferences`
+
+- Crea la configuración si no existe o reemplaza la existente.
+- Recibe los cuatro pesos.
+- No recibe identidad del director.
+- Rechaza pesos no enteros, fuera de rango o cuya suma no sea exactamente 100.
+
+### Autorización
+
+Ambas operaciones requieren autorización sobre el coro y el concierto indicados.
+
+Se debe reutilizar el mecanismo existente de autorización de recursos. La identidad del director se obtiene del contexto autenticado, nunca del request.
+
+## 5. Responsabilidades backend
 
 - Consultar las preferencias de un concierto.
-- Crear o actualizar las preferencias de un concierto.
+- Crear o reemplazar las preferencias de un concierto.
 - Persistirlas con una relación inequívoca con el concierto.
 - Validar que el concierto pertenezca al coro indicado.
 - Validar que el director autenticado esté autorizado sobre ese coro.
-- No confiar en un identificador de director enviado por el cliente.
+- Validar tipos enteros, rangos individuales y suma total.
 - Aplicar valores predeterminados deterministas cuando no exista configuración.
 - Exponer las preferencias al flujo de optimización mediante contratos de aplicación.
 - Mantener la lógica de dominio independiente de Spring y de la infraestructura.
 
-## 5. Integración con CHOIR-25
+## 6. Integración con CHOIR-25
 
 CHOIR-115 no debe implementar un segundo algoritmo de ranking.
 
@@ -68,7 +105,7 @@ La persistencia y consulta de preferencias pueden avanzar independientemente de 
 
 No introducir dependencias circulares entre estos tickets.
 
-## 6. Explicabilidad y reproducibilidad
+## 7. Explicabilidad y reproducibilidad
 
 La evaluación debe permitir justificar por qué una alternativa quedó por encima de otra.
 
@@ -81,21 +118,22 @@ La información expuesta debe permitir relacionar:
 
 Las mismas alternativas, métricas y preferencias deben producir el mismo resultado.
 
-## 7. Criterios de aceptación
+## 8. Criterios de aceptación
 
 - [ ] Las preferencias se consultan y actualizan con autorización.
 - [ ] Cada concierto mantiene una configuración independiente.
 - [ ] No se heredan preferencias desde la formación ni desde otros conciertos.
-- [ ] La ausencia de configuración utiliza valores predeterminados deterministas.
-- [ ] Los cuatro criterios están representados en el contrato acordado.
-- [ ] Se validan los datos recibidos y sus rangos según el contrato definitivo.
+- [ ] El GET sin configuración devuelve los cuatro valores predeterminados sin persistirlos.
+- [ ] El PUT crea o reemplaza la configuración.
+- [ ] Cada peso es entero entre 0 y 100 y la suma es exactamente 100.
+- [ ] Un peso 0 excluye ese criterio de la ponderación.
 - [ ] Se valida la pertenencia del concierto al coro y la autorización del director.
 - [ ] La integración utiliza el ranking de CHOIR-25 sin duplicarlo.
-- [ ] La respuesta permite explicar la prioridad de las alternativas.
+- [ ] La respuesta permite explicar la prioridad de las alternativas cuando esté disponible el contrato de CHOIR-25.
 - [ ] Existen pruebas de persistencia, permisos, validación, valores predeterminados y reproducibilidad.
-- [ ] Se verifica la persistencia con H2 y PostgreSQL cuando corresponda.
+- [ ] Se verifica la persistencia con H2 y PostgreSQL.
 
-## 8. Fuera de alcance
+## 9. Fuera de alcance
 
 - Componentes Angular y decisiones visuales.
 - Generación de alternativas de transición.
@@ -103,9 +141,7 @@ Las mismas alternativas, métricas y preferencias deben producir el mismo result
 - Modificación de formaciones originales.
 - Incorporación de criterios artísticos no acordados.
 
-## 9. Decisiones pendientes antes de implementar
+## 10. Decisiones pendientes
 
-- Definir los rangos y la normalización de los cuatro criterios.
-- Definir los valores predeterminados del optimizador.
-- Cerrar el contrato HTTP y su representación de errores.
+- Definir la normalización de las métricas de los cuatro criterios, respetando el contrato de CHOIR-25.
 - Confirmar cómo CHOIR-25 recibirá las preferencias y expondrá la explicación del ranking.
