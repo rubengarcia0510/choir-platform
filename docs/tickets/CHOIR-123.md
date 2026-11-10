@@ -53,6 +53,7 @@ Antes de implementar:
 - No importar validadores, entidades internas, repositorios ni adapters de `formation`.
 - No incorporar el motor de restricciones de formación al resultado de CHOIR-24.
 - No crear interfaces genéricas anticipadas para conectar `formation` y `transition`.
+- Si una necesidad futura requiere evaluar restricciones de formación en una transición, registrar ese alcance por separado y definir primero un contrato pequeño con dirección de dependencia explícita.
 - No acoplar la persistencia histórica a detalles internos de persistencia de otros dominios.
 
 ## Fuera de alcance
@@ -67,12 +68,15 @@ Antes de implementar:
 
 - Flujo completo exitoso.
 - Integración de métricas y hallazgos geométricos/temporales.
-- Reglas satisfechas, incumplidas y no evaluables.
+- Reglas satisfechas.
+- Reglas incumplidas.
+- Reglas no evaluables.
 - Datos incompletos.
 - Identificación de versiones exactas de formación y reglas.
 - Reproducibilidad funcional.
 - Inmutabilidad y consulta histórica.
-- Persistencia y transacciones en H2 y PostgreSQL.
+- Persistencia y transacciones en H2.
+- Persistencia y transacciones en PostgreSQL.
 - Contrato HTTP y errores relevantes.
 
 ## Criterios de aceptación
@@ -82,6 +86,7 @@ Antes de implementar:
 - Repetir el cálculo con los mismos datos y parámetros produce el mismo contenido funcional.
 - La consulta histórica conserva referencias y evidencia originales.
 - Ediciones posteriores no alteran la interpretación histórica.
+- Las pruebas cubren éxito, datos incompletos, reglas satisfechas/incumplidas/no evaluables, reproducibilidad e inmutabilidad.
 - H2 y PostgreSQL quedan validados.
 - El contrato REST queda documentado y contrastado con los controladores existentes.
 
