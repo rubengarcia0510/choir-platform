@@ -3,9 +3,20 @@ package com.rubengarcia.choir.transition.adapter.out.persistence;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
 import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics.DataIssue;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics.DataIssueCode;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics.SingerDistance;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics.Stage;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.GeometryIssue;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.GeometryIssueCode;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.TemporalConflictStatus;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.TrajectoryFinding;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -13,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +50,10 @@ public class TransitionRuleEvaluationHistoryAdapter
                         .then(saveWarnings(saved.id(), allWarnings(snapshot)))
                         .then(saveMovementSteps(
                                 saved.id(), snapshot.movementSteps()))
+                        .then(saveDisplacementMetrics(
+                                saved.id(), snapshot.displacementMetrics()))
+                        .then(saveTrajectoryAnalysis(
+                                saved.id(), snapshot.trajectoryAnalysis()))
                         .thenReturn(new TransitionRuleEvaluationSnapshot(
                                 saved.id(),
                                 snapshot.transitionVersionId(),
@@ -51,7 +67,9 @@ public class TransitionRuleEvaluationHistoryAdapter
                                 snapshot.evaluatedAt(),
                                 snapshot.results(),
                                 snapshot.warnings(),
-                                snapshot.movementSteps())));
+                                snapshot.movementSteps(),
+                                snapshot.displacementMetrics(),
+                                snapshot.trajectoryAnalysis())));
     }
 
     @Override
@@ -113,9 +131,16 @@ public class TransitionRuleEvaluationHistoryAdapter
         return Mono.zip(
                         loadResults(evaluation.id()),
                         loadWarnings(evaluation.id()),
-                        loadMovementSteps(evaluation))
+                        loadMovementSteps(evaluation),
+                        loadDisplacementMetrics(evaluation),
+                        loadTrajectoryAnalysis(evaluation))
                 .map(data -> assembleEvaluation(
-                        evaluation, data.getT1(), data.getT2(), data.getT3()));
+                        evaluation,
+                        data.getT1(),
+                        data.getT2(),
+                        data.getT3(),
+                        data.getT4().orElse(null),
+                        data.getT5().orElse(null)));
     }
 
     private Mono<List<TransitionMovementStep>> loadMovementSteps(
@@ -138,6 +163,137 @@ public class TransitionRuleEvaluationHistoryAdapter
                         row.get("sequence_number", Integer.class),
                         row.get("temporal_reference", OffsetDateTime.class),
                         row.get("action", String.class)))
+                .all()
+                .collectList();
+    }
+
+    private Mono<Optional<TransitionDisplacementMetrics>> loadDisplacementMetrics(
+            EvaluationRow evaluation) {
+        long evaluationId = evaluation.id();
+        Mono<Optional<DisplacementMetricsRow>> metrics = database.sql("""
+                SELECT total_distance, max_individual_distance,
+                       moving_singer_count
+                FROM transition_rule_evaluation_displacement_metrics
+                WHERE evaluation_id = :evaluationId
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new DisplacementMetricsRow(
+                        row.get("total_distance", BigDecimal.class),
+                        row.get("max_individual_distance", BigDecimal.class),
+                        row.get("moving_singer_count", Integer.class)))
+                .one()
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty());
+
+        return metrics.flatMap(optional -> {
+            if (optional.isEmpty()) {
+                return Mono.just(Optional.empty());
+            }
+            return Mono.zip(
+                            loadSingerDistances(evaluationId),
+                            loadDisplacementIssues(evaluationId))
+                    .map(data -> Optional.of(new TransitionDisplacementMetrics(
+                            evaluation.transitionVersionId(),
+                            evaluation.fromFormationVersionId(),
+                            evaluation.toFormationVersionId(),
+                            data.getT1(),
+                            optional.get().totalDistance(),
+                            optional.get().maxIndividualDistance(),
+                            optional.get().movingSingerCount(),
+                            data.getT2())));
+        });
+    }
+
+    private Mono<List<SingerDistance>> loadSingerDistances(long evaluationId) {
+        return database.sql("""
+                SELECT singer_id, distance
+                FROM transition_rule_evaluation_singer_distances
+                WHERE evaluation_id = :evaluationId
+                ORDER BY singer_id
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new SingerDistance(
+                        row.get("singer_id", Long.class),
+                        row.get("distance", BigDecimal.class)))
+                .all()
+                .collectList();
+    }
+
+    private Mono<List<DataIssue>> loadDisplacementIssues(long evaluationId) {
+        return database.sql("""
+                SELECT issue_code, stage, singer_id
+                FROM transition_rule_evaluation_displacement_issues
+                WHERE evaluation_id = :evaluationId
+                ORDER BY issue_order
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new DataIssue(
+                        DataIssueCode.valueOf(row.get("issue_code", String.class)),
+                        Stage.valueOf(row.get("stage", String.class)),
+                        row.get("singer_id", Long.class)))
+                .all()
+                .collectList();
+    }
+
+    private Mono<Optional<TransitionTrajectoryAnalysis>> loadTrajectoryAnalysis(
+            EvaluationRow evaluation) {
+        long evaluationId = evaluation.id();
+        Mono<Optional<Long>> transitionVersionId = database.sql("""
+                SELECT transition_version_id
+                FROM transition_rule_evaluation_trajectory_analyses
+                WHERE evaluation_id = :evaluationId
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> row.get("transition_version_id", Long.class))
+                .one()
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty());
+
+        return transitionVersionId.flatMap(optional -> {
+            if (optional.isEmpty()) {
+                return Mono.just(Optional.empty());
+            }
+            return Mono.zip(
+                            loadTrajectoryCrossings(evaluationId),
+                            loadTrajectoryIssues(evaluationId))
+                    .map(data -> Optional.of(new TransitionTrajectoryAnalysis(
+                            evaluation.transitionVersionId(),
+                            data.getT1(),
+                            data.getT2())));
+        });
+    }
+
+    private Mono<List<TrajectoryFinding>> loadTrajectoryCrossings(
+            long evaluationId) {
+        return database.sql("""
+                SELECT first_singer_id, second_singer_id,
+                       temporal_conflict_status
+                FROM transition_rule_evaluation_trajectory_crossings
+                WHERE evaluation_id = :evaluationId
+                ORDER BY first_singer_id, second_singer_id
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new TrajectoryFinding(
+                        row.get("first_singer_id", Long.class),
+                        row.get("second_singer_id", Long.class),
+                        TemporalConflictStatus.valueOf(
+                                row.get("temporal_conflict_status", String.class))))
+                .all()
+                .collectList();
+    }
+
+    private Mono<List<GeometryIssue>> loadTrajectoryIssues(long evaluationId) {
+        return database.sql("""
+                SELECT issue_code, stage, singer_id
+                FROM transition_rule_evaluation_trajectory_issues
+                WHERE evaluation_id = :evaluationId
+                ORDER BY issue_order
+                """)
+                .bind("evaluationId", evaluationId)
+                .map((row, metadata) -> new GeometryIssue(
+                        GeometryIssueCode.valueOf(row.get("issue_code", String.class)),
+                        row.get("stage", String.class),
+                        row.get("singer_id", Long.class)))
                 .all()
                 .collectList();
     }
@@ -165,7 +321,8 @@ public class TransitionRuleEvaluationHistoryAdapter
 
     private Mono<List<Warning>> loadWarnings(long evaluationId) {
         return database.sql("""
-                SELECT result_order, warning_order, code, explanation, status
+                SELECT result_order, warning_order, code, explanation, status,
+                       publication_impact
                 FROM transition_rule_evaluation_warnings
                 WHERE evaluation_id = :evaluationId
                 ORDER BY result_order, warning_order
@@ -176,7 +333,9 @@ public class TransitionRuleEvaluationHistoryAdapter
                         row.get("warning_order", Integer.class),
                         row.get("code", String.class),
                         row.get("explanation", String.class),
-                        Status.valueOf(row.get("status", String.class))))
+                        Status.valueOf(row.get("status", String.class)),
+                        PublicationImpact.valueOf(
+                                row.get("publication_impact", String.class))))
                 .all()
                 .collectList();
     }
@@ -185,7 +344,9 @@ public class TransitionRuleEvaluationHistoryAdapter
             EvaluationRow evaluation,
             List<ResultRow> resultRows,
             List<Warning> warnings,
-            List<TransitionMovementStep> movementSteps) {
+            List<TransitionMovementStep> movementSteps,
+            TransitionDisplacementMetrics displacementMetrics,
+            TransitionTrajectoryAnalysis trajectoryAnalysis) {
         List<RuleResult> results = resultRows.stream()
                 .map(result -> new RuleResult(
                         result.order(),
@@ -219,7 +380,9 @@ public class TransitionRuleEvaluationHistoryAdapter
                 evaluation.evaluatedAt(),
                 results,
                 globalWarnings,
-                movementSteps);
+                movementSteps,
+                displacementMetrics,
+                trajectoryAnalysis);
     }
 
     private Mono<InsertedEvaluation> insertEvaluation(
@@ -315,6 +478,159 @@ public class TransitionRuleEvaluationHistoryAdapter
                 .then();
     }
 
+    private Mono<Void> saveDisplacementMetrics(
+            long evaluationId,
+            TransitionDisplacementMetrics metrics) {
+        if (metrics == null) {
+            return Mono.empty();
+        }
+        return database.sql("""
+                INSERT INTO transition_rule_evaluation_displacement_metrics (
+                    evaluation_id, total_distance, max_individual_distance,
+                    moving_singer_count
+                ) VALUES (
+                    :evaluationId, :totalDistance, :maxDistance, :movingCount
+                )
+                """)
+                .bind("evaluationId", evaluationId)
+                .bind("totalDistance", metrics.totalDistance())
+                .bind("maxDistance", metrics.maxIndividualDistance())
+                .bind("movingCount", metrics.movingSingerCount())
+                .fetch()
+                .rowsUpdated()
+                .flatMap(rows -> rows == 1
+                        ? saveSingerDistances(evaluationId, metrics.singerDistances())
+                                .then(saveDisplacementIssues(
+                                        evaluationId, metrics.dataIssues()))
+                        : Mono.error(new IllegalStateException(
+                                "No se pudieron guardar las métricas de desplazamiento")));
+    }
+
+    private Mono<Void> saveSingerDistances(
+            long evaluationId,
+            List<SingerDistance> distances) {
+        return Flux.fromIterable(distances)
+                .concatMap(distance -> database.sql("""
+                        INSERT INTO transition_rule_evaluation_singer_distances (
+                            evaluation_id, singer_id, distance
+                        ) VALUES (:evaluationId, :singerId, :distance)
+                        """)
+                        .bind("evaluationId", evaluationId)
+                        .bind("singerId", distance.singerId())
+                        .bind("distance", distance.distance())
+                        .fetch()
+                        .rowsUpdated()
+                        .flatMap(rows -> rows == 1
+                                ? Mono.empty()
+                                : Mono.error(new IllegalStateException(
+                                        "No se pudo guardar una distancia individual"))))
+                .then();
+    }
+
+    private Mono<Void> saveDisplacementIssues(
+            long evaluationId,
+            List<DataIssue> issues) {
+        return Flux.range(0, issues.size())
+                .concatMap(index -> {
+                    DataIssue issue = issues.get(index);
+                    DatabaseClient.GenericExecuteSpec insert = database.sql("""
+                            INSERT INTO transition_rule_evaluation_displacement_issues (
+                                evaluation_id, issue_order, issue_code, stage, singer_id
+                            ) VALUES (
+                                :evaluationId, :issueOrder, :issueCode, :stage, :singerId
+                            )
+                            """)
+                            .bind("evaluationId", evaluationId)
+                            .bind("issueOrder", index)
+                            .bind("issueCode", issue.code().name())
+                            .bind("stage", issue.stage().name());
+                    insert = issue.singerId() == null
+                            ? insert.bindNull("singerId", Long.class)
+                            : insert.bind("singerId", issue.singerId());
+                    return insert.fetch().rowsUpdated().flatMap(rows -> rows == 1
+                            ? Mono.empty()
+                            : Mono.error(new IllegalStateException(
+                                    "No se pudo guardar un problema de desplazamiento")));
+                })
+                .then();
+    }
+
+    private Mono<Void> saveTrajectoryAnalysis(
+            long evaluationId,
+            TransitionTrajectoryAnalysis analysis) {
+        if (analysis == null) {
+            return Mono.empty();
+        }
+        return database.sql("""
+                INSERT INTO transition_rule_evaluation_trajectory_analyses (
+                    evaluation_id, transition_version_id
+                ) VALUES (:evaluationId, :transitionVersionId)
+                """)
+                .bind("evaluationId", evaluationId)
+                .bind("transitionVersionId", analysis.transitionVersionId())
+                .fetch()
+                .rowsUpdated()
+                .flatMap(rows -> rows == 1
+                        ? saveTrajectoryCrossings(evaluationId, analysis.crossings())
+                                .then(saveTrajectoryIssues(
+                                        evaluationId, analysis.geometryIssues()))
+                        : Mono.error(new IllegalStateException(
+                                "No se pudo guardar el análisis de trayectorias")));
+    }
+
+    private Mono<Void> saveTrajectoryCrossings(
+            long evaluationId,
+            List<TrajectoryFinding> crossings) {
+        return Flux.fromIterable(crossings)
+                .concatMap(crossing -> database.sql("""
+                        INSERT INTO transition_rule_evaluation_trajectory_crossings (
+                            evaluation_id, first_singer_id, second_singer_id,
+                            temporal_conflict_status
+                        ) VALUES (
+                            :evaluationId, :firstSingerId, :secondSingerId, :status
+                        )
+                        """)
+                        .bind("evaluationId", evaluationId)
+                        .bind("firstSingerId", crossing.firstSingerId())
+                        .bind("secondSingerId", crossing.secondSingerId())
+                        .bind("status", crossing.temporalConflictStatus().name())
+                        .fetch()
+                        .rowsUpdated()
+                        .flatMap(rows -> rows == 1
+                                ? Mono.empty()
+                                : Mono.error(new IllegalStateException(
+                                        "No se pudo guardar un cruce de trayectorias"))))
+                .then();
+    }
+
+    private Mono<Void> saveTrajectoryIssues(
+            long evaluationId,
+            List<GeometryIssue> issues) {
+        return Flux.range(0, issues.size())
+                .concatMap(index -> {
+                    GeometryIssue issue = issues.get(index);
+                    DatabaseClient.GenericExecuteSpec insert = database.sql("""
+                            INSERT INTO transition_rule_evaluation_trajectory_issues (
+                                evaluation_id, issue_order, issue_code, stage, singer_id
+                            ) VALUES (
+                                :evaluationId, :issueOrder, :issueCode, :stage, :singerId
+                            )
+                            """)
+                            .bind("evaluationId", evaluationId)
+                            .bind("issueOrder", index)
+                            .bind("issueCode", issue.code().name())
+                            .bind("stage", issue.stage());
+                    insert = issue.singerId() == null
+                            ? insert.bindNull("singerId", Long.class)
+                            : insert.bind("singerId", issue.singerId());
+                    return insert.fetch().rowsUpdated().flatMap(rows -> rows == 1
+                            ? Mono.empty()
+                            : Mono.error(new IllegalStateException(
+                                    "No se pudo guardar un problema geométrico")));
+                })
+                .then();
+    }
+
     private Mono<Void> saveWarnings(long evaluationId, List<Warning> warnings) {
         return Flux.fromIterable(warnings)
                 .concatMap(warning -> insertWarning(evaluationId, warning))
@@ -325,17 +641,18 @@ public class TransitionRuleEvaluationHistoryAdapter
         DatabaseClient.GenericExecuteSpec insert = database.sql("""
                 INSERT INTO transition_rule_evaluation_warnings (
                     evaluation_id, result_order, warning_order,
-                    code, explanation, status
+                    code, explanation, status, publication_impact
                 ) VALUES (
                     :evaluationId, :resultOrder, :warningOrder,
-                    :code, :explanation, :status
+                    :code, :explanation, :status, :publicationImpact
                 )
                 """)
                 .bind("evaluationId", evaluationId)
                 .bind("warningOrder", warning.warningOrder())
                 .bind("code", warning.code())
                 .bind("explanation", warning.explanation())
-                .bind("status", warning.status().name());
+                .bind("status", warning.status().name())
+                .bind("publicationImpact", warning.publicationImpact().name());
         insert = warning.resultOrder() == null
                 ? insert.bindNull("resultOrder", Integer.class)
                 : insert.bind("resultOrder", warning.resultOrder());
@@ -377,5 +694,11 @@ public class TransitionRuleEvaluationHistoryAdapter
             Status status,
             String code,
             String explanation) {
+    }
+
+    private record DisplacementMetricsRow(
+            BigDecimal totalDistance,
+            BigDecimal maxIndividualDistance,
+            int movingSingerCount) {
     }
 }

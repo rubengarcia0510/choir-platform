@@ -685,7 +685,7 @@ class TransitionVersionLifecycleServiceTests {
     }
 
     @Test
-    void rejectsVisibilityWarningAcceptanceWithoutWritingPublicationAudit() {
+    void rejectsBlockingNotEvaluableWarningAcceptanceWithoutWritingPublicationAudit() {
         Fixture fixture = fixture();
         TransitionVersion draft = service.createDraft(
                 fixture.email(), fixture.choirId(), fixture.transitionId(),
@@ -699,7 +699,7 @@ class TransitionVersionLifecycleServiceTests {
                     evaluation_id, result_order, warning_order,
                     code, explanation, status
                 ) VALUES (?, NULL, 0, 'VISIBILITY_UNVERIFIED',
-                          'No se puede comprobar la visibilidad', 'VIOLATED')
+                          'No se puede comprobar la visibilidad', 'NOT_EVALUABLE')
                 """, evaluationId);
 
         assertThatThrownBy(() -> service.publish(
@@ -708,7 +708,7 @@ class TransitionVersionLifecycleServiceTests {
                 java.util.List.of(
                         new com.rubengarcia.choir.transition.application.port.out
                                 .TransitionVersionPublicationPort.WarningAcceptance(
-                                        -1, 0, "Aceptación que debe rechazarse")))
+                                        -1, 0, "No se puede aceptar una advertencia no evaluable")))
                 .block(TIMEOUT))
                 .isInstanceOf(ResponseStatusException.class);
 
@@ -716,7 +716,7 @@ class TransitionVersionLifecycleServiceTests {
     }
 
     @Test
-    void rejectsDirectorVisibilityNotEvaluableWarningAcceptanceWithoutWritingPublicationAudit() {
+    void rejectsAcceptanceOfInformationalDirectorVisibilityWarning() {
         Fixture fixture = fixture();
         TransitionVersion draft = service.createDraft(
                 fixture.email(), fixture.choirId(), fixture.transitionId(),
@@ -728,9 +728,10 @@ class TransitionVersionLifecycleServiceTests {
         jdbc.update("""
                 INSERT INTO transition_rule_evaluation_warnings (
                     evaluation_id, result_order, warning_order,
-                    code, explanation, status
+                    code, explanation, status, publication_impact
                 ) VALUES (?, NULL, 0, 'DIRECTOR_VISIBILITY_NOT_EVALUABLE',
-                          'No se puede comprobar la visibilidad del director', 'VIOLATED')
+                          'No se puede comprobar la visibilidad del director',
+                          'NOT_EVALUABLE', 'INFORMATIONAL')
                 """, evaluationId);
 
         assertThatThrownBy(() -> service.publish(

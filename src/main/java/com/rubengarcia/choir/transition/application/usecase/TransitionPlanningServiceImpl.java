@@ -14,12 +14,18 @@ import com.rubengarcia.choir.transition.application.port.out.SceneRuleSeparation
 import com.rubengarcia.choir.transition.application.port.out.TransitionMovementStepRepository;
 import com.rubengarcia.choir.transition.application.port.out.TransitionPlanningPositionRepository;
 import com.rubengarcia.choir.transition.application.port.out.TransitionRuleEvaluationHistoryPort;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementCalculator;
+import com.rubengarcia.choir.transition.domain.TransitionDisplacementMetrics;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningContext;
 import com.rubengarcia.choir.transition.domain.TransitionMovementStep;
 import com.rubengarcia.choir.transition.domain.TransitionPlanningPosition;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.RuleResult;
 import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning;
+import com.rubengarcia.choir.transition.domain.TransitionRuleEvaluationSnapshot.Warning.PublicationImpact;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalysis.TemporalConflictStatus;
+import com.rubengarcia.choir.transition.domain.TransitionTrajectoryAnalyzer;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -47,6 +53,10 @@ public class TransitionPlanningServiceImpl
     private final SceneRuleSeparationSettingsPort settingsPort;
     private final TransitionRuleEvaluationHistoryPort evaluationHistoryPort;
     private final SceneRuleEvaluator evaluator = new SceneRuleEvaluator();
+    private final TransitionDisplacementCalculator displacementCalculator =
+            new TransitionDisplacementCalculator();
+    private final TransitionTrajectoryAnalyzer trajectoryAnalyzer =
+            new TransitionTrajectoryAnalyzer();
 
     public TransitionPlanningServiceImpl(
             TransitionPlanningPositionRepository positionRepository,
@@ -137,10 +147,19 @@ public class TransitionPlanningServiceImpl
                                 movementStepRepository
                                         .findByTransitionVersionId(transitionVersionId)
                                         .collectList())
-                        .flatMap(data -> evaluateAndSave(
-                                context,
-                                data,
-                                safeAssignments)));
+                        .flatMap(data -> {
+                            TransitionDisplacementMetrics displacementMetrics =
+                                    displacementCalculator.calculate(context, data.getT1());
+                            TransitionTrajectoryAnalysis trajectoryAnalysis =
+                                    trajectoryAnalyzer.analyze(
+                                            context, data.getT1(), data.getT4());
+                            return evaluateAndSave(
+                                    context,
+                                    data,
+                                    safeAssignments,
+                                    displacementMetrics,
+                                    trajectoryAnalysis);
+                        }));
     }
 
     @Override
@@ -160,7 +179,9 @@ public class TransitionPlanningServiceImpl
                     List<SceneRuleRevisionSnapshot>,
                     SceneRuleSeparationSettingsPort.Setting,
                     List<TransitionMovementStep>> data,
-            List<CountGroupAssignment> assignments) {
+            List<CountGroupAssignment> assignments,
+            TransitionDisplacementMetrics displacementMetrics,
+            TransitionTrajectoryAnalysis trajectoryAnalysis) {
 
         List<SceneRuleRevisionSnapshot> activeRevisions =
                 latestActiveRevisions(data.getT2());
@@ -188,12 +209,15 @@ public class TransitionPlanningServiceImpl
                         step.action()))
                 .toList();
 
-        List<Warning> globalWarnings = List.of(new Warning(
+        List<Warning> globalWarnings = new ArrayList<>(List.of(new Warning(
                 null,
                 0,
                 "DIRECTOR_VISIBILITY_NOT_EVALUABLE",
                 "La visibilidad física del director no puede verificarse con la geometría relativa",
-                Status.NOT_EVALUABLE));
+                Status.NOT_EVALUABLE,
+                PublicationImpact.INFORMATIONAL)));
+        addDisplacementWarnings(globalWarnings, displacementMetrics);
+        addTrajectoryWarnings(globalWarnings, trajectoryAnalysis);
 
         for (int order = 0; order < activeRevisions.size(); order++) {
             SceneRuleRevisionSnapshot revision = activeRevisions.get(order);
@@ -255,7 +279,9 @@ public class TransitionPlanningServiceImpl
                         LocalDateTime.now(),
                         results,
                         globalWarnings,
-                        data.getT4());
+                        data.getT4(),
+                        displacementMetrics,
+                        trajectoryAnalysis);
 
         return evaluationHistoryPort.save(snapshot);
     }
@@ -373,7 +399,9 @@ public class TransitionPlanningServiceImpl
             List<RuleResult> results,
             List<Warning> globalWarnings) {
         if (results.stream().anyMatch(
-                result -> result.status() == Status.VIOLATED)) {
+                result -> result.status() == Status.VIOLATED)
+                || globalWarnings.stream().anyMatch(
+                        warning -> warning.status() == Status.VIOLATED)) {
             return Status.VIOLATED;
         }
 
@@ -384,5 +412,55 @@ public class TransitionPlanningServiceImpl
         }
 
         return Status.SATISFIED;
+    }
+
+    private void addDisplacementWarnings(
+            List<Warning> warnings,
+            TransitionDisplacementMetrics metrics) {
+        for (var issue : metrics.dataIssues()) {
+            warnings.add(new Warning(
+                    null,
+                    warnings.size(),
+                    "DISPLACEMENT_" + issue.code().name(),
+                    "Datos de desplazamiento incompletos para " + issue.singerId()
+                            + " en " + issue.stage(),
+                    Status.NOT_EVALUABLE));
+        }
+    }
+
+    private void addTrajectoryWarnings(
+            List<Warning> warnings,
+            TransitionTrajectoryAnalysis analysis) {
+        for (var issue : analysis.geometryIssues()) {
+            warnings.add(new Warning(
+                    null,
+                    warnings.size(),
+                    "TRAJECTORY_" + issue.code().name(),
+                    "Datos geométricos incompletos para " + issue.singerId()
+                            + " en " + issue.stage(),
+                    Status.NOT_EVALUABLE));
+        }
+        for (var crossing : analysis.crossings()) {
+            TemporalConflictStatus temporalStatus =
+                    crossing.temporalConflictStatus();
+            Status warningStatus = switch (temporalStatus) {
+                case CONFIRMED -> Status.VIOLATED;
+                case NOT_CONCURRENT -> Status.SATISFIED;
+                case NOT_EVALUABLE -> Status.NOT_EVALUABLE;
+            };
+            String code = switch (temporalStatus) {
+                case CONFIRMED -> "TRAJECTORY_CONFLICT_CONFIRMED";
+                case NOT_CONCURRENT -> "TRAJECTORY_CROSSING_NOT_CONCURRENT";
+                case NOT_EVALUABLE -> "TRAJECTORY_CONFLICT_NOT_EVALUABLE";
+            };
+            warnings.add(new Warning(
+                    null,
+                    warnings.size(),
+                    code,
+                    "Cruce geométrico entre coreutas "
+                            + crossing.firstSingerId() + " y "
+                            + crossing.secondSingerId() + ": " + temporalStatus,
+                    warningStatus));
+        }
     }
 }
