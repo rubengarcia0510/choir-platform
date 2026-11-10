@@ -106,6 +106,40 @@ class TransitionDisplacementCalculatorTests {
     }
 
     @Test
+    void reportsMissingCounterpartAlongsideInvalidCoordinate() {
+        TransitionDisplacementMetrics result = calculator.calculate(
+                context(),
+                List.of(position("FROM", 10, 6L, null, "0")));
+
+        assertThat(result.dataIssues())
+                .extracting("code", "stage", "singerId")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                DataIssueCode.INVALID_COORDINATE, Stage.FROM, 6L),
+                        org.assertj.core.groups.Tuple.tuple(
+                                DataIssueCode.MISSING_COUNTERPART, Stage.TO, 6L));
+        assertThat(result.singerDistances()).isEmpty();
+    }
+
+    @Test
+    void reportsMissingCounterpartAlongsideDuplicatePositions() {
+        TransitionDisplacementMetrics result = calculator.calculate(
+                context(),
+                List.of(
+                        position("FROM", 10, 7L, "0", "0"),
+                        position("FROM", 10, 7L, "1", "0")));
+
+        assertThat(result.dataIssues())
+                .extracting("code", "stage", "singerId")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                DataIssueCode.DUPLICATE_SINGER_POSITION, Stage.FROM, 7L),
+                        org.assertj.core.groups.Tuple.tuple(
+                                DataIssueCode.MISSING_COUNTERPART, Stage.TO, 7L));
+        assertThat(result.singerDistances()).isEmpty();
+    }
+
+    @Test
     void preservesSnapshotInputsAndProducesIdenticalResultsForRepeatedCalls() {
         List<TransitionPlanningPosition> positions = new ArrayList<>(List.of(
                 position("FROM", 10, 5L, "1", "2"),

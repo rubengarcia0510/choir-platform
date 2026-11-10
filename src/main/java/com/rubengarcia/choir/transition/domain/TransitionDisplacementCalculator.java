@@ -81,10 +81,6 @@ public final class TransitionDisplacementCalculator {
         int movingSingerCount = 0;
 
         for (long singerId : singerIds) {
-            if (invalidSingers.contains(singerId)) {
-                continue;
-            }
-
             List<TransitionPlanningPosition> from =
                     fromPositions.get(singerId);
             List<TransitionPlanningPosition> to =
@@ -95,6 +91,10 @@ public final class TransitionDisplacementCalculator {
                         DataIssueCode.MISSING_COUNTERPART,
                         from == null ? Stage.FROM : Stage.TO,
                         singerId));
+                continue;
+            }
+
+            if (invalidSingers.contains(singerId)) {
                 continue;
             }
 
