@@ -4,6 +4,7 @@ import com.rubengarcia.choir.scene.domain.SceneRuleEvaluator.Status;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 public record TransitionRuleEvaluationSnapshot(
         Long id,
@@ -100,6 +101,7 @@ public record TransitionRuleEvaluationSnapshot(
             String code,
             String explanation,
             List<Warning> warnings) {
+
         public RuleResult {
             warnings = List.copyOf(warnings);
         }
@@ -113,8 +115,20 @@ public record TransitionRuleEvaluationSnapshot(
             Status status,
             PublicationImpact publicationImpact) {
 
+        private static final String DIRECTOR_VISIBILITY_WARNING =
+                "DIRECTOR_VISIBILITY_NOT_EVALUABLE";
+
         public Warning {
-            java.util.Objects.requireNonNull(publicationImpact, "publicationImpact");
+            Objects.requireNonNull(publicationImpact, "publicationImpact");
+
+            if (publicationImpact == PublicationImpact.INFORMATIONAL
+                    && (!DIRECTOR_VISIBILITY_WARNING.equals(code)
+                    || status != Status.NOT_EVALUABLE)) {
+                throw new IllegalArgumentException(
+                        "INFORMATIONAL solo es válido para "
+                                + DIRECTOR_VISIBILITY_WARNING
+                                + " con estado NOT_EVALUABLE");
+            }
         }
 
         public Warning(

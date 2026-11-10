@@ -27,6 +27,9 @@ import reactor.core.publisher.Mono;
 public class R2dbcTransitionVersionPublicationAdapter
         implements TransitionVersionPublicationPort {
 
+    private static final String INFORMATIONAL_WARNING_CODE =
+            "DIRECTOR_VISIBILITY_NOT_EVALUABLE";
+
     private final DatabaseClient database;
     private final TransitionRuleEvaluationHistoryPort evaluationHistory;
 
@@ -109,9 +112,15 @@ public class R2dbcTransitionVersionPublicationAdapter
         }
 
         List<Warning> warnings = collectWarnings(evaluation);
+
+        if (warnings.stream().anyMatch(this::hasInvalidInformationalClassification)) {
+            return Mono.error(conflict(
+                    "Solo DIRECTOR_VISIBILITY_NOT_EVALUABLE puede ser informativa"));
+        }
+
         boolean hasInformationalNotEvaluableWarning = warnings.stream()
                 .anyMatch(warning -> warning.status() == Status.NOT_EVALUABLE
-                        && warning.publicationImpact() == PublicationImpact.INFORMATIONAL);
+                        && isApprovedInformationalWarning(warning));
 
         if (evaluation.status() == Status.NOT_EVALUABLE
                 && !hasInformationalNotEvaluableWarning) {
@@ -150,6 +159,16 @@ public class R2dbcTransitionVersionPublicationAdapter
                             .then(markPublished(version.id(), publishedAt))
                             .thenReturn(toEntity(version, publishedAt));
                 });
+    }
+
+    private boolean hasInvalidInformationalClassification(Warning warning) {
+        return warning.publicationImpact() == PublicationImpact.INFORMATIONAL
+                && !isApprovedInformationalWarning(warning);
+    }
+
+    private boolean isApprovedInformationalWarning(Warning warning) {
+        return INFORMATIONAL_WARNING_CODE.equals(warning.code())
+                && warning.status() == Status.NOT_EVALUABLE;
     }
 
     private Mono<Void> requireCurrentMovementEvidence(
