@@ -23,15 +23,36 @@ Detectar intersecciones geométricas y determinar cuándo representan un riesgo 
 
 ## Límites geométricos y temporales
 
-Definir explícitamente el comportamiento para:
+El análisis representa cada desplazamiento como un segmento recto entre las
+coordenadas FROM y TO y usa comparaciones decimales exactas. Los extremos del
+segmento forman parte de la intersección: compartir un extremo cuenta como
+cruce geométrico. Segmentos colineales cuentan si sus intervalos se solapan,
+incluyendo un único extremo compartido; segmentos paralelos disjuntos no
+cuentan. Un movimiento nulo no constituye un segmento de trayectoria y se
+excluye de la detección. Pares de coreutas se reportan una sola vez en orden
+ascendente por ID.
 
-- Segmentos paralelos.
-- Segmentos que no se intersecan.
-- Extremos compartidos.
-- Segmentos coincidentes.
-- Movimientos nulos.
-- Movimientos en secuencias temporales diferentes.
-- Evidencia temporal ausente, incompleta o inconsistente.
+La evaluación temporal es independiente del hallazgo geométrico y usa solo la
+evidencia explícita de CHOIR-120:
+
+- Evidencia válida requiere referencias y acciones presentes, IDs de
+  transición y snapshots coincidentes, secuencias numeradas desde 1 sin
+  huecos, una referencia temporal común por secuencia y referencias
+  estrictamente crecientes entre secuencias.
+- Pasos repetidos del mismo coreuta dentro de una secuencia o cualquier
+  evidencia malformada/inconsistente dejan el conflicto temporal como
+  `NOT_EVALUABLE`.
+- Dos coreutas del cruce con pasos válidos en una misma secuencia producen
+  `CONFIRMED`.
+- Si ambos tienen evidencia válida pero solo aparecen en secuencias distintas,
+  producen `NOT_CONCURRENT`; no se infiere simultaneidad entre tandas.
+- Si falta evidencia para cualquiera de los dos, producen `NOT_EVALUABLE`.
+- Sin cruces geométricos no se crea un hallazgo temporal.
+
+Estas categorías describen evidencia, no reglas de formación: `CONFIRMED` no
+invoca ni implica una violación de restricciones de `formation`. Las
+referencias temporales solo validan y agrupan la evidencia; no se usan para
+inferir velocidades, duraciones ni trayectorias dentro de una secuencia.
 
 No inferir simultaneidad desde la geometría. No tratar como simultáneos movimientos de secuencias diferentes.
 
