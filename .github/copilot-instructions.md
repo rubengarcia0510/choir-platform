@@ -77,3 +77,21 @@ Coordinación de los tickets actuales:
 CHOIR-24 integra métricas de transición con reglas de escena. No incorpora el motor de restricciones de formación.
 
 Consultar `docs/architecture/domain-boundaries.md`.
+
+## Branching and coordinated release workflow
+
+Follow `docs/development-workflow.md` as the source of truth for branch and release procedures.
+
+Backend development uses `main` as its source branch:
+- Create each backend feature or fix branch from an updated `origin/main`.
+- Open backend feature pull requests against `main`.
+- Do not introduce or assume a permanent backend integration branch.
+- Do not commit feature work directly to `main`.
+
+Backend releases use a dedicated `release/X.Y.Z` branch created from the updated backend `main`.
+
+CHOIR frontend and backend releases are coordinated and must use the same Semantic Versioning number, without a `v` prefix. The frontend release branch is created from `124-integradora`; the backend release branch is created from backend `main`.
+
+Update frontend `package.json` and `package-lock.json`, and backend `build.gradle`, only when preparing an actual coordinated release. Validate both repositories and review both release pull requests before publishing. Use matching Git tags and GitHub Release versions in both repositories. After integrating a frontend release into `main`, synchronize frontend `main` back into `124-integradora` through a pull request.
+
+Do not change project versions during ordinary feature development. Do not publish or describe a release as complete until both repositories have been released at the same version.
