@@ -36,6 +36,7 @@ Para consultar el orden de ejecución y las dependencias, revisar
 | [CHOIR-30](CHOIR-30.md) | Pendiente | Modo ensayo |
 | [CHOIR-32](CHOIR-32.md) | Pendiente | Vista individual del coreuta |
 | [CHOIR-82](CHOIR-82.md) | Documentación | CI del frontend |
+| [CHOIR-131](CHOIR-131.md) | Pendiente | Inicialización de director de prueba en desarrollo local |
 
 ## Cómo usar las especificaciones
 
