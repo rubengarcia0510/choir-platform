@@ -3,6 +3,8 @@ choir:
     registration:
       enabled: false
     verification-url-base:
+    local-director:
+      enabled: false
   mail:
     enabled: false
 
