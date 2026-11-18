@@ -37,10 +37,11 @@ class LocalDevelopmentDirectorInitializerTests {
 
     @BeforeEach
     void configureEnvironment() {
-        when(environment.getProperty("CHOIR_DEV_DIRECTOR_NAME")).thenReturn(NAME);
-        when(environment.getProperty("CHOIR_DEV_DIRECTOR_EMAIL"))
+        lenient().when(environment.getProperty("CHOIR_DEV_DIRECTOR_NAME"))
+                .thenReturn(NAME);
+        lenient().when(environment.getProperty("CHOIR_DEV_DIRECTOR_EMAIL"))
                 .thenReturn("  DIRECTOR@EXAMPLE.TEST  ");
-        when(environment.getProperty("CHOIR_DEV_DIRECTOR_PASSWORD"))
+        lenient().when(environment.getProperty("CHOIR_DEV_DIRECTOR_PASSWORD"))
                 .thenReturn(PASSWORD);
 
         initializer = new LocalDevelopmentDirectorInitializer(
@@ -99,6 +100,71 @@ class LocalDevelopmentDirectorInitializerTests {
 
         assertTrue(exception.getMessage().contains("CHOIR_DEV_DIRECTOR_PASSWORD"));
         assertFalse(exception.getMessage().contains(PASSWORD));
+        verifyNoInteractions(directorRepository);
+    }
+
+    @Test
+    void rejectsInvalidEmailBeforeAccessingRepository() {
+        when(environment.getProperty("CHOIR_DEV_DIRECTOR_EMAIL"))
+                .thenReturn("not-an-email");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> initializer.run(new DefaultApplicationArguments(new String[0]))
+        );
+
+        verifyNoInteractions(directorRepository);
+    }
+
+    @Test
+    void rejectsPasswordShorterThanTwelveCharacters() {
+        when(environment.getProperty("CHOIR_DEV_DIRECTOR_PASSWORD"))
+                .thenReturn("short");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> initializer.run(new DefaultApplicationArguments(new String[0]))
+        );
+
+        verifyNoInteractions(directorRepository);
+    }
+
+    @Test
+    void rejectsPasswordLongerThanTwoHundredCharacters() {
+        when(environment.getProperty("CHOIR_DEV_DIRECTOR_PASSWORD"))
+                .thenReturn("a".repeat(201));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> initializer.run(new DefaultApplicationArguments(new String[0]))
+        );
+
+        verifyNoInteractions(directorRepository);
+    }
+
+    @Test
+    void rejectsBlankNameBeforeAccessingRepository() {
+        when(environment.getProperty("CHOIR_DEV_DIRECTOR_NAME"))
+                .thenReturn("   ");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> initializer.run(new DefaultApplicationArguments(new String[0]))
+        );
+
+        verifyNoInteractions(directorRepository);
+    }
+
+    @Test
+    void rejectsNameLongerThanOneHundredSixtyCharacters() {
+        when(environment.getProperty("CHOIR_DEV_DIRECTOR_NAME"))
+                .thenReturn("a".repeat(161));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> initializer.run(new DefaultApplicationArguments(new String[0]))
+        );
+
         verifyNoInteractions(directorRepository);
     }
 }

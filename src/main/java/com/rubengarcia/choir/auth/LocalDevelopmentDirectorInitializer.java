@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Component
 @Profile("local")
@@ -22,6 +23,14 @@ import java.util.Locale;
         matchIfMissing = false
 )
 public class LocalDevelopmentDirectorInitializer implements ApplicationRunner {
+
+    private static final int MAX_NAME_LENGTH = 160;
+    private static final int MAX_EMAIL_LENGTH = 254;
+    private static final int MIN_PASSWORD_LENGTH = 12;
+    private static final int MAX_PASSWORD_LENGTH = 200;
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final DirectorRepository directorRepository;
     private final PasswordEncoder passwordEncoder;
@@ -45,6 +54,10 @@ public class LocalDevelopmentDirectorInitializer implements ApplicationRunner {
                 .toLowerCase(Locale.ROOT);
         String password = requiredEnvironmentValue("CHOIR_DEV_DIRECTOR_PASSWORD");
 
+        validateName(name);
+        validateEmail(email);
+        validatePassword(password);
+
         directorRepository.findByEmailIgnoreCase(email)
                 .switchIfEmpty(Mono.defer(() ->
                         directorRepository.save(createDirector(name, email, password))
@@ -67,5 +80,31 @@ public class LocalDevelopmentDirectorInitializer implements ApplicationRunner {
             );
         }
         return value;
+    }
+
+    private void validateName(String name) {
+        if (name.isBlank() || name.length() > MAX_NAME_LENGTH) {
+            throw new IllegalStateException(
+                    "CHOIR_DEV_DIRECTOR_NAME must contain between 1 and 160 characters"
+            );
+        }
+    }
+
+    private void validateEmail(String email) {
+        if (email.length() > MAX_EMAIL_LENGTH
+                || !EMAIL_PATTERN.matcher(email).matches()) {
+            throw new IllegalStateException(
+                    "CHOIR_DEV_DIRECTOR_EMAIL must be a valid email address of at most 254 characters"
+            );
+        }
+    }
+
+    private void validatePassword(String password) {
+        if (password.length() < MIN_PASSWORD_LENGTH
+                || password.length() > MAX_PASSWORD_LENGTH) {
+            throw new IllegalStateException(
+                    "CHOIR_DEV_DIRECTOR_PASSWORD must contain between 12 and 200 characters"
+            );
+        }
     }
 }
