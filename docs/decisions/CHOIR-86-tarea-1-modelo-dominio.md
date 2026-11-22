@@ -16,7 +16,8 @@ queda pendiente.
 - **Sin rango de coordenadas.** No se asume 0..100. Las coordenadas usan el
   mismo sistema que `formation_positions.x_coordinate` e `y_coordinate`
   (`DECIMAL(10, 3)`, sin rango definido). Las pruebas aceptan valores negativos
-  y fuera de cualquier rango supuesto.
+  y fuera de cualquier rango supuesto. La escala queda pendiente de confirmación:
+  ver `CHOIR-86-coordenadas.md`.
 - **Sin coordenada Z.** `MobilityRegion` solo tiene los cuatro límites.
 - **Altura.** No se modifica `heightCm` ni `heightCmSnapshot`; ya están
   implementados en los commits de CHOIR-86 anteriores a esta tarea.

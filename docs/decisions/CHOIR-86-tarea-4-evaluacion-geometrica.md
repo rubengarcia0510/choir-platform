@@ -3,6 +3,9 @@
 Evaluación de solo lectura de las restricciones de movilidad activas contra el
 borrador de una formación. No modifica posiciones, snapshots ni restricciones.
 
+Estado: implementada en `c9da007`. Pendiente: CHOIR-87 (validadores) y un
+contrato HTTP de evaluación, si se requiere.
+
 ## Decisiones aplicadas
 
 1. **Versión evaluada:** solo el borrador (`DRAFT`), leído con

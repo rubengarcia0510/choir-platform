@@ -25,7 +25,9 @@ formation_positions.x_coordinate e y_coordinate.
 
 No se agrega una coordenada Z.
 
-Una posición fuera de la región produce MOBILITY_VIOLATION.
+Una posición fuera de la región produce un hallazgo de movilidad
+(`MobilityFinding`). El código `MOBILITY_VIOLATION` de la especificación del ticket
+queda para la validación de CHOIR-87; la evaluación implementada no lo emite.
 
 ## 2. Altura y visibilidad
 
@@ -55,7 +57,7 @@ Una modificación posterior de heightCm en el perfil no modifica
 versiones históricas.
 
 Si falta la altura, la evaluación de visibilidad debe informarse
-como NO EVALUABLE. No se debe asumir que la restricción se cumple
+como NOT_EVALUABLE (nombre del estado en la implementación). No se debe asumir que la restricción se cumple
 ni inventar una altura.
 
 ## 4. Validación de visibilidad
@@ -109,3 +111,13 @@ Persistencia:
 - Verificar que duplicar una formación conserve el snapshot.
 - Verificar que la falta de altura produzca un resultado no evaluable
   para visibilidad, no un cumplimiento implícito.
+
+## 6. Estado de implementación
+
+- **Movilidad:** modelo, persistencia (`V39`, `V40`), API REST, evaluación
+  geométrica de solo lectura sobre el borrador. Implementado.
+- **Visibilidad:** no implementada. Falta definir la relación protegido/obstructor,
+  la orientación del escenario y la regla de obstrucción.
+- **Validadores y código `MOBILITY_VIOLATION`:** pendientes de CHOIR-87.
+- **Escala de coordenadas:** pendiente de confirmación. Ver
+  `CHOIR-86-coordenadas.md`.

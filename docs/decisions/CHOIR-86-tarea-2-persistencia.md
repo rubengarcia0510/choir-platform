@@ -9,7 +9,8 @@ duplicados, las claves foráneas verificadas y el estado de validación.
 a un coreuta específico un requerimiento de ubicación, y modela
 `MobilityConstraint` con un único `singerId`. La migración `V40` agrega
 `UNIQUE (formation_id, singer_id)`. Un segundo alta para el mismo coreuta en la
-misma formación falla con `DataIntegrityViolationException`. La misma formación
+misma formación falla con `DataIntegrityViolationException` en el adapter; el servicio
+la traduce a `PhysicalConstraintConflictException` (HTTP 409). La misma formación
 admite restricciones para otros coreutas, y un coreuta puede tener restricciones
 en otras formaciones.
 
@@ -32,19 +33,21 @@ agregar cualquier restricción.
 
 ## Estado de validación
 
-- **H2 (`./gradlew test`, perfil por defecto):** ejecutado por el responsable,
-  pendiente de la salida con los conteos de esta tarea.
-- **PostgreSQL 16 (job `test-prod` de CI, perfil `prod`):** se ejecuta con
-  `./gradlew test` contra PostgreSQL al abrir o actualizar el PR. No validado
-  localmente.
-- Las pruebas de integridad de `V39` y `V40` (FK, CHECK y precisión decimal) se
-  ejecutan en ambos motores mediante la suite completa.
+- **H2 (`./gradlew test`):** pasó sobre `d1f83bb` y las correcciones posteriores.
+  Persistencia de movilidad: 13 pruebas, incluidas las de contexto y unicidad.
+- **PostgreSQL 16 (job `test-prod` de CI, perfil `prod`):** se ejecuta sobre cada
+  push del PR #112. No está declarado validado en este documento hasta que el job
+  esté en verde sobre el commit vigente.
+- Las migraciones `V39` y `V40` (FK, `CHECK` y precisión decimal) se ejecutan en
+  ambos motores mediante la suite completa.
 
 ## Pendientes
 
 1. Definir la relación de visibilidad (protegido y obstructor) y su restricción
-   de unicidad.
-2. Confirmar si las coordenadas normalizadas de 0 a 100 del ticket son el rango
-   del escenario. Los adapters no lo asumen.
-3. La capa de servicio debe traducir la violación de unicidad de movilidad en un
-   error de negocio y no exponer `DataIntegrityViolationException`.
+   de unicidad. Visibilidad sigue sin implementar.
+2. Confirmar si el rango 0 a 100 del ticket es la escala del escenario. Ver
+   `CHOIR-86-coordenadas.md`. Los adapters no lo asumen.
+
+Resuelto: la capa de servicio traduce la violación de unicidad de movilidad a
+`PhysicalConstraintConflictException` (HTTP 409), sin exponer detalles de
+persistencia. Ver `CHOIR-86-tarea-3-servicios-api.md`.
