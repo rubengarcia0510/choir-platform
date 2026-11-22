@@ -17,10 +17,10 @@ import com.rubengarcia.choir.formation.domain.MobilityRegion;
 import io.r2dbc.spi.R2dbcException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
-import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.server.ResponseStatusException;
@@ -55,8 +55,14 @@ class FormationMobilityConstraintServiceTests {
     @Mock
     private FormationCatalogPort catalog;
 
-    @InjectMocks
     private FormationMobilityConstraintService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new FormationMobilityConstraintService(
+                constraintPort,
+                new FormationOccurrenceContextAuthorizer(occurrenceAuthorization, catalog));
+    }
 
     @Test
     void listReturnsOnlyActiveConstraintsAfterAuthorizingTheFormation() {
