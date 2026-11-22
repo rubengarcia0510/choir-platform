@@ -131,10 +131,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                     repertoireItemId,
                                     versionId,
                                     updates)
-                                    .flatMap(positions -> preservePositionLocks(
-                                            versionId, positions)
-                                            .flatMap(preserved -> replacePositions(
-                                                    formation, version, preserved)));
+                                    .flatMap(positions ->
+                                            preservePositionLocks(versionId, positions)
+                                                    .flatMap(preserved ->
+                                                            validateProximityConstraints(
+                                                                    formation.getId(), preserved)
+                                                                    .flatMap(validated ->
+                                                                            replacePositions(
+                                                                                    formation,
+                                                                                    version,
+                                                                                    validated))));
                         }));
     }
 
@@ -334,6 +340,63 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         return position;
     }
 
+    private Mono<List<FormationPosition>> validateProximityConstraints(
+            long formationId,
+            List<FormationPosition> positions) {
+        return databaseClient.sql("""
+                        SELECT singer_one_id, singer_two_id, max_distance
+                        FROM formation_proximity_constraints
+                        WHERE formation_id = :formationId
+                          AND active = TRUE
+                        """)
+                .bind("formationId", formationId)
+                .map((row, metadata) -> new ProximityConstraint(
+                        row.get("singer_one_id", Long.class),
+                        row.get("singer_two_id", Long.class),
+                        row.get("max_distance", BigDecimal.class)))
+                .all()
+                .collectList()
+                .flatMap(constraints -> {
+                    Map<Long, FormationPosition> positionsBySinger =
+                            new LinkedHashMap<>();
+                    for (FormationPosition position : positions) {
+                        positionsBySinger.put(position.getSingerId(), position);
+                    }
+
+                    for (ProximityConstraint constraint : constraints) {
+                        FormationPosition first =
+                                positionsBySinger.get(constraint.singerOneId());
+                        FormationPosition second =
+                                positionsBySinger.get(constraint.singerTwoId());
+
+                        if (first == null || second == null) {
+                            continue;
+                        }
+
+                        BigDecimal deltaX = first.getXCoordinate()
+                                .subtract(second.getXCoordinate());
+                        BigDecimal deltaY = first.getYCoordinate()
+                                .subtract(second.getYCoordinate());
+                        BigDecimal distanceSquared = deltaX.multiply(deltaX)
+                                .add(deltaY.multiply(deltaY));
+                        BigDecimal maxDistanceSquared =
+                                constraint.maxDistance()
+                                        .multiply(constraint.maxDistance());
+
+                        if (distanceSquared.compareTo(maxDistanceSquared) > 0) {
+                            return Mono.error(new IllegalArgumentException(
+                                    "Movimiento rechazado: los coreutas "
+                                            + constraint.singerOneId() + " y "
+                                            + constraint.singerTwoId()
+                                            + " superarían la distancia máxima de "
+                                            + constraint.maxDistance()));
+                        }
+                    }
+
+                    return Mono.just(positions);
+                });
+    }
+
     private Mono<DraftDetails> replacePositions(
             Formation formation,
             FormationVersion version,
@@ -503,6 +566,11 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         3,
                         java.math.RoundingMode.HALF_UP));
     }
+
+    private record ProximityConstraint(
+            Long singerOneId,
+            Long singerTwoId,
+            BigDecimal maxDistance) {}
 
     private record InitialPosition(
             Long singerId,
