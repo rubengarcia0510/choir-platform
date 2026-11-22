@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
 import com.rubengarcia.choir.formation.domain.FormationVisibilityConstraint;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,13 +30,27 @@ class FormationVisibilityConstraintPersistenceAdapterTests {
 
     private Fixture fixture;
 
+    private final List<Fixture> createdFixtures = new ArrayList<>();
+
     @BeforeEach
     void setUp() {
-        fixture = createFixture();
+        fixture = newFixture();
     }
 
     @AfterEach
-    void cleanUp() {
+    void cleanUpAll() {
+        for (Fixture created : createdFixtures) {
+            cleanUp(created);
+        }
+    }
+
+    private Fixture newFixture() {
+        Fixture created = createFixture();
+        createdFixtures.add(created);
+        return created;
+    }
+
+    private void cleanUp(Fixture fixture) {
         jdbcTemplate.update(
                 "DELETE FROM formation_visibility_constraints WHERE choir_id = ?",
                 fixture.choirId());
@@ -257,6 +273,157 @@ class FormationVisibilityConstraintPersistenceAdapterTests {
                 "protected_singer_id",
                 "active",
                 "created_at");
+    }
+
+    @Test
+    void allowsMultipleVisibilityConstraintsForTheSameProtectedSingerUntilObstructorIsDefined() {
+        adapter.create(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.singerOneId())
+                .block(TIMEOUT);
+        adapter.create(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.singerOneId())
+                .block(TIMEOUT);
+
+        assertThat(countConstraints(fixture.formationId())).isEqualTo(2);
+    }
+
+    @Test
+    void foreignContextsCannotUpdateTheRecord() {
+        FormationVisibilityConstraint created = createOnFixture();
+        Map<String, Object> before = snapshot(created.id());
+        Fixture other = newFixture();
+        long otherFormationId = insertFormation(
+                fixture, "Formación alternativa " + UUID.randomUUID());
+
+        assertUpdateRejected(other.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), fixture.formationId(), created.id());
+        assertUpdateRejected(fixture.choirId(), other.concertId(),
+                fixture.repertoireItemId(), fixture.formationId(), created.id());
+        assertUpdateRejected(fixture.choirId(), fixture.concertId(),
+                other.repertoireItemId(), fixture.formationId(), created.id());
+        assertUpdateRejected(fixture.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), otherFormationId, created.id());
+
+        assertThat(snapshot(created.id())).isEqualTo(before);
+    }
+
+    @Test
+    void foreignContextsCannotDeleteTheRecord() {
+        FormationVisibilityConstraint created = createOnFixture();
+        Map<String, Object> before = snapshot(created.id());
+        Fixture other = newFixture();
+        long otherFormationId = insertFormation(
+                fixture, "Formación alternativa " + UUID.randomUUID());
+
+        assertDeleteRejected(other.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), fixture.formationId(), created.id());
+        assertDeleteRejected(fixture.choirId(), other.concertId(),
+                fixture.repertoireItemId(), fixture.formationId(), created.id());
+        assertDeleteRejected(fixture.choirId(), fixture.concertId(),
+                other.repertoireItemId(), fixture.formationId(), created.id());
+        assertDeleteRejected(fixture.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), otherFormationId, created.id());
+
+        assertThat(countConstraints(fixture.formationId())).isEqualTo(1);
+        assertThat(snapshot(created.id())).isEqualTo(before);
+    }
+
+    @Test
+    void listingIsIsolatedByContext() {
+        FormationVisibilityConstraint created = createOnFixture();
+        Map<String, Object> before = snapshot(created.id());
+        Fixture other = newFixture();
+        long otherFormationId = insertFormation(
+                fixture, "Formación alternativa " + UUID.randomUUID());
+
+        assertThat(listFor(
+                fixture.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), fixture.formationId()))
+                .containsExactly(created);
+
+        assertThat(listFor(
+                other.choirId(), other.concertId(),
+                other.repertoireItemId(), other.formationId())).isEmpty();
+        assertThat(listFor(
+                other.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), fixture.formationId())).isEmpty();
+        assertThat(listFor(
+                fixture.choirId(), other.concertId(),
+                fixture.repertoireItemId(), fixture.formationId())).isEmpty();
+        assertThat(listFor(
+                fixture.choirId(), fixture.concertId(),
+                other.repertoireItemId(), fixture.formationId())).isEmpty();
+        assertThat(listFor(
+                fixture.choirId(), fixture.concertId(),
+                fixture.repertoireItemId(), otherFormationId)).isEmpty();
+
+        assertThat(snapshot(created.id())).isEqualTo(before);
+    }
+
+    private FormationVisibilityConstraint createOnFixture() {
+        return adapter.create(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.singerOneId())
+                .block(TIMEOUT);
+    }
+
+    private void assertUpdateRejected(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long constraintId) {
+        assertThat(adapter.update(
+                        choirId,
+                        concertId,
+                        repertoireItemId,
+                        formationId,
+                        constraintId,
+                        false)
+                .block(TIMEOUT)).isNull();
+    }
+
+    private void assertDeleteRejected(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId,
+            long constraintId) {
+        assertThat(adapter.delete(
+                        choirId,
+                        concertId,
+                        repertoireItemId,
+                        formationId,
+                        constraintId)
+                .block(TIMEOUT)).isFalse();
+    }
+
+    private List<FormationVisibilityConstraint> listFor(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
+            long formationId) {
+        return adapter.findForFormation(
+                        choirId, concertId, repertoireItemId, formationId)
+                .collectList()
+                .block(TIMEOUT);
+    }
+
+    private Map<String, Object> snapshot(Long constraintId) {
+        return jdbcTemplate.queryForMap(
+                "SELECT * FROM formation_visibility_constraints WHERE id = ?",
+                constraintId);
     }
 
     private int countConstraints(Long formationId) {
