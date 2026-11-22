@@ -23,7 +23,8 @@ import org.springframework.web.server.ServerWebInputException;
 @RestControllerAdvice(assignableTypes = {
         FormationDraftController.class,
         FormationVersionController.class,
-        FormationVersionSelectionController.class
+        FormationVersionSelectionController.class,
+        FormationProximityConstraintController.class
 })
 public class FormationPlanningExceptionHandler {
 

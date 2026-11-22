@@ -63,7 +63,7 @@ public class FormationProximityConstraintController {
             @PathVariable @Positive long repertoireItemId,
             @PathVariable @Positive long formationId,
             @Valid @RequestBody CreateConstraintRequest request) {
-        return useCase.create(
+        return Mono.defer(() -> useCase.create(
                         authentication.getName(),
                         choirId,
                         concertId,
@@ -71,7 +71,7 @@ public class FormationProximityConstraintController {
                         formationId,
                         request.singerOneId(),
                         request.singerTwoId(),
-                        request.maxDistance())
+                        request.maxDistance()))
                 .map(FormationProximityConstraintController::toResponse)
                 .map(response -> ResponseEntity.status(HttpStatus.CREATED)
                         .body(response))
@@ -89,7 +89,7 @@ public class FormationProximityConstraintController {
             @PathVariable @Positive long formationId,
             @PathVariable @Positive long constraintId,
             @Valid @RequestBody UpdateConstraintRequest request) {
-        return useCase.update(
+        return Mono.defer(() -> useCase.update(
                         authentication.getName(),
                         choirId,
                         concertId,
@@ -97,8 +97,11 @@ public class FormationProximityConstraintController {
                         formationId,
                         constraintId,
                         request.maxDistance(),
-                        request.active())
+                        request.active()))
                 .map(FormationProximityConstraintController::toResponse)
+                .onErrorMap(IllegalArgumentException.class, error ->
+                        new ResponseStatusException(
+                                HttpStatus.BAD_REQUEST, error.getMessage(), error))
                 .switchIfEmpty(Mono.error(new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "No existe la restricción indicada")));
