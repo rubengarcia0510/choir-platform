@@ -64,7 +64,8 @@ public class FormationProximityConstraintPersistenceAdapter
             long singerTwoId,
             BigDecimal maxDistance) {
 
-        return requireFormation(choirId, concertId, repertoireItemId, formationId)
+        return requireFormation(
+                        choirId, concertId, repertoireItemId, formationId)
                 .then(requireSingersInDraft(
                         formationId, singerOneId, singerTwoId))
                 .then(databaseClient.sql("""
@@ -195,24 +196,29 @@ public class FormationProximityConstraintPersistenceAdapter
             long singerOneId,
             long singerTwoId) {
         return databaseClient.sql("""
-                        SELECT COUNT(DISTINCT p.singer_id) AS total
-                        FROM formation_versions v
-                        JOIN formation_positions p
-                            ON p.formation_version_id = v.id
-                        WHERE v.formation_id = :formationId
-                          AND v.status = 'DRAFT'
-                          AND p.singer_id IN (:singerOneId, :singerTwoId)
+                        SELECT COUNT(*) AS total
+                        FROM (
+                            SELECT v.id
+                            FROM formation_versions v
+                            JOIN formation_positions p
+                                ON p.formation_version_id = v.id
+                            WHERE v.formation_id = :formationId
+                              AND v.status = 'DRAFT'
+                              AND p.singer_id IN (:singerOneId, :singerTwoId)
+                            GROUP BY v.id
+                            HAVING COUNT(DISTINCT p.singer_id) = 2
+                        ) matching_drafts
                         """)
                 .bind("formationId", formationId)
                 .bind("singerOneId", singerOneId)
                 .bind("singerTwoId", singerTwoId)
                 .map((row, metadata) -> row.get("total", Long.class))
                 .one()
-                .flatMap(total -> total == 2
+                .flatMap(total -> total >= 1
                         ? Mono.empty()
                         : Mono.error(new IllegalArgumentException(
                                 "Los dos coreutas deben tener una posición "
-                                        + "en el borrador de esta formación")));
+                                        + "en el mismo borrador de esta formación")));
     }
 
     private Mono<FormationProximityConstraint> findByPair(

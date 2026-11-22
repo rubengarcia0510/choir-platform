@@ -45,37 +45,20 @@ class FormationProximityConstraintServiceTests {
                 .thenReturn(Mono.empty());
 
         when(constraintPort.create(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                10L,
-                20L,
-                maxDistance))
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, 10L, 20L, maxDistance))
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        20L,
-                        10L,
-                        maxDistance))
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 20L, 10L, maxDistance))
                 .verifyComplete();
 
         verify(occurrenceAuthorization).requireOwnedOccurrence(
                 EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID);
-
         verify(constraintPort).create(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                10L,
-                20L,
-                maxDistance);
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, 10L, 20L, maxDistance);
     }
 
     @Test
@@ -89,16 +72,12 @@ class FormationProximityConstraintServiceTests {
                 .thenReturn(Flux.empty());
 
         StepVerifier.create(service.list(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID))
+                        EMAIL, CHOIR_ID, CONCERT_ID,
+                        REPERTOIRE_ITEM_ID, FORMATION_ID))
                 .verifyComplete();
 
         verify(occurrenceAuthorization).requireOwnedOccurrence(
                 EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID);
-
         verify(constraintPort).findForFormation(
                 CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID);
     }
@@ -112,34 +91,20 @@ class FormationProximityConstraintServiceTests {
                 .thenReturn(Mono.empty());
 
         when(constraintPort.update(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                CONSTRAINT_ID,
-                maxDistance,
-                false))
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, CONSTRAINT_ID, maxDistance, false))
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(service.update(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        CONSTRAINT_ID,
-                        maxDistance,
-                        false))
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, CONSTRAINT_ID, maxDistance, false))
                 .verifyComplete();
 
+        verify(occurrenceAuthorization).requireOwnedOccurrence(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID);
         verify(constraintPort).update(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                CONSTRAINT_ID,
-                maxDistance,
-                false);
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, CONSTRAINT_ID, maxDistance, false);
     }
 
     @Test
@@ -149,29 +114,21 @@ class FormationProximityConstraintServiceTests {
                 .thenReturn(Mono.empty());
 
         when(constraintPort.delete(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                CONSTRAINT_ID))
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, CONSTRAINT_ID))
                 .thenReturn(Mono.just(true));
 
         StepVerifier.create(service.delete(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        CONSTRAINT_ID))
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, CONSTRAINT_ID))
                 .expectNext(true)
                 .verifyComplete();
 
+        verify(occurrenceAuthorization).requireOwnedOccurrence(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID);
         verify(constraintPort).delete(
-                CHOIR_ID,
-                CONCERT_ID,
-                REPERTOIRE_ITEM_ID,
-                FORMATION_ID,
-                CONSTRAINT_ID);
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                FORMATION_ID, CONSTRAINT_ID);
     }
 
     @Test
@@ -182,14 +139,57 @@ class FormationProximityConstraintServiceTests {
                         () -> new IllegalStateException("No autorizado")));
 
         StepVerifier.create(service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        10L,
-                        20L,
-                        new BigDecimal("5.000")))
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 10L, 20L, new BigDecimal("5.000")))
+                .expectErrorMessage("No autorizado")
+                .verify();
+
+        verifyNoInteractions(constraintPort);
+    }
+
+    @Test
+    void listDoesNotAccessPortWhenAuthorizationFails() {
+        when(occurrenceAuthorization.requireOwnedOccurrence(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
+                .thenReturn(Mono.error(
+                        () -> new IllegalStateException("No autorizado")));
+
+        StepVerifier.create(service.list(
+                        EMAIL, CHOIR_ID, CONCERT_ID,
+                        REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .expectErrorMessage("No autorizado")
+                .verify();
+
+        verifyNoInteractions(constraintPort);
+    }
+
+    @Test
+    void updateDoesNotAccessPortWhenAuthorizationFails() {
+        when(occurrenceAuthorization.requireOwnedOccurrence(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
+                .thenReturn(Mono.error(
+                        () -> new IllegalStateException("No autorizado")));
+
+        StepVerifier.create(service.update(
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, CONSTRAINT_ID,
+                        new BigDecimal("5.000"), true))
+                .expectErrorMessage("No autorizado")
+                .verify();
+
+        verifyNoInteractions(constraintPort);
+    }
+
+    @Test
+    void deleteDoesNotAccessPortWhenAuthorizationFails() {
+        when(occurrenceAuthorization.requireOwnedOccurrence(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
+                .thenReturn(Mono.error(
+                        () -> new IllegalStateException("No autorizado")));
+
+        StepVerifier.create(service.delete(
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, CONSTRAINT_ID))
                 .expectErrorMessage("No autorizado")
                 .verify();
 
@@ -200,25 +200,13 @@ class FormationProximityConstraintServiceTests {
     void createRejectsInvalidSingerPairsBeforeAuthorization() {
         assertThrows(IllegalArgumentException.class, () ->
                 service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        10L,
-                        10L,
-                        new BigDecimal("5.000")));
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 10L, 10L, new BigDecimal("5.000")));
 
         assertThrows(IllegalArgumentException.class, () ->
                 service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        0L,
-                        20L,
-                        new BigDecimal("5.000")));
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 0L, 20L, new BigDecimal("5.000")));
 
         verifyNoInteractions(occurrenceAuthorization, constraintPort);
     }
@@ -227,36 +215,19 @@ class FormationProximityConstraintServiceTests {
     void createAndUpdateRejectInvalidMaximumDistance() {
         assertThrows(IllegalArgumentException.class, () ->
                 service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        10L,
-                        20L,
-                        BigDecimal.ZERO));
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 10L, 20L, BigDecimal.ZERO));
 
         assertThrows(IllegalArgumentException.class, () ->
                 service.create(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        10L,
-                        20L,
-                        null));
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, 10L, 20L, null));
 
         assertThrows(IllegalArgumentException.class, () ->
                 service.update(
-                        EMAIL,
-                        CHOIR_ID,
-                        CONCERT_ID,
-                        REPERTOIRE_ITEM_ID,
-                        FORMATION_ID,
-                        CONSTRAINT_ID,
-                        new BigDecimal("-1"),
-                        true));
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID,
+                        FORMATION_ID, CONSTRAINT_ID,
+                        new BigDecimal("-1"), true));
 
         verifyNoInteractions(occurrenceAuthorization, constraintPort);
     }
