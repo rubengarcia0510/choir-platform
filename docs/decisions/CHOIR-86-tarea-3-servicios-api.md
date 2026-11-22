@@ -7,10 +7,10 @@ La visibilidad queda fuera hasta definir su relación.
 
 - `FormationMobilityConstraintService`: alta, listado, modificación y baja de
   restricciones de movilidad.
-- `FormationMobilityConstraintController` en
-  `/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations/{formationId}/constraints/physical/mobility`.
-  - `GET` lista las restricciones **activas** (criterio del ticket).
-  - `POST` crea (201).
+- `FormationMobilityConstraintController`, con la base del contrato del ticket
+  `/api/choirs/{choirId}/concerts/{concertId}/repertoire/{repertoireItemId}/formations/{formationId}/constraints/physical`:
+  - `GET` lista las restricciones **activas** de la formación.
+  - `POST /mobility` crea (201).
   - `PUT /{constraintId}` modifica (200; 404 si no existe en el contexto).
   - `DELETE /{constraintId}` elimina (204; 404 si no existe en el contexto).
 - `PhysicalConstraintConflictException` para una segunda restricción de movilidad
@@ -59,8 +59,9 @@ sin exponer.
 ## Pendientes y contradicciones con el ticket
 
 - El ticket no define `PUT`; se agregó siguiendo proximidad.
-- El ticket lista «restricciones físicas» en `GET /`; aquí `GET` lista movilidad
-  bajo `/mobility`. Cuando exista visibilidad, el listado combinado se evaluará.
+- `GET` lista solo movilidad en la base `/constraints/physical`, como indica el
+  ticket para `GET /`. Cuando exista visibilidad, el listado combinado se definirá
+  sin inventar un modelo nuevo.
 - El ticket menciona coordenadas normalizadas de 0 a 100. No se aplica ningún
   rango; las invariantes son solo `minX < maxX` y `minY < maxY`.
 - La validación geométrica de movimientos y el composite de CHOIR-87 quedan fuera.

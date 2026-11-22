@@ -34,7 +34,7 @@ import reactor.core.publisher.Mono;
 @RequestMapping(
         "/api/choirs/{choirId}/concerts/{concertId}"
                 + "/repertoire/{repertoireItemId}/formations"
-                + "/{formationId}/constraints/physical/mobility")
+                + "/{formationId}/constraints/physical")
 public class FormationMobilityConstraintController {
 
     private static final String NOT_FOUND_MESSAGE =
@@ -63,7 +63,7 @@ public class FormationMobilityConstraintController {
                 .map(FormationMobilityConstraintController::toResponse);
     }
 
-    @PostMapping
+    @PostMapping("/mobility")
     public Mono<ResponseEntity<MobilityConstraintResponse>> create(
             Authentication authentication,
             @PathVariable @Positive long choirId,
