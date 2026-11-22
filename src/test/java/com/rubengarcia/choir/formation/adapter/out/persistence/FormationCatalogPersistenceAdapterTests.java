@@ -237,6 +237,94 @@ class FormationCatalogPersistenceAdapterTests {
                 .satisfies(position -> assertThat(position.isLocked()).isFalse());
     }
 
+    @Test
+    void proximityConstraintAcceptsMaximumDistanceAndRejectsExceedingItAtomically() {
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante proximidad " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+
+        jdbcTemplate.update(
+                """
+                INSERT INTO formation_proximity_constraints
+                    (formation_id, choir_id, singer_one_id, singer_two_id,
+                     max_distance, active)
+                VALUES (?, ?, ?, ?, ?, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                Math.min(fixture.singerId(), secondSingerId),
+                Math.max(fixture.singerId(), secondSingerId),
+                new BigDecimal("5.000"));
+
+        DraftDetails accepted = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Primero",
+                                        new BigDecimal("10"),
+                                        new BigDecimal("20")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo",
+                                        new BigDecimal("13"),
+                                        new BigDecimal("24"))))
+                .block(TIMEOUT);
+
+        assertThat(accepted.positions()).hasSize(2);
+        assertThat(countPositions(fixture.versionId())).isEqualTo(2);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Primero modificado",
+                                        new BigDecimal("10"),
+                                        new BigDecimal("20")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo fuera de límite",
+                                        new BigDecimal("13"),
+                                        new BigDecimal("24.001"))))
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("distancia máxima");
+
+        assertThat(countPositions(fixture.versionId())).isEqualTo(2);
+
+        Map<String, Object> persisted = jdbcTemplate.queryForMap(
+                """
+                SELECT position_label, x_coordinate, y_coordinate
+                FROM formation_positions
+                WHERE formation_version_id = ? AND singer_id = ?
+                """,
+                fixture.versionId(),
+                secondSingerId);
+
+        assertThat(persisted.get("position_label")).isEqualTo("Segundo");
+        assertThat(new BigDecimal(persisted.get("x_coordinate").toString()))
+                .isEqualByComparingTo("13");
+        assertThat(new BigDecimal(persisted.get("y_coordinate").toString()))
+                .isEqualByComparingTo("24");
+    }
+
     @RepeatedTest(3)
     void serializesConcurrentPositionUpdateBeforeLock()
             throws Exception {
