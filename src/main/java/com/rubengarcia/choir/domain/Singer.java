@@ -26,6 +26,9 @@ public class Singer {
     @Column("voice_section_id")
     private Long voiceSectionId;
 
+    @Column("height_cm")
+    private Integer heightCm;
+
     private String mobility;
     private String restrictions;
 
@@ -61,6 +64,8 @@ public class Singer {
     public void setVoicePart(String voicePart) { this.voicePart = voicePart; }
     public Long getVoiceSectionId() { return voiceSectionId; }
     public void setVoiceSectionId(Long voiceSectionId) { this.voiceSectionId = voiceSectionId; }
+    public Integer getHeightCm() { return heightCm; }
+    public void setHeightCm(Integer heightCm) { this.heightCm = heightCm; }
     public String getMobility() { return mobility; }
     public void setMobility(String mobility) { this.mobility = mobility; }
     public String getRestrictions() { return restrictions; }

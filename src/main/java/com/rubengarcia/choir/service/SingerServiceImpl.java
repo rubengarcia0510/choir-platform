@@ -2,7 +2,6 @@ package com.rubengarcia.choir.service;
 
 import com.rubengarcia.choir.domain.Choir;
 import com.rubengarcia.choir.domain.Singer;
-import com.rubengarcia.choir.domain.VocalSection;
 import com.rubengarcia.choir.repository.ChoirRepository;
 import com.rubengarcia.choir.repository.SingerRepository;
 import com.rubengarcia.choir.repository.VocalSectionRepository;
@@ -56,14 +55,18 @@ public class SingerServiceImpl implements SingerService {
             String email, Long choirId, SingerData data) {
         return requireEditableChoir(email, choirId)
                 .then(validateSection(choirId, data.voiceSectionId()))
-                .then(Mono.defer(() -> singerRepository.save(new Singer(
-                        choirId,
-                        data.displayName().trim(),
-                        normalize(data.email()),
-                        normalize(data.voicePart()),
-                        data.voiceSectionId(),
-                        normalize(data.mobility()),
-                        normalize(data.restrictions())))));
+                .then(Mono.defer(() -> {
+                    Singer singer = new Singer(
+                            choirId,
+                            data.displayName().trim(),
+                            normalize(data.email()),
+                            normalize(data.voicePart()),
+                            data.voiceSectionId(),
+                            normalize(data.mobility()),
+                            normalize(data.restrictions()));
+                    singer.setHeightCm(data.heightCm());
+                    return singerRepository.save(singer);
+                }));
     }
 
     @Override
@@ -85,6 +88,7 @@ public class SingerServiceImpl implements SingerService {
                                 singer.setVoiceSectionId(data.voiceSectionId());
                                 singer.setMobility(normalize(data.mobility()));
                                 singer.setRestrictions(normalize(data.restrictions()));
+                                singer.setHeightCm(data.heightCm());
                                 return singerRepository.save(singer);
                             }));
                 });
