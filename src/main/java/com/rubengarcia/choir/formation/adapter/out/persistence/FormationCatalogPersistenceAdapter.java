@@ -289,7 +289,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                             s.voice_part AS voice_part,
                             vs.id AS voice_section_id,
                             vs.name AS voice_section_name,
-                            d.division_number AS division_number
+                            d.division_number AS division_number,
+                            s.height_cm AS height_cm
                         FROM singers s
                         JOIN concert_vocal_assignments a
                             ON a.singer_id = s.id
@@ -316,7 +317,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         row.get("voice_part", String.class),
                         row.get("voice_section_id", Long.class),
                         row.get("voice_section_name", String.class),
-                        row.get("division_number", Integer.class)))
+                        row.get("division_number", Integer.class),
+                        row.get("height_cm", Integer.class)))
                 .one();
     }
 
@@ -332,6 +334,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         position.setVoiceSectionIdSnapshot(snapshot.voiceSectionId());
         position.setVoiceSectionNameSnapshot(snapshot.voiceSectionName());
         position.setDivisionNumberSnapshot(snapshot.divisionNumber());
+        position.setHeightCmSnapshot(snapshot.heightCm());
         position.setPositionLabel(update.positionLabel() == null
                 ? null
                 : update.positionLabel().trim());
@@ -465,7 +468,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                             s.voice_part AS voice_part,
                             vs.id AS voice_section_id,
                             vs.name AS voice_section_name,
-                            d.division_number AS division_number
+                            d.division_number AS division_number,
+                            s.height_cm AS height_cm
                         FROM concert_vocal_assignments a
                         JOIN singers s
                             ON s.id = a.singer_id
@@ -495,7 +499,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         row.get("voice_part", String.class),
                         row.get("voice_section_id", Long.class),
                         row.get("voice_section_name", String.class),
-                        row.get("division_number", Integer.class)))
+                        row.get("division_number", Integer.class),
+                        row.get("height_cm", Integer.class)))
                 .all();
     }
 
@@ -533,14 +538,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 position.setVoiceSectionIdSnapshot(assignment.voiceSectionId());
                 position.setVoiceSectionNameSnapshot(assignment.voiceSectionName());
                 position.setDivisionNumberSnapshot(assignment.divisionNumber());
+                position.setHeightCmSnapshot(assignment.heightCm());
                 position.setXCoordinate(xCoordinate);
                 position.setYCoordinate(yCoordinate(assignmentIndex, sectionSize));
                 positions.add(position);
             }
         }
-
         return positions;
     }
+
+
 
     private BigDecimal xCoordinate(int sectionIndex, int sectionCount) {
         if (sectionCount <= 1) {
@@ -578,5 +585,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             String voicePart,
             Long voiceSectionId,
             String voiceSectionName,
-            Integer divisionNumber) {}
+            Integer divisionNumber,
+            Integer heightCm) {}
+
 }
