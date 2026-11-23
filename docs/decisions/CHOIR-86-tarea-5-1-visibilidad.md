@@ -91,3 +91,29 @@ requerida no resuelta.
 - Pendiente: servicio de aplicación (roster completo, posiciones del DRAFT,
   autorización de ocurrencia y llamada al evaluador), endpoints y la integración con
   CHOIR-87. Esta documentación no modifica el documento compuesto de CHOIR-87.
+
+## Servicio de aplicación de visibilidad
+
+`FormationVisibilityEvaluationService` (caso de uso `FormationVisibilityEvaluationUseCase`):
+
+1. Autoriza el contexto con `FormationOccurrenceContextAuthorizer` (ocurrencia propia y
+   formación dentro de la ocurrencia). Si falla, no lee nada más.
+2. Lee las restricciones de visibilidad de la formación (`FormationVisibilityConstraintPort`).
+3. Lee las posiciones del borrador de esta formación (`FormationCatalogPort.findDraftForOccurrence`).
+   Sin borrador, la lista es vacía.
+4. Construye el roster con las asignaciones vocales de la obra en el concierto
+   (`FormationPlanningPersistencePort.vocalAssignmentsForPlanning`). Es la misma fuente que
+   usa la planificación.
+5. Llama a `VisibilityEvaluator.evaluate(constraints, positions, roster)`.
+
+Limitaciones del roster:
+
+- El adapter de asignaciones solo devuelve conciertos con estado `PUBLISHED`. Un concierto no
+  publicado tiene roster vacío: todas las posiciones quedan como no evaluables
+  (`POSITION_NOT_IN_ASSIGNED_ROSTER`). Esto es intencional: no se evalúa visibilidad con un
+  roster no confirmado.
+- Las asignaciones con `singerId` nulo se ignoran.
+
+Estado: el servicio está escrito y compila sintácticamente, pero sus tests de Mockito y de
+integración no se ejecutaron en este entorno. No hay endpoint HTTP ni integración con
+CHOIR-87. Visibilidad sigue sin declararse validada.
