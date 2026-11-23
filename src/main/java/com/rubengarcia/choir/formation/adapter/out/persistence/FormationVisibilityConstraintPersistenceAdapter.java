@@ -64,7 +64,8 @@ public class FormationVisibilityConstraintPersistenceAdapter
 
         return requireFormation(
                         choirId, concertId, repertoireItemId, formationId)
-                .then(requireSingerInDraft(formationId, protectedSingerId))
+                .then(requireSingerAssigned(
+                        choirId, concertId, repertoireItemId, protectedSingerId))
                 .then(insertConstraint(choirId, formationId, protectedSingerId))
                 .flatMap(constraintId -> findById(formationId, constraintId));
     }
@@ -160,27 +161,34 @@ public class FormationVisibilityConstraintPersistenceAdapter
                         : Mono.error(new FormationNotFoundException()));
     }
 
-    private Mono<Void> requireSingerInDraft(
-            long formationId,
+    private Mono<Void> requireSingerAssigned(
+            long choirId,
+            long concertId,
+            long repertoireItemId,
             long protectedSingerId) {
         return databaseClient.sql("""
                         SELECT COUNT(*) AS total
-                        FROM formation_positions p
-                        JOIN formation_versions v
-                            ON v.id = p.formation_version_id
-                        WHERE v.formation_id = :formationId
-                          AND v.status = 'DRAFT'
-                          AND p.singer_id = :singerId
+                        FROM concert_vocal_assignments a
+                        JOIN singers s
+                            ON s.id = a.singer_id
+                           AND s.choir_id = a.choir_id
+                        WHERE a.choir_id = :choirId
+                          AND a.concert_id = :concertId
+                          AND a.repertoire_item_id = :repertoireItemId
+                          AND a.singer_id = :singerId
+                          AND s.active = TRUE
                         """)
-                .bind("formationId", formationId)
+                .bind("choirId", choirId)
+                .bind("concertId", concertId)
+                .bind("repertoireItemId", repertoireItemId)
                 .bind("singerId", protectedSingerId)
                 .map((row, metadata) -> row.get("total", Long.class))
                 .one()
                 .flatMap(total -> total >= 1
                         ? Mono.empty()
                         : Mono.error(new IllegalArgumentException(
-                                "El coreuta protegido debe tener una posición "
-                                        + "en un borrador de esta formación")));
+                                "El coreuta protegido debe estar activo "
+                                        + "y asignado a la obra del concierto")));
     }
 
     private Mono<Long> insertConstraint(

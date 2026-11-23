@@ -235,13 +235,32 @@ class FormationVisibilityConstraintPersistenceAdapterTests {
     }
 
     @Test
-    void rejectsCreationWhenProtectedSingerHasNoPositionInDraft() {
+    void allowsCreationWhenProtectedSingerHasNoPositionInDraft() {
         jdbcTemplate.update(
                 """
                 DELETE FROM formation_positions
                 WHERE formation_version_id = ? AND singer_id = ?
                 """,
                 fixture.versionId(),
+                fixture.singerTwoId());
+
+        FormationVisibilityConstraint created = adapter.create(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.singerTwoId())
+                .block(TIMEOUT);
+
+        assertThat(created).isNotNull();
+        assertThat(created.protectedSingerId()).isEqualTo(fixture.singerTwoId());
+        assertThat(countConstraints(fixture.formationId())).isEqualTo(1);
+    }
+
+    @Test
+    void rejectsCreationWhenProtectedSingerIsInactive() {
+        jdbcTemplate.update(
+                "UPDATE singers SET active = FALSE WHERE id = ?",
                 fixture.singerTwoId());
 
         assertThatThrownBy(() -> adapter.create(
@@ -252,7 +271,33 @@ class FormationVisibilityConstraintPersistenceAdapterTests {
                         fixture.singerTwoId())
                 .block(TIMEOUT))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("borrador");
+                .hasMessageContaining("activo");
+
+        assertThat(countConstraints(fixture.formationId())).isZero();
+    }
+
+    @Test
+    void rejectsCreationWhenProtectedSingerIsNotAssignedToTheRepertoireItem() {
+        jdbcTemplate.update(
+                """
+                DELETE FROM concert_vocal_assignments
+                WHERE choir_id = ? AND concert_id = ?
+                  AND repertoire_item_id = ? AND singer_id = ?
+                """,
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.singerTwoId());
+
+        assertThatThrownBy(() -> adapter.create(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.singerTwoId())
+                .block(TIMEOUT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("asignado");
 
         assertThat(countConstraints(fixture.formationId())).isZero();
     }
