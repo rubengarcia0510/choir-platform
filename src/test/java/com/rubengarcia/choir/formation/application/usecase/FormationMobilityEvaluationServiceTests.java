@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationMobilityConstraintPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationOccurrenceAuthorizationPort;
@@ -17,8 +18,6 @@ import com.rubengarcia.choir.formation.domain.FormationVersion;
 import com.rubengarcia.choir.formation.domain.MobilityBound;
 import com.rubengarcia.choir.formation.domain.MobilityEvaluation;
 import com.rubengarcia.choir.formation.domain.MobilityEvaluationStatus;
-import com.rubengarcia.choir.formation.domain.MobilityNotEvaluable;
-import com.rubengarcia.choir.formation.domain.MobilityNotEvaluableReason;
 import com.rubengarcia.choir.formation.domain.MobilityRegion;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -97,7 +96,7 @@ class FormationMobilityEvaluationServiceTests {
     }
 
     @Test
-    void activeConstraintWithoutDraftIsNotEvaluableAndNeverSatisfied() {
+    void missingDraftPropagatesFormationVersionNotFoundException() {
         authorize();
         when(constraintPort.findForFormation(
                 CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
@@ -106,13 +105,8 @@ class FormationMobilityEvaluationServiceTests {
                 CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
                 .thenReturn(Mono.empty());
 
-        MobilityEvaluation evaluation = evaluate();
-
-        assertThat(evaluation.status()).isEqualTo(MobilityEvaluationStatus.NOT_EVALUABLE);
-        assertThat(evaluation.findings()).isEmpty();
-        assertThat(evaluation.notEvaluable()).singleElement()
-                .extracting(MobilityNotEvaluable::reason)
-                .isEqualTo(MobilityNotEvaluableReason.MISSING_DRAFT_POSITION);
+        assertThatThrownBy(() -> evaluate())
+                .isInstanceOf(FormationVersionNotFoundException.class);
     }
 
     @Test

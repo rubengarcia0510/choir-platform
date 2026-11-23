@@ -1,5 +1,6 @@
 package com.rubengarcia.choir.formation.application.usecase;
 
+import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.application.port.in.FormationMobilityEvaluationUseCase;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationMobilityConstraintPort;
@@ -58,8 +59,8 @@ public class FormationMobilityEvaluationService
     }
 
     /**
-     * Posiciones del borrador de esta formación. Sin borrador, la lista es
-     * vacía y cada restricción activa queda como no evaluable.
+     * Posiciones del DRAFT de esta formación.
+     * Si no existe DRAFT, propaga FormationVersionNotFoundException.
      */
     private Mono<List<FormationPosition>> readDraftPositions(
             long choirId,
@@ -69,6 +70,6 @@ public class FormationMobilityEvaluationService
         return catalog
                 .findDraftForOccurrence(choirId, concertId, repertoireItemId, formationId)
                 .map(FormationCatalogPort.DraftDetails::positions)
-                .defaultIfEmpty(List.of());
+                .switchIfEmpty(Mono.error(new FormationVersionNotFoundException()));
     }
 }
