@@ -100,20 +100,24 @@ requerida no resuelta.
    formación dentro de la ocurrencia). Si falla, no lee nada más.
 2. Lee las restricciones de visibilidad de la formación (`FormationVisibilityConstraintPort`).
 3. Lee las posiciones del borrador de esta formación (`FormationCatalogPort.findDraftForOccurrence`).
-   Sin borrador, la lista es vacía.
-4. Construye el roster con las asignaciones vocales de la obra en el concierto
-   (`FormationPlanningPersistencePort.vocalAssignmentsForPlanning`). Es la misma fuente que
-   usa la planificación.
+   Si no hay borrador, propaga `FormationVersionNotFoundException`: no devuelve una evaluación
+   con posiciones vacías.
+4. Construye el roster con los coreutas activos asignados a la obra en el concierto, leídos de
+   `concert_vocal_assignments` por `FormationVisibilityRosterPort.findActiveAssignedSingerIds`.
+   No depende del estado de publicación ni de snapshots publicados.
 5. Llama a `VisibilityEvaluator.evaluate(constraints, positions, roster)`.
 
-Limitaciones del roster:
+Roster:
 
-- El adapter de asignaciones solo devuelve conciertos con estado `PUBLISHED`. Un concierto no
-  publicado tiene roster vacío: todas las posiciones quedan como no evaluables
-  (`POSITION_NOT_IN_ASSIGNED_ROSTER`). Esto es intencional: no se evalúa visibilidad con un
-  roster no confirmado.
-- Las asignaciones con `singerId` nulo se ignoran.
+- Fuente: `concert_vocal_assignments` filtrada por coro, concierto y obra, unida a `singers`
+  por `singer_id` y `choir_id`, solo con `singers.active = TRUE`. Devuelve IDs distintos.
+- Funciona con conciertos publicados y no publicados.
+- Un coreuta activo asignado sin posición DRAFT produce `MISSING_OBSTRUCTOR_DRAFT_POSITION`
+  (`NOT_EVALUABLE`).
+- Un coreuta inactivo no forma parte del roster. Si conserva una posición DRAFT, produce
+  `POSITION_NOT_IN_ASSIGNED_ROSTER` y no genera hallazgos.
+- El SQL vive solo en el adapter. `vocalAssignmentsForPlanning` no se modificó.
 
-Estado: el servicio está escrito y compila sintácticamente, pero sus tests de Mockito y de
-integración no se ejecutaron en este entorno. No hay endpoint HTTP ni integración con
+Estado: el servicio y sus tests (Mockito, y el test de integración del adapter de roster) están
+escritos; la verificación en Gradle queda pendiente de ejecutar en el repositorio. No hay endpoint HTTP ni integración con
 CHOIR-87. Visibilidad sigue sin declararse validada.
