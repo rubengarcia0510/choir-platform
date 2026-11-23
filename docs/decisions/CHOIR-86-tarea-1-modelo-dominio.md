@@ -13,11 +13,10 @@ queda pendiente.
   cumplir `minX < maxX` y `minY < maxY`. Los límites son inclusivos según la
   semántica documentada; la pertenencia de una posición a la región no se
   implementa en esta tarea.
-- **Sin rango de coordenadas.** No se asume 0..100. Las coordenadas usan el
-  mismo sistema que `formation_positions.x_coordinate` e `y_coordinate`
-  (`DECIMAL(10, 3)`, sin rango definido). Las pruebas aceptan valores negativos
-  y fuera de cualquier rango supuesto. La escala queda pendiente de confirmación:
-  ver `CHOIR-86-coordenadas.md`.
+- **Escala 0..100.** Aprobada: los cuatro límites se validan en [0, 100], inclusive.
+  Las coordenadas usan el mismo sistema que `formation_positions.x_coordinate` e
+  `y_coordinate` (`DECIMAL(10, 3)`). Ver `CHOIR-86-coordenadas.md`. Esta decisión
+  reemplaza la versión original de la tarea 1, que no imponía rango.
 - **Sin coordenada Z.** `MobilityRegion` solo tiene los cuatro límites.
 - **Altura.** No se modifica `heightCm` ni `heightCmSnapshot`; ya están
   implementados en los commits de CHOIR-86 anteriores a esta tarea.

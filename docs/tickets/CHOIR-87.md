@@ -13,7 +13,12 @@
 Centralizar en el backend la **validación integral del guardado de posiciones de un borrador de formación** frente a:
 1. Posiciones bloqueadas (`locked = true`).
 2. Restricciones de proximidad activas (CHOIR-85).
-3. Restricciones de movilidad y visibilidad activas (CHOIR-86).
+3. Restricciones de movilidad activas (CHOIR-86).
+
+**Alcance de la primera versión:** bloqueos (CHOIR-84), proximidad (CHOIR-85) y movilidad
+(CHOIR-86). **Visibilidad queda expresamente fuera** de esta versión: pendiente de definir
+el coreuta protegido, el obstructor, la altura, la orientación y la geometría. No se declara
+validada ni implementada.
 
 Validar cada guardado de posiciones antes de persistir en base de datos. Si una posición bloqueada fue movida o si una restricción se incumple, la operación debe ser rechazada de forma atómica. Usar `400 Bad Request` para solicitudes malformadas y `409 Conflict` para conflictos con el estado o restricciones del dominio. La respuesta de conflicto debe incluir violaciones estructuradas con identificadores de coreutas y explicaciones legibles para que el frontend las resalte en el escenario.
 

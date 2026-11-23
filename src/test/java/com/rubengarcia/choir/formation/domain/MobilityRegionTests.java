@@ -14,19 +14,19 @@ class MobilityRegionTests {
     }
 
     @Test
-    void acceptsRegionWithAllBoundsAndKeepsThem() {
-        MobilityRegion region = new MobilityRegion(n("1.5"), n("4.25"), n("-2"), n("0"));
+    void acceptsRegionAndKeepsEveryBound() {
+        MobilityRegion region = new MobilityRegion(n("1.5"), n("4.25"), n("0"), n("10"));
 
         assertEquals(n("1.5"), region.minX());
         assertEquals(n("4.25"), region.maxX());
-        assertEquals(n("-2"), region.minY());
-        assertEquals(n("0"), region.maxY());
+        assertEquals(n("0"), region.minY());
+        assertEquals(n("10"), region.maxY());
     }
 
     @Test
-    void acceptsBoundsOutsideAnyAssumedRangeBecauseNoRangeIsDefined() {
-        assertDoesNotThrow(() -> new MobilityRegion(
-                n("-100000.001"), n("100000.999"), n("-0.001"), n("0.001")));
+    void acceptsTheFullScaleAndEveryBoundaryValue() {
+        assertDoesNotThrow(() -> new MobilityRegion(n("0"), n("100"), n("0"), n("100")));
+        assertDoesNotThrow(() -> new MobilityRegion(n("0"), n("0.001"), n("99.999"), n("100")));
     }
 
     @Test
@@ -39,6 +39,30 @@ class MobilityRegionTests {
                 () -> new MobilityRegion(n("0"), n("10"), null, n("10")));
         assertThrows(IllegalArgumentException.class,
                 () -> new MobilityRegion(n("0"), n("10"), n("0"), null));
+    }
+
+    @Test
+    void rejectsValuesBelowZeroOnEachBound() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("-0.001"), n("10"), n("0"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("10"), n("-0.001"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("-1"), n("10"), n("0"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("10"), n("-1"), n("10")));
+    }
+
+    @Test
+    void rejectsValuesAboveHundredOnEachBound() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("100.001"), n("0"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("10"), n("0"), n("100.001")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("101"), n("0"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("10"), n("0"), n("101")));
     }
 
     @Test
@@ -55,6 +79,14 @@ class MobilityRegionTests {
                 () -> new MobilityRegion(n("0"), n("10"), n("5"), n("5")));
         assertThrows(IllegalArgumentException.class,
                 () -> new MobilityRegion(n("0"), n("10"), n("6"), n("5")));
+    }
+
+    @Test
+    void rejectsEqualXAtTheScaleEdges() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("0"), n("0"), n("0"), n("10")));
+        assertThrows(IllegalArgumentException.class,
+                () -> new MobilityRegion(n("100"), n("100"), n("0"), n("10")));
     }
 
     @Test

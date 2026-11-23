@@ -23,7 +23,7 @@ contrato HTTP de evaluación, si se requiere.
 6. **Estado explícito:** `EVALUABLE` solo cuando no hay restricciones no
    evaluables. Una lista vacía de hallazgos con `NOT_EVALUABLE` no es un
    cumplimiento. El invariante se valida en `MobilityEvaluation`.
-7. **Límites inclusivos**, sin rango de coordenadas asumido y sin coordenada Z.
+7. **Límites inclusivos**, en la escala 0 a 100 (validada en la región), sin coordenada Z.
 8. **Solo restricciones activas.** Las inactivas no producen hallazgos ni entradas
    no evaluables.
 9. **Asociación por `singerId`.** Solo se consideran posiciones del borrador de

@@ -1,64 +1,58 @@
-# CHOIR-86 — Rango de coordenadas del escenario (decisión pendiente)
+# CHOIR-86 — Escala y orientación del escenario
 
 ## Estado
 
-**Pendiente de confirmación.** No está confirmado si el rango 0..100 es un
-requisito obligatorio. Hasta confirmarlo, el dominio no impone ningún rango.
+**Aprobada.** Las coordenadas son porcentajes normalizados entre 0 y 100, inclusive.
 
-## Verificación de la fuente
+## Convención
 
-- **Jira:** no consultado. El conector de Atlassian no está conectado en este
-  entorno, así que los criterios se tomaron de `docs/tickets/CHOIR-86.md`, copia
-  del repositorio. Si el ticket en Jira difiere, esta decisión debe revisarse.
+- X: horizontal, de izquierda a derecha desde la perspectiva del director.
+- Y: profundidad. y = 0 es el fondo (borde superior de la UI); y = 100 es el frente
+  (borde inferior de la UI).
+- Origen (0, 0): esquina superior izquierda.
+- Sin coordenada Z.
 
-## Qué dice el ticket
+## Evidencia del mapeo real del frontend
 
-- La condición espacial de movilidad se basa en «coordenadas normalizadas del
-  escenario (`x`/`y` entre `0` y `100`)».
-- En la misma línea: «antes de implementar hay que acordar qué región representa
-  una fila accesible y cómo se configura».
-- El criterio «Se definen la escala, orientación del escenario y los datos de
-  dominio necesarios» está sin marcar.
+Verificado en `choir-platform-web` (`formation-stage.component.html` y `.ts`):
 
-Lectura: el rango aparece como escala prevista, pero el propio ticket condiciona
-su uso a un acuerdo posterior. No es una regla cerrada.
+- La plantilla posiciona cada coreuta con `[style.left.%]="displayX(singer)"` y
+  `[style.top.%]="displayY(singer)"`.
+- `displayX` y `displayY` devuelven `singer.x` y `singer.y` sin transformación; solo
+  sustituyen el valor durante el arrastre o el movimiento por teclado.
+- `.stage-back` está en `top: 0` y `.stage-front` en `bottom: 0`.
 
-## Evidencia en el código
+Conclusión: `left` = x y `top` = y. La convención coincide con la UI. No se realizó
+ninguna transformación.
 
-- **Backend:** los DTO de posiciones no tienen restricciones de rango. Las
-  columnas `x_coordinate` e `y_coordinate` son `DECIMAL(10, 3) NOT NULL`, sin
-  `CHECK` de rango.
-- **Frontend (`choir-platform-web`, `formation-stage.component.ts`):** el
-  movimiento se convierte en porcentaje del área del escenario (`× 100`) y se
-  limita con `clamp` a X en `[5, 95]` e Y en `[8, 92]`.
+## Evidencia del backend
 
-Lectura: la UI trabaja de facto con una escala de 0 a 100, pero el backend no la
-exige, y los límites `[5, 95]` y `[8, 92]` no están documentados como límites
-físicos del escenario ni como contrato.
+- `FormationDraftController.PositionUpdateRequest` valida `x` e `y` con
+  `@DecimalMin("0.0")` y `@DecimalMax("100.0")`, desde el commit `b939ef1`
+  (2026-10-22). Esa es la vía de guardado de posiciones.
+- `formation_positions.x_coordinate` e `y_coordinate` son `DECIMAL(10, 3) NOT NULL`.
+- No hay migraciones que sembren posiciones.
 
-## Decisión provisional
+## Decisión sobre movilidad
 
-1. `MobilityRegion` y `MobilityEvaluator` no imponen rango: la validación de
-   límites sigue siendo solo `minX < maxX` y `minY < maxY`.
-2. No se cambia el dominio ni los tests por este punto.
+- `MobilityRegion` valida los cuatro límites en [0, 100], inclusive, con
+  `minX < maxX` y `minY < maxY`.
+- La tabla `formation_mobility_constraints` tiene CHECK de rango (migración `V41`).
+- Los DTO de entrada del controlador usan `@DecimalMin`/`@DecimalMax`; una solicitud
+  fuera de rango responde HTTP 400.
 
-## Recomendación
+## Datos existentes
 
-Confirmar con quien define el escenario (diseño o producto):
+- La tabla de movilidad (`V39`, `V40`, `V41`) no está desplegada en producción en el
+  momento de esta decisión; sus filas solo pueden existir en bases de desarrollo.
+- No se ejecutaron conversiones de datos. Si una base de desarrollo tuviera filas
+  fuera de rango, la migración `V41` falla y esas filas se corrigen manualmente.
+- No pude verificar el contenido de bases de producción ni de desarrollo desde este
+  entorno.
 
-1. Si `x`/`y` son porcentajes del área de escenario (0 a 100), como sugiere la UI.
-2. Si `[5, 95]` y `[8, 92]` son límites físicos del escenario o solo límites
-   visuales de la UI.
-3. Qué región representa una «fila accesible» (el ejemplo del ticket) y cómo se
-   configura.
+## Límites pendientes
 
-Si se confirma la escala 0 a 100, la validación de rango de regiones y
-posiciones se implementa en CHOIR-87, junto con los validadores. No se
-implementa antes de esa confirmación.
-
-## Preguntas abiertas
-
-- ¿El rango 0 a 100 es requisito o referencia descriptiva?
-- ¿Los límites de la UI son un contrato?
-- ¿La región de «fila accesible» es un rectángulo por coreuta, o una región
-  compartida por tipo de fila?
+- La semántica de una «fila accesible» (la región concreta de cada zona) es configurable
+  por restricción y no está prefijada.
+- Los límites de la UI `[5, 95]` (X) y `[8, 92]` (Y) son visuales y no forman parte del
+  contrato. No se usan para validar.

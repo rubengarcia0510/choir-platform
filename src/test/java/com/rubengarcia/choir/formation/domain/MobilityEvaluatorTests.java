@@ -61,6 +61,25 @@ class MobilityEvaluatorTests {
     }
 
     @Test
+    void positionsExactlyOnTheScaleEdgesAreEvaluatedInsideAFullScaleRegion() {
+        MobilityRegion fullScale = new MobilityRegion(
+                new BigDecimal("0"), new BigDecimal("100"),
+                new BigDecimal("0"), new BigDecimal("100"));
+        LocalDateTime createdAt = LocalDateTime.of(2026, 11, 22, 10, 0);
+        List<FormationMobilityConstraint> constraints = List.of(
+                new FormationMobilityConstraint(1L, 1L, 10L, fullScale, true, createdAt),
+                new FormationMobilityConstraint(2L, 1L, 20L, fullScale, true, createdAt));
+
+        MobilityEvaluation evaluation = evaluate(
+                constraints,
+                List.of(position(1L, 10L, "0", "0"),
+                        position(2L, 20L, "100", "100")));
+
+        assertThat(evaluation.status()).isEqualTo(MobilityEvaluationStatus.EVALUABLE);
+        assertThat(evaluation.findings()).isEmpty();
+    }
+
+    @Test
     void inactiveConstraintsDoNotProduceFindingsOrNotEvaluableEntries() {
         MobilityEvaluation evaluation = evaluate(
                 List.of(constraint(1L, SINGER, false)),

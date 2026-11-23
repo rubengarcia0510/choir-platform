@@ -100,12 +100,53 @@ class FormationMobilityConstraintControllerTests {
     // ------------------------------------------------------------------
 
     @Test
+    void createAcceptsTheScaleEdgesAndRejectsValuesOutsideTheScale() throws Exception {
+        Fixture fixture = newFixture();
+        Session session = login(fixture.email());
+
+        postMobility(session, fixture, createBody(
+                fixture.singerOneId(), "0.000", "100.000", "0.000", "100.000"))
+                .expectStatus().isCreated();
+
+        postMobility(session, fixture, createBody(
+                fixture.singerTwoId(), "-0.001", "8.000", "0.000", "10.000"))
+                .expectStatus().isBadRequest();
+
+        postMobility(session, fixture, createBody(
+                fixture.singerTwoId(), "1.000", "100.001", "0.000", "10.000"))
+                .expectStatus().isBadRequest();
+
+        postMobility(session, fixture, createBody(
+                fixture.singerTwoId(), "1.000", "8.000", "0.000", "100.500"))
+                .expectStatus().isBadRequest();
+
+        assertEquals(1, countMobility(fixture.formationId()));
+    }
+
+    @Test
+    void updateRejectsValuesOutsideTheScaleWithBadRequest() throws Exception {
+        Fixture fixture = newFixture();
+        Session session = login(fixture.email());
+        long id = createMobilityId(session, fixture, fixture.singerOneId());
+
+        putMobility(session, fixture, id, "-1.000", "8.000", "0.000", "10.000", true)
+                .expectStatus().isBadRequest();
+
+        putMobility(session, fixture, id, "0.000", "100.000", "0.000", "101.000", true)
+                .expectStatus().isBadRequest();
+
+        assertEquals(true, jdbcTemplate.queryForObject(
+                "SELECT active FROM formation_mobility_constraints WHERE id = ?",
+                Boolean.class, id));
+    }
+
+    @Test
     void authorizedDirectorCreatesAMobilityConstraint() throws Exception {
         Fixture fixture = newFixture();
         Session session = login(fixture.email());
 
         Map<String, Object> body = jsonBody(postMobility(session, fixture,
-                createBody(fixture.singerOneId(), "1.250", "8.750", "-0.500", "12.000"))
+                createBody(fixture.singerOneId(), "1.250", "8.750", "0.500", "12.000"))
                 .expectStatus().isCreated()
                 .expectBody(String.class)
                 .returnResult()

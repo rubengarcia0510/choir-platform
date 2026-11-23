@@ -18,10 +18,14 @@ Una posición cumple cuando:
 
 Los límites son inclusivos.
 
-Se rechazan regiones con minX >= maxX o minY >= maxY.
+Se rechazan regiones con minX >= maxX o minY >= maxY, y regiones con algún límite
+fuera de [0, 100].
 
 La región utiliza el mismo sistema de coordenadas que
-formation_positions.x_coordinate e y_coordinate.
+formation_positions.x_coordinate e y_coordinate: porcentajes normalizados entre 0 y 100,
+inclusive. X crece de izquierda a derecha desde la perspectiva del director. Y crece desde
+el fondo (y = 0, borde superior de la UI) hacia el frente (y = 100, borde inferior). El
+origen (0, 0) es la esquina superior izquierda.
 
 No se agrega una coordenada Z.
 
@@ -119,5 +123,5 @@ Persistencia:
 - **Visibilidad:** no implementada. Falta definir la relación protegido/obstructor,
   la orientación del escenario y la regla de obstrucción.
 - **Validadores y código `MOBILITY_VIOLATION`:** pendientes de CHOIR-87.
-- **Escala de coordenadas:** pendiente de confirmación. Ver
+- **Escala de coordenadas:** aprobada, 0 a 100 inclusive, con CHECK en base (V41). Ver
   `CHOIR-86-coordenadas.md`.

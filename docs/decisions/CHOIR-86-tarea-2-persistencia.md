@@ -45,8 +45,8 @@ agregar cualquier restricción.
 
 1. Definir la relación de visibilidad (protegido y obstructor) y su restricción
    de unicidad. Visibilidad sigue sin implementar.
-2. Confirmar si el rango 0 a 100 del ticket es la escala del escenario. Ver
-   `CHOIR-86-coordenadas.md`. Los adapters no lo asumen.
+2. Resuelto: la escala 0 a 100 está aprobada y aplicada en el dominio y en la base
+   (V41). Ver `CHOIR-86-coordenadas.md`.
 
 Resuelto: la capa de servicio traduce la violación de unicidad de movilidad a
 `PhysicalConstraintConflictException` (HTTP 409), sin exponer detalles de

@@ -62,7 +62,6 @@ sin exponer.
 - `GET` lista solo movilidad en la base `/constraints/physical`, como indica el
   ticket para `GET /`. Cuando exista visibilidad, el listado combinado se definirá
   sin inventar un modelo nuevo.
-- El ticket menciona coordenadas normalizadas de 0 a 100. No se aplica ningún
-  rango; las invariantes son solo `minX < maxX` y `minY < maxY`. Ver
+- Escala 0 a 100 aprobada. Dominio y base validan los límites en [0, 100]; ver
   `CHOIR-86-coordenadas.md`.
 - La validación geométrica de movimientos y el composite de CHOIR-87 quedan fuera.

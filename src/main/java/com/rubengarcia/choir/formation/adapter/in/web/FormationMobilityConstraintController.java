@@ -4,6 +4,8 @@ import com.rubengarcia.choir.formation.application.port.in.FormationMobilityCons
 import com.rubengarcia.choir.formation.domain.FormationMobilityConstraint;
 import com.rubengarcia.choir.formation.domain.MobilityRegion;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
@@ -165,17 +167,17 @@ public class FormationMobilityConstraintController {
 
     public record CreateMobilityConstraintRequest(
             @NotNull @Positive Long singerId,
-            @NotNull BigDecimal minX,
-            @NotNull BigDecimal maxX,
-            @NotNull BigDecimal minY,
-            @NotNull BigDecimal maxY) {
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal minX,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal maxX,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal minY,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal maxY) {
     }
 
     public record UpdateMobilityConstraintRequest(
-            @NotNull BigDecimal minX,
-            @NotNull BigDecimal maxX,
-            @NotNull BigDecimal minY,
-            @NotNull BigDecimal maxY,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal minX,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal maxX,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal minY,
+            @NotNull @DecimalMin("0.0") @DecimalMax("100.0") BigDecimal maxY,
             @NotNull Boolean active) {
     }
 

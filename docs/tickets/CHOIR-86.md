@@ -60,3 +60,24 @@ El frontend debe esperar a que este contrato esté implementado y mergeado antes
 - [ ] Se definen la escala, orientación del escenario y los datos de dominio necesarios para validar movilidad y visibilidad.
 - [ ] Endpoints de creación, consulta y eliminación funcionando bajo autorización del director.
 - [ ] Las validaciones se ejecutan en memoria antes de persistir cualquier cambio de posiciones.
+
+---
+
+## 5. Decisiones aprobadas (estado implementado)
+
+> Copia del repositorio. Jira no se modificó desde este documento.
+
+- **Escala:** coordenadas normalizadas del escenario entre 0 y 100, inclusive.
+- **Orientación:** X de izquierda a derecha desde la perspectiva del director. Y
+  crece desde el fondo (y = 0, borde superior de la UI) hacia el frente (y = 100,
+  borde inferior). Origen (0, 0) en la esquina superior izquierda. Sin coordenada Z.
+- **Región de movilidad:** zona accesible configurable; límites inclusivos;
+  `minX < maxX` y `minY < maxY`; cada límite en [0, 100].
+- **Unicidad:** una restricción de movilidad por coreuta y formación.
+- **Endpoints implementados:** `GET /`, `POST /mobility`, `PUT /{constraintId}`,
+  `DELETE /{constraintId}`. `PUT` no figura en el contrato original y se agregó para
+  cumplir la tarea de actualización.
+- **Evaluación:** solo lectura sobre el borrador (`DRAFT`), con estados `EVALUABLE` y
+  `NOT_EVALUABLE`.
+- **Visibilidad:** no implementada. Pendiente de definir su contrato funcional.
+- **Validadores geométricos y código `MOBILITY_VIOLATION`:** pendientes de CHOIR-87.

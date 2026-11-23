@@ -43,7 +43,7 @@ class FormationMobilityConstraintServiceTests {
     private static final MobilityRegion REGION = new MobilityRegion(
             new BigDecimal("1.250"),
             new BigDecimal("8.750"),
-            new BigDecimal("-0.500"),
+            new BigDecimal("0.500"),
             new BigDecimal("12.000"));
 
     @Mock

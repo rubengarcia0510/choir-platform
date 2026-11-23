@@ -29,7 +29,7 @@ class FormationMobilityConstraintPersistenceAdapterTests {
     private static final MobilityRegion REGION = new MobilityRegion(
             new BigDecimal("1.250"),
             new BigDecimal("8.750"),
-            new BigDecimal("-0.500"),
+            new BigDecimal("0.500"),
             new BigDecimal("12.000"));
 
     private static final MobilityRegion OTHER_REGION = new MobilityRegion(
@@ -326,7 +326,7 @@ class FormationMobilityConstraintPersistenceAdapterTests {
 
         assertThat(created.region().minX()).isEqualTo(new BigDecimal("1.250"));
         assertThat(created.region().maxX()).isEqualTo(new BigDecimal("8.750"));
-        assertThat(created.region().minY()).isEqualTo(new BigDecimal("-0.500"));
+        assertThat(created.region().minY()).isEqualTo(new BigDecimal("0.500"));
         assertThat(created.region().maxY()).isEqualTo(new BigDecimal("12.000"));
 
         assertThat(jdbcTemplate.queryForObject(
@@ -340,7 +340,7 @@ class FormationMobilityConstraintPersistenceAdapterTests {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT min_y FROM formation_mobility_constraints WHERE id = ?",
                 BigDecimal.class,
-                created.id())).isEqualTo(new BigDecimal("-0.500"));
+                created.id())).isEqualTo(new BigDecimal("0.500"));
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT max_y FROM formation_mobility_constraints WHERE id = ?",
                 BigDecimal.class,
@@ -365,6 +365,29 @@ class FormationMobilityConstraintPersistenceAdapterTests {
                 .isInstanceOf(DataAccessException.class);
 
         assertThat(countConstraints(fixture.formationId())).isZero();
+    }
+
+    @Test
+    void databaseCheckRejectsValuesOutsideTheScaleAndAcceptsTheEdges() {
+        assertThatThrownBy(() -> insertRaw(
+                        new BigDecimal("-0.001"), new BigDecimal("8.000"),
+                        new BigDecimal("0.000"), new BigDecimal("10.000")))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> insertRaw(
+                        new BigDecimal("1.000"), new BigDecimal("100.001"),
+                        new BigDecimal("0.000"), new BigDecimal("10.000")))
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> insertRaw(
+                        new BigDecimal("1.000"), new BigDecimal("8.000"),
+                        new BigDecimal("0.000"), new BigDecimal("100.500")))
+                .isInstanceOf(DataAccessException.class);
+
+        insertRaw(new BigDecimal("0.000"), new BigDecimal("100.000"),
+                new BigDecimal("0.000"), new BigDecimal("100.000"));
+
+        assertThat(countConstraints(fixture.formationId())).isEqualTo(1);
     }
 
     private void insertRaw(
