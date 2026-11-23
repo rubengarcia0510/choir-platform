@@ -186,6 +186,63 @@ class FormationCatalogPersistenceAdapterTests {
     }
 
     @Test
+    void replacementCapturesSingerHeightAndKeepsNullHeight() {
+        jdbcTemplate.update(
+                "UPDATE singers SET height_cm = ? WHERE id = ?",
+                172,
+                fixture.singerId());
+
+        Long singerWithoutHeight = insertSinger(
+                fixture.choirId(),
+                "Cantante sin altura " + fixture.suffix(),
+                "ALTO",
+                true);
+
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                singerWithoutHeight,
+                fixture.divisionId());
+
+        adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Cantante con altura",
+                                        new BigDecimal("20"),
+                                        new BigDecimal("30")),
+                                new PositionUpdate(
+                                        singerWithoutHeight,
+                                        "Cantante sin altura",
+                                        new BigDecimal("40"),
+                                        new BigDecimal("50"))))
+                .block(TIMEOUT);
+
+        Integer capturedHeight = jdbcTemplate.queryForObject(
+                "SELECT height_cm_snapshot FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Integer.class,
+                fixture.versionId(),
+                fixture.singerId());
+
+        Integer nullHeight = jdbcTemplate.queryForObject(
+                "SELECT height_cm_snapshot FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Integer.class,
+                fixture.versionId(),
+                singerWithoutHeight);
+
+        assertThat(capturedHeight).isEqualTo(172);
+        assertThat(nullHeight).isNull();
+    }
+
+    @Test
     void replacementCanRemoveLockedPositionAndNewPositionsStartUnlocked() {
         adapter.setPositionLocked(
                 fixture.choirId(),
@@ -981,9 +1038,12 @@ class FormationCatalogPersistenceAdapterTests {
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
         jdbcTemplate.update(
-                "UPDATE formation_positions SET locked = TRUE "
+                "UPDATE formation_positions SET locked = TRUE, height_cm_snapshot = 172 "
                         + "WHERE formation_version_id = ?",
                 fixture.versionId());
+        jdbcTemplate.update(
+                "UPDATE singers SET height_cm = 172 WHERE id = ?",
+                fixture.singerId());
         jdbcTemplate.update(
                 "UPDATE formation_versions "
                         + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
@@ -1026,7 +1086,7 @@ class FormationCatalogPersistenceAdapterTests {
 
         Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
                 "SELECT singer_id, singer_name_snapshot, voice_part_snapshot, "
-                        + "position_label, x_coordinate, y_coordinate, locked "
+                        + "position_label, x_coordinate, y_coordinate, locked, height_cm_snapshot "
                         + "FROM formation_positions WHERE id = ?",
                 copiedPositionId);
 
@@ -1040,6 +1100,7 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat((BigDecimal) copiedPosition.get("y_coordinate"))
                 .isEqualByComparingTo("20.000");
         assertThat(copiedPosition.get("locked")).isEqualTo(false);
+        assertThat(copiedPosition.get("height_cm_snapshot")).isEqualTo(172);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM formation_positions WHERE formation_version_id = ?",

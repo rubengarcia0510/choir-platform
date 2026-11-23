@@ -57,7 +57,7 @@ class FormationVersionLifecycleIntegrationTests {
         assertThat(jdbc.queryForMap("""
                 SELECT singer_id, singer_name_snapshot, voice_part_snapshot,
                        voice_section_id_snapshot, voice_section_name_snapshot,
-                       division_number_snapshot, position_label,
+                       division_number_snapshot, height_cm_snapshot, position_label,
                        x_coordinate, y_coordinate, locked
                 FROM formation_positions
                 WHERE formation_version_id = ?
@@ -68,6 +68,7 @@ class FormationVersionLifecycleIntegrationTests {
                 .containsEntry("VOICE_SECTION_ID_SNAPSHOT", f.sectionId())
                 .containsEntry("VOICE_SECTION_NAME_SNAPSHOT", "Sopranos")
                 .containsEntry("DIVISION_NUMBER_SNAPSHOT", 2)
+                .containsEntry("HEIGHT_CM_SNAPSHOT", 172)
                 .containsEntry("POSITION_LABEL", "Posición original")
                 .containsEntry("X_COORDINATE", new java.math.BigDecimal("1.000"))
                 .containsEntry("Y_COORDINATE", new java.math.BigDecimal("2.000"))
@@ -334,9 +335,10 @@ class FormationVersionLifecycleIntegrationTests {
                     (formation_version_id, singer_id, singer_name_snapshot,
                      voice_part_snapshot, voice_section_id_snapshot,
                      voice_section_name_snapshot, division_number_snapshot,
-                     position_label, x_coordinate, y_coordinate)
+                     height_cm_snapshot, position_label,
+                     x_coordinate, y_coordinate)
                 VALUES (?, ?, 'Nombre histórico', 'SOPRANO', ?,
-                        'Sopranos', 2, 'Posición original', 1.000, 2.000)
+                        'Sopranos', 2, 172, 'Posición original', 1.000, 2.000)
                 """, versionId, f.singerId(), f.sectionId());
 
         return new Fixture(f.email(), f.choirId(), f.formationId(),
@@ -377,8 +379,8 @@ class FormationVersionLifecycleIntegrationTests {
 
         jdbc.update("""
                 INSERT INTO singers
-                    (choir_id, display_name, voice_part, voice_section_id)
-                VALUES (?, 'Nombre histórico', 'SOPRANO', ?)
+                    (choir_id, display_name, voice_part, voice_section_id, height_cm)
+                VALUES (?, 'Nombre histórico', 'SOPRANO', ?, 172)
                 """, choirId, sectionId);
         long singerId = jdbc.queryForObject("""
                 SELECT id FROM singers

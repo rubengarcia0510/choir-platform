@@ -26,6 +26,7 @@ public interface SingerService {
             String voicePart,
             Long voiceSectionId,
             String mobility,
-            String restrictions) {
+            String restrictions,
+            Integer heightCm) {
     }
 }
