@@ -10,7 +10,6 @@ import com.rubengarcia.choir.formation.domain.FormationVisibilityConstraint;
 import com.rubengarcia.choir.formation.domain.VisibilityEvaluation;
 import com.rubengarcia.choir.formation.domain.VisibilityEvaluator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -86,8 +85,8 @@ public class FormationVisibilityEvaluationService
     private Mono<Set<Long>> readRoster(long concertId, long repertoireItemId) {
         return planning
                 .vocalAssignmentsForPlanning(concertId, repertoireItemId)
+                .filter(assignment -> assignment.singerId() != null)
                 .map(VocalAssignment::singerId)
-                .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
     }
 }
