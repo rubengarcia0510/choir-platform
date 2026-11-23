@@ -2,21 +2,26 @@
 
 ## Estado
 
-Evaluador de dominio puro implementado en `feature/CHOIR-86-visibility-evaluation`.
-**No integrado** en el composite de validación (CHOIR-87) ni expuesto por API. No
-hay servicio de aplicación todavía. No declarar la visibilidad validada en pantallas
-reales ni con datos de producción.
+El evaluador de dominio puro y el servicio de aplicación están implementados
+en `feature/CHOIR-86-physical-constraints`.
 
-## Contrato de entrada
+La evaluación se ejecuta sobre las posiciones del DRAFT y el roster de coreutas
+activos asignados a la ocurrencia. Usa los snapshots históricos de altura.
 
-```
+**No está integrado** en el composite de validación de CHOIR-87 ni expuesto
+por API HTTP. No declarar la visibilidad validada en pantallas reales ni con
+datos de producción.
+
+## Contrato del evaluador
+
+```java
 VisibilityEvaluator.evaluate(
     List<FormationVisibilityConstraint> constraints,
     List<FormationPosition> draftPositions,
     Set<Long> assignedSingerIds)
 ```
 
-- `assignedSingerIds`: coreutas asignados a la ocurrencia y formación, tengan o no
+- `assignedSingerIds`: coreutas activos asignados a la ocurrencia, tengan o no
   posición en el DRAFT. Es la lista de referencia; el evaluador no consulta
   repositorios.
 - Solo se evalúan restricciones activas.
@@ -88,9 +93,6 @@ requerida no resuelta.
   altura inferida.
 - Un obstructor con varias posiciones válidas genera varios hallazgos: el número de
   hallazgos refleja combinaciones, no coreutas.
-- Pendiente: servicio de aplicación (roster completo, posiciones del DRAFT,
-  autorización de ocurrencia y llamada al evaluador), endpoints y la integración con
-  CHOIR-87. Esta documentación no modifica el documento compuesto de CHOIR-87.
 
 ## Servicio de aplicación de visibilidad
 
@@ -118,6 +120,15 @@ Roster:
   `POSITION_NOT_IN_ASSIGNED_ROSTER` y no genera hallazgos.
 - El SQL vive solo en el adapter. `vocalAssignmentsForPlanning` no se modificó.
 
-Estado: el servicio y sus tests (Mockito, y el test de integración del adapter de roster) están
-escritos; la verificación en Gradle queda pendiente de ejecutar en el repositorio. No hay endpoint HTTP ni integración con
-CHOIR-87. Visibilidad sigue sin declararse validada.
+## Verificación
+
+El CI #657 terminó en SUCCESS para el commit
+`8f517e239a87dfb158016830750639128bfbdaa0` de
+`feature/CHOIR-86-physical-constraints`.
+
+Las suites incorporadas para la evaluación de visibilidad incluyen:
+- `FormationVisibilityEvaluationServiceTests`: 8 pruebas.
+- `FormationVisibilityRosterPersistenceAdapterTests`: 8 pruebas.
+
+No hay endpoint HTTP ni integración con CHOIR-87. La implementación de evaluación
+no debe presentarse como una funcionalidad ya disponible en la interfaz.

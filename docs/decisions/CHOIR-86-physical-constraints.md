@@ -60,25 +60,42 @@ formación, se conserva el snapshot de origen.
 Una modificación posterior de heightCm en el perfil no modifica
 versiones históricas.
 
-Si falta la altura, la evaluación de visibilidad debe informarse
-como NOT_EVALUABLE (nombre del estado en la implementación). No se debe asumir que la restricción se cumple
-ni inventar una altura.
+La evaluación de visibilidad utiliza exclusivamente heightCmSnapshot. Si falta
+la altura requerida para una comparación, el resultado es `NOT_EVALUABLE`; no se
+asume que la restricción se cumple ni se inventa una altura.
 
-## 4. Validación de visibilidad
+## 4. Evaluación de visibilidad
 
-La altura se utiliza junto con:
-- Las posiciones X/Y de los coreutas.
-- La orientación del escenario.
-- La dirección de visión hacia el público.
-- La relación entre coreutas protegidos y posibles obstrucciones.
+La evaluación de visibilidad está implementada como una aproximación geométrica
+determinista sobre las posiciones del DRAFT y sus snapshots de altura.
 
-La regla geométrica exacta y la orientación escénica todavía
-requieren una definición explícita.
+Solo se evalúan restricciones activas. Para cada posición del coreuta protegido,
+se comparan las posiciones de los demás coreutas asignados a la ocurrencia. Se
+produce un hallazgo por cada combinación protegida/obstructor que cumpla todas
+estas condiciones:
 
-No implementar heurísticas ni declarar una validación geométrica
-como determinista hasta cerrar esos datos.
+- La diferencia horizontal es como máximo 2 puntos:
+  `abs(X_obstructor - X_protegido) <= 2`.
+- El obstructor está delante, hacia el público:
+  `Y_obstructor > Y_protegido`.
+- El snapshot de altura del obstructor es estrictamente mayor:
+  `heightCmSnapshot_obstructor > heightCmSnapshot_protegido`.
 
-No agregar coordenada Z para representar la altura física.
+Se evalúan todas las posiciones de cada coreuta; no se elige una posición
+arbitrariamente ni se declara ambigüedad por tener varias posiciones.
+
+Los datos requeridos ausentes producen `NOT_EVALUABLE` con un motivo explícito.
+Los hallazgos válidos se conservan aunque otras comparaciones no puedan evaluarse.
+El roster incluye los coreutas activos asignados a la obra en el concierto,
+aunque no tengan posición en el DRAFT; esa ausencia impide declarar completa
+la evaluación.
+
+Esta regla es una aproximación basada en X, Y y altura. No simula la línea visual
+real, la geometría corporal, el ángulo de visión ni la posición de los ojos.
+La tolerancia horizontal y la comparación estricta de alturas son decisiones
+funcionales, no una simulación física del escenario.
+
+No se agrega coordenada Z para representar la altura física.
 
 ## 5. Puntos de implementación existentes
 
@@ -103,25 +120,41 @@ Persistencia:
 - singers.height_cm
 - formation_positions.height_cm_snapshot
 
-## 6. Pruebas necesarias
+Evaluación de visibilidad:
+- `VisibilityEvaluator`: evaluación pura de dominio.
+- `FormationVisibilityEvaluationService`: caso de uso que autoriza la ocurrencia,
+  obtiene restricciones y posiciones DRAFT, carga el roster activo y ejecuta el evaluador.
+- `FormationVisibilityRosterPort` y su adapter: lectura específica de asignaciones
+  activas desde `concert_vocal_assignments`; el SQL permanece en infraestructura.
+- La evaluación no modifica `vocalAssignmentsForPlanning`.
 
-- Crear y actualizar un coreuta con altura.
-- Consultar un coreuta con altura.
-- Permitir altura ausente.
-- Persistir y recuperar heightCmSnapshot.
-- Verificar que modificar la altura del perfil no altere snapshots existentes.
-- Verificar que crear un borrador desde una versión publicada conserve
-  el snapshot.
-- Verificar que duplicar una formación conserve el snapshot.
-- Verificar que la falta de altura produzca un resultado no evaluable
-  para visibilidad, no un cumplimiento implícito.
+## 6. Pruebas y verificación
 
-## 6. Estado de implementación
+Las pruebas cubren:
+- Crear, actualizar y consultar un coreuta con altura, y permitir altura ausente.
+- Persistir y recuperar `heightCmSnapshot`.
+- Conservar snapshots al crear borradores desde versiones publicadas y al duplicar
+  formaciones.
+- No alterar snapshots históricos cuando cambia la altura del perfil.
+- Regla geométrica, tolerancia horizontal, orientación hacia el público y comparación
+  estricta de alturas.
+- Múltiples posiciones, roster asignado, datos ausentes y resultados `NOT_EVALUABLE`.
 
-- **Movilidad:** modelo, persistencia (`V39`, `V40`), API REST, evaluación
+El CI #657 terminó en SUCCESS para el commit
+`8f517e239a87dfb158016830750639128bfbdaa0` de
+`feature/CHOIR-86-physical-constraints`.
+
+## 7. Estado de implementación
+
+- **Altura y snapshots:** implementados.
+- **Movilidad:** modelo, persistencia (`V39`, `V40`), API REST y evaluación
   geométrica de solo lectura sobre el borrador. Implementado.
-- **Visibilidad:** no implementada. Falta definir la relación protegido/obstructor,
-  la orientación del escenario y la regla de obstrucción.
+- **Visibilidad:** evaluador puro y servicio de aplicación implementados. La evaluación
+  usa el roster activo de la ocurrencia y snapshots de altura del DRAFT.
+- **API HTTP de visibilidad:** no implementada.
+- **Integración con el composite de validación:** pendiente de CHOIR-87.
+- **Integración visual frontend:** pendiente; no declarar la funcionalidad disponible
+  en pantallas.
 - **Validadores y código `MOBILITY_VIOLATION`:** pendientes de CHOIR-87.
 - **Escala de coordenadas:** aprobada, 0 a 100 inclusive, con CHECK en base (V41). Ver
   `CHOIR-86-coordenadas.md`.
