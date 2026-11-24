@@ -10,4 +10,8 @@ public class PhysicalConstraintConflictException extends RuntimeException {
     public PhysicalConstraintConflictException() {
         super("Ya existe una restricción de movilidad para este coreuta en la formación");
     }
+
+    public PhysicalConstraintConflictException(String message) {
+        super(message);
+    }
 }

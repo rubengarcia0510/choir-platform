@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
+import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
@@ -159,7 +160,8 @@ class FormationCatalogPersistenceAdapterTests {
                                 new BigDecimal("80"),
                                 new BigDecimal("90"))))
                 .block(TIMEOUT))
-                .isInstanceOf(FormationPositionLockedException.class);
+                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .hasMessageContaining("LOCKED_POSITION_MOVED");
 
         assertOriginalPositionRemains();
         assertPositionLocked(true);
@@ -361,8 +363,8 @@ class FormationCatalogPersistenceAdapterTests {
                                         new BigDecimal("13"),
                                         new BigDecimal("24.001"))))
                 .block(TIMEOUT))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("distancia máxima");
+                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .hasMessageContaining("PROXIMITY_VIOLATION");
 
         assertThat(countPositions(fixture.versionId())).isEqualTo(2);
 
@@ -1478,6 +1480,157 @@ class FormationCatalogPersistenceAdapterTests {
                 vocalPlanId,
                 vocalSectionId,
                 1);
+    }
+
+    @Test
+    void mobilityViolationRejectsReplacementAndKeepsDraftPositions() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Fuera de región",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT))
+                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .hasMessageContaining("MOBILITY_CONSTRAINT_VIOLATION");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void notEvaluableMobilityConstraintRejectsReplacementAndKeepsDraftPositions() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of())
+                .block(TIMEOUT))
+                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .hasMessageContaining("MOBILITY_NOT_EVALUABLE");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void inactiveMobilityConstraintDoesNotBlockReplacement() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, FALSE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        DraftDetails accepted = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Fuera de región inactiva",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT);
+
+        assertThat(accepted.positions()).hasSize(1);
+        assertThat(countPositions(fixture.versionId())).isEqualTo(1);
+    }
+
+    @Test
+    void combinedViolationsReportLockProximityAndMobilityCodesInOrder() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante combinado " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+
+        jdbcTemplate.update("""
+                INSERT INTO formation_proximity_constraints
+                    (formation_id, choir_id, singer_one_id, singer_two_id, max_distance, active)
+                VALUES (?, ?, ?, ?, 1.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                Math.min(fixture.singerId(), secondSingerId),
+                Math.max(fixture.singerId(), secondSingerId));
+
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 5.000, 10.000, 5.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                secondSingerId);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Bloqueado movido",
+                                        new BigDecimal("80"),
+                                        new BigDecimal("90")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo",
+                                        new BigDecimal("0"),
+                                        new BigDecimal("0"))))
+                .block(TIMEOUT))
+                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .hasMessageContaining(
+                        "LOCKED_POSITION_MOVED, PROXIMITY_VIOLATION, MOBILITY_CONSTRAINT_VIOLATION");
+
+        assertOriginalPositionRemains();
+        assertPositionLocked(true);
     }
 
     private void insertAssignment(

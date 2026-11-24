@@ -3,12 +3,18 @@ package com.rubengarcia.choir.formation.adapter.out.persistence;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
-import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
+import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.CompositeFormationConstraintValidator;
+import com.rubengarcia.choir.formation.domain.FormationConstraintValidationResult;
+import com.rubengarcia.choir.formation.domain.FormationConstraintViolation;
+import com.rubengarcia.choir.formation.domain.FormationMobilityConstraint;
+import com.rubengarcia.choir.formation.domain.FormationProximityConstraint;
+import com.rubengarcia.choir.formation.domain.MobilityRegion;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -16,6 +22,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -131,16 +138,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                     repertoireItemId,
                                     versionId,
                                     updates)
-                                    .flatMap(positions ->
-                                            preservePositionLocks(versionId, positions)
-                                                    .flatMap(preserved ->
-                                                            validateProximityConstraints(
-                                                                    formation.getId(), preserved)
-                                                                    .flatMap(validated ->
-                                                                            replacePositions(
-                                                                                    formation,
-                                                                                    version,
-                                                                                    validated))));
+                                    .flatMap(proposed -> loadPersistedPositions(versionId)
+                                            .flatMap(persisted -> loadActiveProximityConstraints(formationId)
+                                                    .flatMap(proximity -> loadActiveMobilityConstraints(formationId)
+                                                            .flatMap(mobility -> validateAndReplace(
+                                                                    formation,
+                                                                    version,
+                                                                    persisted,
+                                                                    proposed,
+                                                                    proximity,
+                                                                    mobility)))));
                         }));
     }
 
@@ -248,35 +255,6 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 .collectList();
     }
 
-    private Mono<List<FormationPosition>> preservePositionLocks(
-            long versionId,
-            List<FormationPosition> replacements) {
-        return formationPositionRepository.findByFormationVersionId(versionId)
-                .map(FormationPersistenceMapper::toDomain)
-                .collectList()
-                .flatMap(existing -> {
-                    var existingBySinger = existing.stream()
-                            .collect(java.util.stream.Collectors.toMap(
-                                    FormationPosition::getSingerId,
-                                    position -> position));
-                    for (FormationPosition replacement : replacements) {
-                        FormationPosition current =
-                                existingBySinger.get(replacement.getSingerId());
-                        if (current == null || !current.isLocked()) {
-                            continue;
-                        }
-                        if (current.getXCoordinate().compareTo(
-                                        replacement.getXCoordinate()) != 0
-                                || current.getYCoordinate().compareTo(
-                                        replacement.getYCoordinate()) != 0) {
-                            return Mono.error(new FormationPositionLockedException());
-                        }
-                        replacement.setLocked(true);
-                    }
-                    return Mono.just(replacements);
-                });
-    }
-
     private Mono<InitialPosition> findSingerSnapshot(
             long choirId,
             long concertId,
@@ -343,61 +321,81 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         return position;
     }
 
-    private Mono<List<FormationPosition>> validateProximityConstraints(
-            long formationId,
-            List<FormationPosition> positions) {
+    private Mono<List<FormationPosition>> loadPersistedPositions(long versionId) {
+        return formationPositionRepository.findByFormationVersionId(versionId)
+                .map(FormationPersistenceMapper::toDomain)
+                .collectList();
+    }
+
+    private Mono<List<FormationProximityConstraint>> loadActiveProximityConstraints(long formationId) {
         return databaseClient.sql("""
-                        SELECT singer_one_id, singer_two_id, max_distance
+                        SELECT id, formation_id, singer_one_id, singer_two_id,
+                               max_distance, active, created_at
                         FROM formation_proximity_constraints
                         WHERE formation_id = :formationId
                           AND active = TRUE
+                        ORDER BY id
                         """)
                 .bind("formationId", formationId)
-                .map((row, metadata) -> new ProximityConstraint(
+                .map((row, metadata) -> new FormationProximityConstraint(
+                        row.get("id", Long.class),
+                        row.get("formation_id", Long.class),
                         row.get("singer_one_id", Long.class),
                         row.get("singer_two_id", Long.class),
-                        row.get("max_distance", BigDecimal.class)))
+                        row.get("max_distance", BigDecimal.class),
+                        Boolean.TRUE.equals(row.get("active", Boolean.class)),
+                        row.get("created_at", LocalDateTime.class)))
                 .all()
-                .collectList()
-                .flatMap(constraints -> {
-                    Map<Long, FormationPosition> positionsBySinger =
-                            new LinkedHashMap<>();
-                    for (FormationPosition position : positions) {
-                        positionsBySinger.put(position.getSingerId(), position);
-                    }
+                .collectList();
+    }
 
-                    for (ProximityConstraint constraint : constraints) {
-                        FormationPosition first =
-                                positionsBySinger.get(constraint.singerOneId());
-                        FormationPosition second =
-                                positionsBySinger.get(constraint.singerTwoId());
+    private Mono<List<FormationMobilityConstraint>> loadActiveMobilityConstraints(long formationId) {
+        return databaseClient.sql("""
+                        SELECT id, formation_id, singer_id, min_x, max_x, min_y, max_y,
+                               active, created_at
+                        FROM formation_mobility_constraints
+                        WHERE formation_id = :formationId
+                          AND active = TRUE
+                        ORDER BY id
+                        """)
+                .bind("formationId", formationId)
+                .map((row, metadata) -> new FormationMobilityConstraint(
+                        row.get("id", Long.class),
+                        row.get("formation_id", Long.class),
+                        row.get("singer_id", Long.class),
+                        new MobilityRegion(
+                                row.get("min_x", BigDecimal.class),
+                                row.get("max_x", BigDecimal.class),
+                                row.get("min_y", BigDecimal.class),
+                                row.get("max_y", BigDecimal.class)),
+                        Boolean.TRUE.equals(row.get("active", Boolean.class)),
+                        row.get("created_at", LocalDateTime.class)))
+                .all()
+                .collectList();
+    }
 
-                        if (first == null || second == null) {
-                            continue;
-                        }
+    private Mono<DraftDetails> validateAndReplace(
+            Formation formation,
+            FormationVersion version,
+            List<FormationPosition> persisted,
+            List<FormationPosition> proposed,
+            List<FormationProximityConstraint> proximity,
+            List<FormationMobilityConstraint> mobility) {
+        FormationConstraintValidationResult result =
+                CompositeFormationConstraintValidator.validate(
+                        persisted, proposed, proximity, mobility);
+        if (!result.isValid()) {
+            return Mono.error(new PhysicalConstraintConflictException(
+                    rejectionMessage(result)));
+        }
+        return replacePositions(formation, version, result.positions());
+    }
 
-                        BigDecimal deltaX = first.getXCoordinate()
-                                .subtract(second.getXCoordinate());
-                        BigDecimal deltaY = first.getYCoordinate()
-                                .subtract(second.getYCoordinate());
-                        BigDecimal distanceSquared = deltaX.multiply(deltaX)
-                                .add(deltaY.multiply(deltaY));
-                        BigDecimal maxDistanceSquared =
-                                constraint.maxDistance()
-                                        .multiply(constraint.maxDistance());
-
-                        if (distanceSquared.compareTo(maxDistanceSquared) > 0) {
-                            return Mono.error(new IllegalArgumentException(
-                                    "Movimiento rechazado: los coreutas "
-                                            + constraint.singerOneId() + " y "
-                                            + constraint.singerTwoId()
-                                            + " superarían la distancia máxima de "
-                                            + constraint.maxDistance()));
-                        }
-                    }
-
-                    return Mono.just(positions);
-                });
+    private static String rejectionMessage(FormationConstraintValidationResult result) {
+        String codes = result.violations().stream()
+                .map(FormationConstraintViolation::type)
+                .collect(Collectors.joining(", "));
+        return "Escritura rechazada por restricciones de formación: " + codes;
     }
 
     private Mono<DraftDetails> replacePositions(
@@ -573,11 +571,6 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         3,
                         java.math.RoundingMode.HALF_UP));
     }
-
-    private record ProximityConstraint(
-            Long singerOneId,
-            Long singerTwoId,
-            BigDecimal maxDistance) {}
 
     private record InitialPosition(
             Long singerId,
