@@ -192,3 +192,68 @@ Run focused tests, exception-handler tests, and the complete backend test suite.
 - No Angular/frontend changes.
 - No changes to transition behavior or CHOIR-121/CHOIR-122.
 - No independent mobility or visibility service calls from the transactional save flow.
+
+---
+
+## Contrato HTTP implementado
+
+- **Excepción de aplicación:** `FormationConstraintViolationException` transporta el
+  `FormationConstraintValidationResult` completo, con las violaciones en orden determinista.
+  `PhysicalConstraintConflictException` se mantiene para los duplicados de restricciones de
+  movilidad, sin cambios de comportamiento.
+- **Escritura de borrador:** si el composite encuentra violaciones, la escritura se rechaza
+  dentro de la transacción R2DBC existente, antes de persistir. Un resultado válido reemplaza
+  el borrador completo.
+- **Respuesta:** HTTP 409 con `ProblemDetail`, título `Conflict`, detalle
+  «La operación no puede completarse en el estado actual» y la propiedad `violations`.
+- **Elementos de `violations`:** `code` siempre. `constraintId`, `singerId`, `singerOneId`,
+  `singerTwoId`, `positionId` y `reason` solo cuando el dato existe; no se inventan IDs de
+  posiciones no persistidas. `message` es una explicación legible.
+- **Códigos:** `LOCKED_POSITION_MOVED`, `PROXIMITY_VIOLATION`, `MOBILITY_CONSTRAINT_VIOLATION`,
+  `MOBILITY_NOT_EVALUABLE`.
+
+Ejemplo de respuesta:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Conflict",
+  "status": 409,
+  "detail": "La operación no puede completarse en el estado actual",
+  "violations": [
+    {
+      "code": "LOCKED_POSITION_MOVED",
+      "singerId": 10,
+      "message": "La posición bloqueada del coreuta 10 no puede cambiar sus coordenadas."
+    },
+    {
+      "code": "PROXIMITY_VIOLATION",
+      "constraintId": 1,
+      "singerOneId": 10,
+      "singerTwoId": 20,
+      "message": "Los coreutas 10 y 20 superan la distancia máxima de la restricción 1."
+    },
+    {
+      "code": "MOBILITY_NOT_EVALUABLE",
+      "constraintId": 3,
+      "singerId": 30,
+      "reason": "MISSING_DRAFT_POSITION",
+      "message": "No se puede evaluar la restricción de movilidad 3 del coreuta 30: el coreuta no tiene posición en el borrador."
+    }
+  ]
+}
+```
+
+**Cobertura de tests:**
+- `FormationConstraintViolationPresenterTests` (7): códigos, identificadores opcionales, orden,
+  claves permitidas y ausencia de detalles de persistencia.
+- `FormationConstraintViolationExceptionTests` (4): mensaje ordenado, resultado conservado y
+  rechazo de resultados inválidos o nulos.
+- `FormationPlanningExceptionHandlerTests` (7, Gradle): 409 por tipo de violación, motivo de
+  `NOT_EVALUABLE`, orden, ausencia de IDs inventados, mapping existente de
+  `PhysicalConstraintConflictException` y ausencia de detalles internos.
+- `FormationCatalogPersistenceAdapterTests` (Gradle): rechazos de bloqueo, proximidad, movilidad,
+  `NOT_EVALUABLE` y combinación de los tres códigos, con verificación de que no se persiste nada.
+
+**Pendiente:** validación en PostgreSQL por el job de CI sobre el commit publicado. Visibilidad no
+forma parte de este contrato.

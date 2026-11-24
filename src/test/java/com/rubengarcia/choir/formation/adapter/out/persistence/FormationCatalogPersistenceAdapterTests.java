@@ -5,7 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
-import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
+import com.rubengarcia.choir.formation.domain.FormationConstraintViolation;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
@@ -160,7 +161,7 @@ class FormationCatalogPersistenceAdapterTests {
                                 new BigDecimal("80"),
                                 new BigDecimal("90"))))
                 .block(TIMEOUT))
-                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .isInstanceOf(FormationConstraintViolationException.class)
                 .hasMessageContaining("LOCKED_POSITION_MOVED");
 
         assertOriginalPositionRemains();
@@ -363,7 +364,7 @@ class FormationCatalogPersistenceAdapterTests {
                                         new BigDecimal("13"),
                                         new BigDecimal("24.001"))))
                 .block(TIMEOUT))
-                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .isInstanceOf(FormationConstraintViolationException.class)
                 .hasMessageContaining("PROXIMITY_VIOLATION");
 
         assertThat(countPositions(fixture.versionId())).isEqualTo(2);
@@ -1505,7 +1506,7 @@ class FormationCatalogPersistenceAdapterTests {
                                 new BigDecimal("80"),
                                 new BigDecimal("90"))))
                 .block(TIMEOUT))
-                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .isInstanceOf(FormationConstraintViolationException.class)
                 .hasMessageContaining("MOBILITY_CONSTRAINT_VIOLATION");
 
         assertOriginalPositionRemains();
@@ -1530,7 +1531,7 @@ class FormationCatalogPersistenceAdapterTests {
                         fixture.versionId(),
                         List.of())
                 .block(TIMEOUT))
-                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .isInstanceOf(FormationConstraintViolationException.class)
                 .hasMessageContaining("MOBILITY_NOT_EVALUABLE");
 
         assertOriginalPositionRemains();
@@ -1625,9 +1626,14 @@ class FormationCatalogPersistenceAdapterTests {
                                         new BigDecimal("0"),
                                         new BigDecimal("0"))))
                 .block(TIMEOUT))
-                .isInstanceOf(PhysicalConstraintConflictException.class)
+                .isInstanceOf(FormationConstraintViolationException.class)
                 .hasMessageContaining(
-                        "LOCKED_POSITION_MOVED, PROXIMITY_VIOLATION, MOBILITY_CONSTRAINT_VIOLATION");
+                        "LOCKED_POSITION_MOVED, PROXIMITY_VIOLATION, MOBILITY_CONSTRAINT_VIOLATION")
+                .satisfies(error -> assertThat(
+                        ((FormationConstraintViolationException) error).result().violations())
+                        .extracting(FormationConstraintViolation::type)
+                        .containsExactly("LOCKED_POSITION_MOVED", "PROXIMITY_VIOLATION",
+                                "MOBILITY_CONSTRAINT_VIOLATION"));
 
         assertOriginalPositionRemains();
         assertPositionLocked(true);

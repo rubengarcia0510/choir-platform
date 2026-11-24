@@ -3,7 +3,7 @@ package com.rubengarcia.choir.formation.adapter.out.persistence;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
-import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.domain.Formation;
@@ -11,7 +11,6 @@ import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
 import com.rubengarcia.choir.formation.domain.CompositeFormationConstraintValidator;
 import com.rubengarcia.choir.formation.domain.FormationConstraintValidationResult;
-import com.rubengarcia.choir.formation.domain.FormationConstraintViolation;
 import com.rubengarcia.choir.formation.domain.FormationMobilityConstraint;
 import com.rubengarcia.choir.formation.domain.FormationProximityConstraint;
 import com.rubengarcia.choir.formation.domain.MobilityRegion;
@@ -22,7 +21,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -385,17 +383,9 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 CompositeFormationConstraintValidator.validate(
                         persisted, proposed, proximity, mobility);
         if (!result.isValid()) {
-            return Mono.error(new PhysicalConstraintConflictException(
-                    rejectionMessage(result)));
+            return Mono.error(new FormationConstraintViolationException(result));
         }
         return replacePositions(formation, version, result.positions());
-    }
-
-    private static String rejectionMessage(FormationConstraintValidationResult result) {
-        String codes = result.violations().stream()
-                .map(FormationConstraintViolation::type)
-                .collect(Collectors.joining(", "));
-        return "Escritura rechazada por restricciones de formación: " + codes;
     }
 
     private Mono<DraftDetails> replacePositions(
