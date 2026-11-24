@@ -17,7 +17,8 @@ public record MobilityConstraintViolation(
         Long singerId,
         Long positionId,
         Set<MobilityBound> violatedBounds,
-        MobilityNotEvaluableReason notEvaluableReason) {
+        MobilityNotEvaluableReason notEvaluableReason)
+        implements FormationConstraintViolation {
 
     public MobilityConstraintViolation {
         Objects.requireNonNull(code, "code es obligatorio");
@@ -44,5 +45,10 @@ public record MobilityConstraintViolation(
                 throw new IllegalArgumentException("Una comparación no evaluable no lleva límites");
             }
         }
+    }
+
+    @Override
+    public String type() {
+        return code.name();
     }
 }

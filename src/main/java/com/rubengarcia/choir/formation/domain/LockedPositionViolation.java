@@ -11,7 +11,8 @@ public record LockedPositionViolation(
         BigDecimal persistedX,
         BigDecimal persistedY,
         BigDecimal proposedX,
-        BigDecimal proposedY) {
+        BigDecimal proposedY)
+        implements FormationConstraintViolation {
 
     public static final String TYPE = "LOCKED_POSITION_MOVED";
 

@@ -12,7 +12,8 @@ public record ProximityViolation(
         Long singerTwoId,
         BigDecimal maxDistance,
         BigDecimal distanceSquared,
-        BigDecimal maxDistanceSquared) {
+        BigDecimal maxDistanceSquared)
+        implements FormationConstraintViolation {
 
     public static final String TYPE = "PROXIMITY_VIOLATION";
 
