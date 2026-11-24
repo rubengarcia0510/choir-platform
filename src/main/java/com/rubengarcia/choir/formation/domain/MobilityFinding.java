@@ -18,7 +18,7 @@ public record MobilityFinding(
     public MobilityFinding {
         Objects.requireNonNull(constraintId, "constraintId es obligatorio");
         Objects.requireNonNull(singerId, "singerId es obligatorio");
-        Objects.requireNonNull(positionId, "positionId es obligatorio");
+        // positionId puede ser nulo: durante la validación las posiciones propuestas aún no tienen id persistido.
         Objects.requireNonNull(x, "x es obligatorio");
         Objects.requireNonNull(y, "y es obligatorio");
         if (violatedBounds == null || violatedBounds.isEmpty()) {

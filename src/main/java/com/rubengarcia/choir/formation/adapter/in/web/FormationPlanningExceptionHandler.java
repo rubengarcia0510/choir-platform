@@ -3,6 +3,7 @@ package com.rubengarcia.choir.formation.adapter.in.web;
 import com.rubengarcia.choir.api.FormationVersionController;
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
 import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationOccurrenceNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
@@ -71,6 +72,15 @@ public class FormationPlanningExceptionHandler {
     })
     public ProblemDetail handleConflict(RuntimeException exception) {
         return problem(HttpStatus.CONFLICT, CONFLICT_DETAIL);
+    }
+
+    @ExceptionHandler(FormationConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(
+            FormationConstraintViolationException exception) {
+        ProblemDetail problem = problem(HttpStatus.CONFLICT, CONFLICT_DETAIL);
+        problem.setProperty("violations",
+                FormationConstraintViolationPresenter.present(exception.result()));
+        return problem;
     }
 
     @ExceptionHandler(ResponseStatusException.class)
