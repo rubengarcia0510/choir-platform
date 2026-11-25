@@ -40,7 +40,7 @@ La evaluación de visibilidad implementada es una aproximación geométrica basa
 * `PUT /{constraintId}`: actualiza una restricción de movilidad.
 * `DELETE /{constraintId}`: elimina una restricción.
 
-**Visibilidad:** no tiene endpoint HTTP implementado en esta etapa. No asumir que `POST /visibility` ni un listado combinado están disponibles.
+**Visibilidad:** la gestión de restricciones de visibilidad tiene endpoint HTTP desde CHOIR-152 (`FormationVisibilityConstraintController`, base `.../formations/{formationId}/visibility-constraints`: `GET /`, `POST /`, `PUT /{constraintId}` y `DELETE /{constraintId}`). La evaluación de visibilidad todavía no está expuesta por HTTP. No asumir que `POST /visibility` ni un listado combinado están disponibles.
 
 El frontend debe esperar a que el contrato HTTP que necesite esté implementado y mergeado antes de integrar la UI. La matriz del roadmap debe referenciar esta base (`physical`), no una ruta alternativa `/constraints/mobility`.
 
@@ -99,7 +99,8 @@ La evaluación de visibilidad informa `EVALUABLE` o `NOT_EVALUABLE`, junto con h
 - [x] Evaluación geométrica de movilidad sobre el DRAFT.
 - [x] Evaluador de dominio de visibilidad y regla geométrica documentada.
 - [x] Servicio de aplicación de visibilidad con autorización, posiciones DRAFT y roster de asignaciones activas.
-- [ ] Endpoint HTTP de visibilidad.
+- [x] API HTTP de gestión de restricciones de visibilidad (CHOIR-152).
+- [ ] Endpoint HTTP de evaluación de visibilidad.
 - [ ] Integración de las evaluaciones en el composite de CHOIR-87.
 - [ ] Integración de la funcionalidad en la interfaz frontend.
 - [ ] Emisión de los códigos de validación centralizados definidos para CHOIR-87.

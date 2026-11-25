@@ -14,7 +14,8 @@ import java.util.TreeSet;
  * Evaluación pura de restricciones de visibilidad.
  *
  * <p>Para cada restricción activa se evalúa cada posición del coreuta protegido
- * contra cada posición de cada otro coreuta asignado a la formación. Una
+ * contra cada posición de cada otro coreuta asignado a la ocurrencia (coro,
+ * concierto y repertorio). Una
  * combinación produce un hallazgo si:</p>
  * <ul>
  *   <li>|X_obstructor - X_protegido| &lt;= 2 (tolerancia fija, inclusiva);</li>
@@ -37,8 +38,8 @@ public final class VisibilityEvaluator {
     /**
      * @param constraints        restricciones de visibilidad; solo las activas se evalúan
      * @param draftPositions     posiciones del DRAFT de esta formación
-     * @param assignedSingerIds  coreutas asignados a la ocurrencia y formación,
-     *                           tengan o no posición en el DRAFT
+     * @param assignedSingerIds  coreutas asignados a la ocurrencia (coro, concierto
+     *                           y repertorio), tengan o no posición en el DRAFT de esta formación
      */
     public static VisibilityEvaluation evaluate(
             List<FormationVisibilityConstraint> constraints,

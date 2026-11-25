@@ -28,8 +28,9 @@ import reactor.core.publisher.Mono;
 
 /**
  * Restricciones de movilidad (región rectangular X/Y por coreuta) de una
- * formación. La visibilidad no se expone todavía: su modelo de relación
- * protegido/obstructor está pendiente.
+ * formación. La gestión de restricciones de visibilidad tiene su propio
+ * controller (FormationVisibilityConstraintController, CHOIR-152); la
+ * evaluación de visibilidad no se expone por HTTP.
  */
 @RestController
 @Validated
