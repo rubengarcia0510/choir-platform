@@ -87,14 +87,14 @@ Archivos:
 
 ## 4. Criterios de aceptación
 
-- [ ] Hay pruebas unitarias y de integración backend para los casos relevantes.
-- [ ] Se cubren movimientos permitidos y rechazados.
-- [ ] Se verifican permisos y aislamiento por `choirId`.
-- [ ] Se comprueban persistencia y rollback sin escrituras parciales.
-- [ ] Se cubren proximidad, movilidad y visibilidad sin depender de un optimizador automático.
-- [ ] Se verifican los límites arquitectónicos indicados en Jira.
-- [ ] Las pruebas pasan en los perfiles de base de datos soportados, incluyendo PostgreSQL 16.
-- [ ] El workflow de GitHub Actions finaliza con éxito en todos los checks.
+- [x] Hay pruebas unitarias y de integración backend para los casos relevantes.
+- [x] Se cubren movimientos permitidos y rechazados.
+- [x] Se verifican permisos y aislamiento por `choirId`.
+- [x] Se comprueban persistencia y rollback sin escrituras parciales.
+- [x] Se cubren proximidad, movilidad y visibilidad sin depender de un optimizador automático.
+- [x] Se verifican los límites arquitectónicos indicados en Jira.
+- [x] Las pruebas pasan en los perfiles de base de datos soportados, incluyendo PostgreSQL 16.
+- [x] El workflow de GitHub Actions finaliza con éxito en todos los checks.
 
 ---
 
@@ -205,3 +205,52 @@ quitarla cuando el defecto se corrija.
   pruebas correspondientes, y el repositorio real no se modificó.
 - Suite completa de Gradle (H2): 763 pruebas, 10 omitidas, 0 fallas, 0 errores.
 - PostgreSQL 16: la prueba no depende del motor; se ejecuta en CI junto con la suite, pendiente de validación.
+
+---
+
+## Paso 1 — contrato HTTP 409 de rechazo
+
+**Clase y método.** `FormationDraftControllerTests.authenticatedDirectorReceivesConflictWhenDraftReplacementViolatesProximity()`.
+Director autenticado, `PUT` real sobre el endpoint de posiciones de una versión DRAFT, con una restricción de
+proximidad activa que el reemplazo incumple. Verifica HTTP 409, `ProblemDetail` (`status`, `title`, `detail`),
+la colección `violations` con un elemento `PROXIMITY_VIOLATION` con `constraintId`, `singerOneId`, `singerTwoId`
+y `message`, y que las posiciones persistidas no cambian.
+
+**Cobertura HTTP complementaria.** `FormationPlanningExceptionHandlerTests` (7), `FormationConstraintViolationPresenterTests` (7)
+y `FormationConstraintViolationExceptionTests` (4).
+
+## Paso 5 — validación final
+
+**SHA validado:** `54b76b9`, con descendencia limpia desde `c309fbd`. No hay cambios en `src/main` acumulados en CHOIR-88.
+
+**Pruebas focalizadas (Gradle, H2).** Una invocación por grupo, todas con `BUILD SUCCESSFUL`:
+1. Contrato HTTP 409: `FormationDraftControllerTests`, `FormationPlanningExceptionHandlerTests`,
+   `FormationConstraintViolationPresenterTests`, `FormationConstraintViolationExceptionTests`,
+   `FormationMobilityConstraintControllerTests`.
+2. Rollback y persistencia: `FormationCatalogPersistenceAdapterTests`, `FormationDraftAtomicReplacementIntegrationTests`.
+3. Visibilidad y movilidad: `FormationVisibilityEvaluationIntegrationTests`, `FormationMobilityEvaluationIntegrationTests`,
+   `FormationVisibilityConstraintPersistenceAdapterTests`, `FormationMobilityConstraintPersistenceAdapterTests`,
+   `FormationVisibilityEvaluationServiceTests`.
+4. Arquitectura: `FormationArchitectureTests`, 8 pruebas, 0 omitidas, 0 fallas, 0 errores.
+
+*Limitación de esta corrida:* el conteo por clase de los grupos 1 a 3 no se capturó; el resultado de cada grupo es `BUILD SUCCESSFUL`.
+
+**Suite completa (Gradle, H2).** 763 pruebas, 10 omitidas, 0 fallas, 0 errores. Ningún XML contiene `<failure>` ni `<error>`.
+
+**CI en GitHub.** Dos ejecuciones del workflow `CI` sobre `54b76b9` (push y pull_request), ambas `success`.
+Los checks del PR #114 muestran 4 checks exitosos y ninguno pendiente ni fallido: `test` (H2) y `test-prod`
+(perfil de producción con PostgreSQL 16), cada uno en push y pull_request.
+
+**Criterios de aceptación.** Marcados en la sección 4 con evidencia en los pasos 1 a 5. Alcance de cada uno:
+- Movimientos permitidos y rechazados: cubierto para escrituras (bloqueo, proximidad, movilidad y no evaluable). Los rechazos de visibilidad son de evaluación, no de guardado: la visibilidad no está integrada al guardado, fuera de CHOIR-87.
+- Permisos y aislamiento por `choirId`: cubierto, incluido el 404 de un director de otro coro en la evaluación de visibilidad.
+- Límites arquitectónicos: verificados por imports declarados de `src/main/java`. No se usó ArchUnit; la limitación y la excepción conocida están documentadas en el paso 4.
+
+**Limitaciones y deuda técnica de CHOIR-86.**
+- `FormationMobilityConstraintService.isUniqueViolation` lee el SQLSTATE de un `io.r2dbc.spi.R2dbcException` en la capa de aplicación.
+  *Impacto:* acoplamiento de la aplicación a un tipo de infraestructura. Un cambio de driver o de SQLSTATE podría convertir un duplicado en un error genérico en lugar de 409.
+  *Estado actual:* sin efecto sobre el comportamiento; H2 y PostgreSQL devuelven 23505. Registrado como excepción conocida en `KNOWN_APPLICATION_INFRASTRUCTURE`. No corregido en CHOIR-88.
+- Timeouts intermitentes observados en corridas previas, en clases no relacionadas con visibilidad (`ChoirControllerTests`, `FormationDraftAtomicReplacementIntegrationTests`, `FormationDraftNullPositionsIntegrationTests`). Las corridas finales pasaron limpias; no hay causa confirmada.
+- Verificación arquitectónica por imports declarados; no analiza referencias calificadas dentro del cuerpo de las clases ni bytecode.
+
+**Estado del paso 5.** Validación ejecutada y documentada. Su cierre queda pendiente de autorización de revisión.
