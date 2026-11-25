@@ -124,3 +124,44 @@ error de base durante la escritura revierta el borrado; ese es el criterio que c
 - Clase `FormationCatalogPersistenceAdapterTests`: aprobada.
 - Suite completa de Gradle: 748 pruebas, 10 omitidas, 0 fallas, 0 errores.
 - PostgreSQL: pendiente de validación por el job de CI.
+
+---
+
+## Paso 3 — visibilidad y movilidad
+
+**Cobertura existente revisada.** Movilidad: validador y evaluador puros, servicios con stubs, y
+`FormationMobilityEvaluationIntegrationTests` con adapters reales (permitidos, rechazados, no
+evaluables, aislamiento por formación y solo lectura). Visibilidad: evaluador puro, servicio con stubs
+(`FormationVisibilityEvaluationServiceTests`) y persistencia de restricciones y roster.
+
+**Hueco detectado.** No existía ninguna prueba de integración de la evaluación de visibilidad con los
+adapters reales. El criterio de movimientos permitidos y rechazados, y el de permisos por `choirId`, solo
+estaban verificados con stubs para la visibilidad.
+
+**Clase agregada.** `FormationVisibilityEvaluationIntegrationTests`, con 7 casos sobre restricciones,
+roster, borrador y autorización reales:
+- `reportsOnlyObstructionsThatBreakTheVisibilityRule`: un obstructor adelante, dentro de la tolerancia
+  horizontal y más alto es el único hallazgo; uno fuera de alcance, otro detrás, y otro más bajo no lo son.
+- `protectedSingerWithoutDraftPositionIsNotEvaluable`: el protegido asignado sin posición produce
+  `NOT_EVALUABLE` con `MISSING_PROTECTED_DRAFT_POSITION`, nunca cumplimiento.
+- `singerOutsideTheAssignedRosterCannotObstruct`: un cantante sin asignación no genera hallazgos; su posición se reporta como `NOT_EVALUABLE` con `POSITION_NOT_IN_ASSIGNED_ROSTER`, nunca como cumplimiento.
+- `constraintsOfAnotherFormationAreNotConsidered`: una restricción de otra formación no se evalúa.
+- `inactiveVisibilityConstraintIsIgnored`: una restricción inactiva no genera hallazgos.
+- `directorOfAnotherChoirCannotEvaluateVisibility`: un director de otro coro recibe `404 NOT_FOUND`
+  de la autorización real, sin evaluar.
+- `evaluationNeverModifiesPositionsOrConstraints`: posiciones y restricciones quedan iguales.
+
+**Fuera de alcance de este paso.** La integración de visibilidad en el guardado de posiciones queda
+fuera de CHOIR-87, por lo que no se prueba aquí. No se modificó código de producción.
+
+**Validaciones.**
+- Clase `FormationVisibilityEvaluationIntegrationTests`: aprobada en Gradle (H2) después de corregir la
+  expectativa del caso fuera del roster.
+- Suite completa de Gradle (H2): 755 pruebas, 10 omitidas, 0 fallas, 0 errores, en corrida limpia.
+- Suite con PostgreSQL 16: pendiente de CI.
+
+**Limitación de estabilidad.** Durante la verificación hubo timeouts intermitentes en pruebas de clases
+no relacionadas con visibilidad (`ChoirControllerTests`, `FormationDraftAtomicReplacementIntegrationTests`
+y `FormationDraftNullPositionsIntegrationTests`). Una corrida de control sin la clase nueva pasó limpia, y
+la corrida final con la clase también. No se confirmó una causa; queda como riesgo de estabilidad a
+vigilar en CI, no como defecto atribuido a este cambio.
