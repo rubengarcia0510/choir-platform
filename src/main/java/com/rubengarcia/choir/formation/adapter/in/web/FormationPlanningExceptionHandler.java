@@ -27,7 +27,8 @@ import org.springframework.web.server.ServerWebInputException;
         FormationVersionController.class,
         FormationVersionSelectionController.class,
         FormationProximityConstraintController.class,
-        FormationMobilityConstraintController.class
+        FormationMobilityConstraintController.class,
+        FormationVisibilityConstraintController.class
 })
 public class FormationPlanningExceptionHandler {
 
