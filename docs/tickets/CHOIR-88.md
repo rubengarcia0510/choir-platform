@@ -95,3 +95,32 @@ Archivos:
 - [ ] Se verifican los límites arquitectónicos indicados en Jira.
 - [ ] Las pruebas pasan en los perfiles de base de datos soportados, incluyendo PostgreSQL 16.
 - [ ] El workflow de GitHub Actions finaliza con éxito en todos los checks.
+
+---
+
+## Paso 2 — atomicidad y rollback del reemplazo de posiciones
+
+**Escenario cubierto.** Un reemplazo de dos posiciones sobre una versión DRAFT con dos posiciones
+persistidas. El repositorio real ejecuta el borrado de todas las posiciones de la versión dentro de
+la transacción R2DBC de `replaceDraftPositions()`. La inserción que sigue (`saveAll`) falla con un
+error simulado.
+
+**Clase y método.** `FormationCatalogPersistenceAdapterTests.failureAfterDeletingDraftPositionsRollsBackAllChanges()`.
+El fallo se inyecta con un `BeanPostProcessor` de test (`PositionRepositoryFaultConfiguration`) que
+envuelve `FormationPositionRepository` en un proxy: delega todas las llamadas en el repositorio real y
+solo convierte `saveAll` en error mientras el test lo activa. El borrado no está simulado: la prueba
+registra el orden de ejecución: el borrado completa antes de que `saveAll` se suscriba.
+
+**Garantía que demuestra.** Si la inserción falla después de que el borrado comenzó, la transacción
+revierte también el borrado: las posiciones persistidas conservan sus filas, ids y valores exactos, y
+no quedan duplicados ni eliminaciones parciales.
+
+**Cobertura existente y su alcance.** Los casos de proximidad y de cantante inactivo en la misma clase
+prueban que una validación fallida no escribe nada, porque corre antes del borrado. No prueban que un
+error de base durante la escritura revierta el borrado; ese es el criterio que cubre esta prueba.
+
+**Validaciones.**
+- Prueba aislada (`failureAfterDeletingDraftPositionsRollsBackAllChanges`): aprobada.
+- Clase `FormationCatalogPersistenceAdapterTests`: aprobada.
+- Suite completa de Gradle: 748 pruebas, 10 omitidas, 0 fallas, 0 errores.
+- PostgreSQL: pendiente de validación por el job de CI.

@@ -1,5 +1,17 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
+import reactor.core.publisher.Mono;
+import org.reactivestreams.Publisher;
+import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import reactor.core.publisher.Flux;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -35,9 +47,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
+@Import(FormationCatalogPersistenceAdapterTests.PositionRepositoryFaultConfiguration.class)
 class FormationCatalogPersistenceAdapterTests {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final String SIMULATED_SAVE_FAILURE = "fallo simulado al insertar posiciones";
+    private static final AtomicBoolean FAIL_NEXT_SAVE_ALL = new AtomicBoolean(false);
+    private static final List<String> POSITION_REPOSITORY_CALLS = new CopyOnWriteArrayList<>();
 
     @Autowired
     private FormationCatalogPersistenceAdapter adapter;
@@ -1637,6 +1653,117 @@ class FormationCatalogPersistenceAdapterTests {
 
         assertOriginalPositionRemains();
         assertPositionLocked(true);
+    }
+
+    @TestConfiguration
+    static class PositionRepositoryFaultConfiguration {
+
+        private static Object invoke(Object target, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(target, args);
+            } catch (InvocationTargetException exception) {
+                throw exception.getCause();
+            }
+        }
+
+        @Bean
+        static BeanPostProcessor positionRepositoryFaultInjector() {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (!(bean instanceof FormationPositionRepository repository)) {
+                        return bean;
+                    }
+                    return Proxy.newProxyInstance(
+                            FormationPositionRepository.class.getClassLoader(),
+                            new Class<?>[] {FormationPositionRepository.class},
+                            (proxy, method, args) -> {
+                                if (!FAIL_NEXT_SAVE_ALL.get()) {
+                                    return invoke(repository, method, args);
+                                }
+                                if (method.getName().equals("saveAll")) {
+                                    return Flux.defer(() -> {
+                                        POSITION_REPOSITORY_CALLS.add("saveAll");
+                                        return Flux.error(new IllegalStateException(SIMULATED_SAVE_FAILURE));
+                                    });
+                                }
+                                Object result = invoke(repository, method, args);
+                                if (method.getName().equals("deleteByFormationVersionId")) {
+                                    return Mono.from((Publisher<?>) result)
+                                            .doOnSuccess(ignored -> POSITION_REPOSITORY_CALLS.add("delete"));
+                                }
+                                return result;
+                            });
+                }
+            };
+        }
+    }
+
+    @Test
+    void failureAfterDeletingDraftPositionsRollsBackAllChanges() {
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante previo " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+        jdbcTemplate.update(
+                """
+                INSERT INTO formation_positions
+                    (formation_version_id, singer_id, singer_name_snapshot,
+                     voice_part_snapshot, position_label, x_coordinate, y_coordinate)
+                VALUES (?, ?, ?, 'ALTO', ?, 30.000, 40.000)
+                """,
+                fixture.versionId(),
+                secondSingerId,
+                "Snapshot previo",
+                "Segunda previa");
+
+        List<Map<String, Object>> before = jdbcTemplate.queryForList(
+                "SELECT * FROM formation_positions WHERE formation_version_id = ? ORDER BY id",
+                fixture.versionId());
+        assertThat(before).hasSize(2);
+
+        List<PositionUpdate> updates = List.of(
+                new PositionUpdate(
+                        fixture.singerId(),
+                        "Reemplazo A",
+                        new BigDecimal("15.000"),
+                        new BigDecimal("25.000")),
+                new PositionUpdate(
+                        secondSingerId,
+                        "Reemplazo B",
+                        new BigDecimal("75.000"),
+                        new BigDecimal("65.000")));
+
+        POSITION_REPOSITORY_CALLS.clear();
+        FAIL_NEXT_SAVE_ALL.set(true);
+        try {
+            assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                            fixture.choirId(),
+                            fixture.concertId(),
+                            fixture.repertoireItemId(),
+                            fixture.formationId(),
+                            fixture.versionId(),
+                            updates)
+                    .block(TIMEOUT))
+                    .hasMessageContaining(SIMULATED_SAVE_FAILURE);
+        } finally {
+            FAIL_NEXT_SAVE_ALL.set(false);
+        }
+
+        assertThat(POSITION_REPOSITORY_CALLS)
+                .containsSubsequence("delete", "saveAll");
+
+        List<Map<String, Object>> after = jdbcTemplate.queryForList(
+                "SELECT * FROM formation_positions WHERE formation_version_id = ? ORDER BY id",
+                fixture.versionId());
+        assertThat(after).isEqualTo(before);
     }
 
     private void insertAssignment(
