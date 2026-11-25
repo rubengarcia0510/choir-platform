@@ -63,7 +63,7 @@ Respuesta de una restricción:
 - `FormationVisibilityConstraintServiceTests` (Mockito y `StepVerifier`, 6 casos): contexto completo en list, update
   y delete; autorización antes de delegar en create; un director no autorizado nunca llega al puerto; el
   `false` de delete se propaga; los errores del puerto llegan intactos.
-- `FormationVisibilityConstraintControllerMappingTests` (caso de uso mockeado, 7 casos): delegación con la
+- `FormationVisibilityConstraintControllerMappingTests` (caso de uso mockeado, 6 casos): delegación con la
   identidad de `Authentication`; `201` en create; `400` para cantante rechazado; `404` en update con restricción
   inexistente; `204` y `404` en delete.
 - `FormationVisibilityConstraintControllerTests` (Spring, 4 casos): sin autenticación, GET, POST, PUT y DELETE
@@ -74,9 +74,14 @@ Respuesta de una restricción:
 
 ## Validación
 
-- Pruebas del servicio, del controller y de integración H2: **pendiente de ejecución en Gradle**.
-- Suite completa: **pendiente de ejecución**.
-- PostgreSQL 16 (workflow `test-prod`): **pendiente de CI**.
+- Gradle (H2), `./gradlew test --tests "*FormationVisibilityConstraint*"`: `BUILD SUCCESSFUL`.
+  - `FormationVisibilityConstraintServiceTests`: 6/6.
+  - `FormationVisibilityConstraintControllerMappingTests`: 6/6.
+  - `FormationVisibilityConstraintControllerTests`: 4/4.
+  - `FormationVisibilityConstraintPersistenceAdapterTests` (existente): 12/12.
+- Suite completa (H2): 779 pruebas, 10 omitidas, 0 fallas, 0 errores.
+- CI sobre `7596608`: ejecuciones del workflow `CI` (push y pull_request) en `success`. PR #115: 4 checks exitosos,
+  incluidos `test` (H2) y `test-prod` (PostgreSQL 16).
 
 ## Limitaciones funcionales
 
