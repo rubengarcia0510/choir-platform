@@ -165,3 +165,43 @@ no relacionadas con visibilidad (`ChoirControllerTests`, `FormationDraftAtomicRe
 y `FormationDraftNullPositionsIntegrationTests`). Una corrida de control sin la clase nueva pasó limpia, y
 la corrida final con la clase también. No se confirmó una causa; queda como riesgo de estabilidad a
 vigilar en CI, no como defecto atribuido a este cambio.
+
+---
+
+## Paso 4 — límites arquitectónicos
+
+**Decisión sobre ArchUnit.** No se agregó la dependencia. ArchUnit no está declarado en `build.gradle` y
+no hay pruebas arquitectónicas previas. Jira pide no incorporar dependencias nuevas sin justificarlas y usar
+ArchUnit solo si está disponible. Las reglas se verifican con `FormationArchitectureTests`, un escáner de
+fuentes que usa solo JDK y JUnit y analiza los imports declarados de `src/main/java`.
+*Limitación:* no resuelve referencias totalmente calificadas dentro del cuerpo de las clases ni
+dependencias de bytecode.
+
+**Reglas verificadas.**
+- `formation.domain` no depende de `transition` ni de adapters.
+- `formation.domain` no depende de Spring Web, HTTP, R2DBC, JDBC ni Spring Data.
+- `formation.application` depende de puertos: no importa adapters ni infraestructura R2DBC/JDBC, con la
+  excepción conocida descrita abajo.
+- Los controladores (`formation.adapter.in`) no importan adapters de persistencia ni repositorios.
+- El SQL aparece solo en adapters: no hay sentencias en `domain`, `application` ni controladores.
+- Las dependencias entre `formation` y `transition` no usan adapters, repositorios ni entidades en ninguna
+  dirección.
+- Los validadores de composición (CHOIR-85/86/87) se usan solo dentro de `formation`.
+
+**Defecto de producción detectado (no corregido).** `FormationMobilityConstraintService.isUniqueViolation`
+(`formation.application.usecase`, CHOIR-86) importa `io.r2dbc.spi.R2dbcException` y compara
+`getSqlState()` para detectar la violación de unicidad. Es un detalle de persistencia en la capa de
+aplicación. El paso 4 prohíbe modificar código de producción, así que el caso queda registrado como excepción
+en `KNOWN_APPLICATION_INFRASTRUCTURE`. La prueba falla si la excepción deja de ser necesaria, para obligar a
+quitarla cuando el defecto se corrija.
+
+**Clases cubiertas.** `formation.domain` (35 fuentes), `formation.application`, `formation.adapter.in`,
+`formation.adapter.out` y las dependencias cruzadas con `transition`.
+
+**Validaciones.**
+- `FormationArchitectureTests` en Gradle (H2): 8 pruebas, 0 omitidas, 0 fallas, 0 errores.
+- Verificación negativa: en una copia temporal se introdujeron cuatro violaciones (web en el dominio,
+  repositorio en un controlador, SQL en aplicación y adapter de `transition` en el dominio). Fallaron las cinco
+  pruebas correspondientes, y el repositorio real no se modificó.
+- Suite completa de Gradle (H2): 763 pruebas, 10 omitidas, 0 fallas, 0 errores.
+- PostgreSQL 16: la prueba no depende del motor; se ejecuta en CI junto con la suite, pendiente de validación.
