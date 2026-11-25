@@ -55,15 +55,19 @@ Respuesta de una restricción:
 
 - La identidad del director sale de `Authentication.getName()`. El email nunca viaja en el request.
 - Toda operación pasa primero por `requireOwnedOccurrence(email, choirId, concertId, repertoireItemId)`.
+- GET además valida que `formationId` pertenezca a esa ocurrencia, mediante `FormationOccurrenceContextAuthorizer`.
+  Una formación ajena o inexistente responde `404` y no se consulta ninguna restricción.
 - El adapter de persistencia filtra cada `UPDATE`, `DELETE` y `SELECT` por el contexto completo: coro, concierto,
   repertorio y formación. Una restricción de otra formación no se lee ni se modifica.
 
 ## Tests
 
-- `FormationVisibilityConstraintServiceTests` (Mockito y `StepVerifier`, 6 casos): contexto completo en list, update
+- `FormationVisibilityConstraintServiceTests` (Mockito y `StepVerifier`, 9 casos): además de los de create, update y delete, en list:
+  formación fuera de la ocurrencia produce `FormationNotFoundException` sin consultar restricciones; director sin
+  ocurrencia propia no llega al puerto; la consulta ocurre solo después de la autorización completa. contexto completo en list, update
   y delete; autorización antes de delegar en create; un director no autorizado nunca llega al puerto; el
   `false` de delete se propaga; los errores del puerto llegan intactos.
-- `FormationVisibilityConstraintControllerMappingTests` (caso de uso mockeado, 6 casos): delegación con la
+- `FormationVisibilityConstraintControllerMappingTests` (caso de uso mockeado, 7 casos), incluido que `FormationNotFoundException` se propaga para que el handler responda `404`: delegación con la
   identidad de `Authentication`; `201` en create; `400` para cantante rechazado; `404` en update con restricción
   inexistente; `204` y `404` en delete.
 - `FormationVisibilityConstraintControllerTests` (Spring, 4 casos): sin autenticación, GET, POST, PUT y DELETE
@@ -74,14 +78,10 @@ Respuesta de una restricción:
 
 ## Validación
 
-- Gradle (H2), `./gradlew test --tests "*FormationVisibilityConstraint*"`: `BUILD SUCCESSFUL`.
-  - `FormationVisibilityConstraintServiceTests`: 6/6.
-  - `FormationVisibilityConstraintControllerMappingTests`: 6/6.
-  - `FormationVisibilityConstraintControllerTests`: 4/4.
-  - `FormationVisibilityConstraintPersistenceAdapterTests` (existente): 12/12.
-- Suite completa (H2): 779 pruebas, 10 omitidas, 0 fallas, 0 errores.
-- CI sobre `7596608`: ejecuciones del workflow `CI` (push y pull_request) en `success`. PR #115: 4 checks exitosos,
-  incluidos `test` (H2) y `test-prod` (PostgreSQL 16).
+- Validación de la versión previa a la corrección de pertenencia de `formationId` (commit `7596608`):
+  Gradle H2 `BUILD SUCCESSFUL`; suite completa 779 pruebas, 10 omitidas, 0 fallas, 0 errores; CI `success` en `test` (H2)
+  y `test-prod` (PostgreSQL 16).
+- Corrección de pertenencia de `formationId` en GET: **pendiente de ejecución en Gradle y de CI**.
 
 ## Limitaciones funcionales
 

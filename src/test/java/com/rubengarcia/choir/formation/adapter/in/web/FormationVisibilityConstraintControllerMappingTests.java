@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
 import com.rubengarcia.choir.formation.application.port.in.FormationVisibilityConstraintUseCase;
 import com.rubengarcia.choir.formation.domain.FormationVisibilityConstraint;
 import java.time.LocalDateTime;
@@ -44,6 +45,16 @@ class FormationVisibilityConstraintControllerMappingTests {
                 .verifyComplete();
 
         verify(useCase).list(DIRECTOR, 1L, 2L, 3L, 4L);
+    }
+
+    @Test
+    void listPropagatesFormationNotFoundSoTheHandlerAnswersNotFound() {
+        when(useCase.list(DIRECTOR, 1L, 2L, 3L, 4L))
+                .thenReturn(Flux.error(new FormationNotFoundException()));
+
+        StepVerifier.create(controller.list(authentication, 1L, 2L, 3L, 4L))
+                .expectError(FormationNotFoundException.class)
+                .verify();
     }
 
     @Test

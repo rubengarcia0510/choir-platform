@@ -18,12 +18,15 @@ public class FormationVisibilityConstraintService
 
     private final FormationVisibilityConstraintPort constraintPort;
     private final FormationOccurrenceAuthorizationPort occurrenceAuthorization;
+    private final FormationOccurrenceContextAuthorizer contextAuthorizer;
 
     public FormationVisibilityConstraintService(
             FormationVisibilityConstraintPort constraintPort,
-            FormationOccurrenceAuthorizationPort occurrenceAuthorization) {
+            FormationOccurrenceAuthorizationPort occurrenceAuthorization,
+            FormationOccurrenceContextAuthorizer contextAuthorizer) {
         this.constraintPort = constraintPort;
         this.occurrenceAuthorization = occurrenceAuthorization;
+        this.contextAuthorizer = contextAuthorizer;
     }
 
     @Override
@@ -33,8 +36,8 @@ public class FormationVisibilityConstraintService
             long concertId,
             long repertoireItemId,
             long formationId) {
-        return occurrenceAuthorization
-                .requireOwnedOccurrence(directorEmail, choirId, concertId, repertoireItemId)
+        return contextAuthorizer
+                .authorize(directorEmail, choirId, concertId, repertoireItemId, formationId)
                 .thenMany(Flux.defer(() -> constraintPort.findForFormation(
                         choirId, concertId, repertoireItemId, formationId)));
     }

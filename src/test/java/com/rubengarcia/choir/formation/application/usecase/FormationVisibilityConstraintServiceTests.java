@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
 import com.rubengarcia.choir.formation.application.port.out.FormationOccurrenceAuthorizationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationVisibilityConstraintPort;
 import com.rubengarcia.choir.formation.domain.FormationVisibilityConstraint;
@@ -38,14 +39,17 @@ class FormationVisibilityConstraintServiceTests {
     @Mock
     private FormationOccurrenceAuthorizationPort occurrenceAuthorization;
 
+    @Mock
+    private FormationOccurrenceContextAuthorizer contextAuthorizer;
+
     @InjectMocks
     private FormationVisibilityConstraintService service;
 
     @Test
     void listAuthorizesAndDelegatesWithFullContext() {
         FormationVisibilityConstraint constraint = constraint(true);
-        when(occurrenceAuthorization.requireOwnedOccurrence(
-                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID))
+        when(contextAuthorizer.authorize(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
                 .thenReturn(Mono.empty());
         when(constraintPort.findForFormation(
                 CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
@@ -55,6 +59,58 @@ class FormationVisibilityConstraintServiceTests {
                         EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
                 .expectNext(constraint)
                 .verifyComplete();
+    }
+
+    @Test
+    void listRejectsFormationOutsideTheOccurrenceWithoutQueryingTheConstraints() {
+        when(contextAuthorizer.authorize(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .thenReturn(Mono.error(new FormationNotFoundException()));
+
+        StepVerifier.create(service.list(
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .expectError(FormationNotFoundException.class)
+                .verify();
+
+        verifyNoInteractions(constraintPort);
+    }
+
+    @Test
+    void listRejectsDirectorWithoutOwnedOccurrenceWithoutQueryingTheConstraints() {
+        when(contextAuthorizer.authorize(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .thenReturn(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
+
+        StepVerifier.create(service.list(
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .expectErrorSatisfies(error -> org.junit.jupiter.api.Assertions.assertEquals(
+                        HttpStatus.NOT_FOUND,
+                        ((ResponseStatusException) error).getStatusCode()))
+                .verify();
+
+        verifyNoInteractions(constraintPort);
+    }
+
+    @Test
+    void listQueriesTheConstraintsOnlyAfterTheFullContextIsAuthorized() {
+        FormationVisibilityConstraint constraint = constraint(true);
+        when(contextAuthorizer.authorize(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .thenReturn(Mono.empty());
+        when(constraintPort.findForFormation(
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .thenReturn(Flux.just(constraint));
+
+        StepVerifier.create(service.list(
+                        EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID))
+                .expectNext(constraint)
+                .verifyComplete();
+
+        InOrder order = inOrder(contextAuthorizer, constraintPort);
+        order.verify(contextAuthorizer).authorize(
+                EMAIL, CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID);
+        order.verify(constraintPort).findForFormation(
+                CHOIR_ID, CONCERT_ID, REPERTOIRE_ITEM_ID, FORMATION_ID);
     }
 
     @Test
