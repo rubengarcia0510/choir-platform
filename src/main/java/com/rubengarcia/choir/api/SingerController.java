@@ -6,6 +6,7 @@ import com.rubengarcia.choir.service.SingerService.SingerData;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -95,12 +96,13 @@ public class SingerController {
             @Size(max = 40) String voicePart,
             Long voiceSectionId,
             @Size(max = 120) String mobility,
-            @Size(max = 1000) String restrictions) {
+            @Size(max = 1000) String restrictions,
+            @Positive Integer heightCm) {
 
         SingerData toData() {
             return new SingerData(
                     displayName, email, voicePart,
-                    voiceSectionId, mobility, restrictions);
+                    voiceSectionId, mobility, restrictions, heightCm);
         }
     }
 }

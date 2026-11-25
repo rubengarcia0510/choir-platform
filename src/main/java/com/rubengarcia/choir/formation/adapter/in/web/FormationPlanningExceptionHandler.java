@@ -3,6 +3,8 @@ package com.rubengarcia.choir.formation.adapter.in.web;
 import com.rubengarcia.choir.api.FormationVersionController;
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
+import com.rubengarcia.choir.formation.application.exception.PhysicalConstraintConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationOccurrenceNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
@@ -23,7 +25,10 @@ import org.springframework.web.server.ServerWebInputException;
 @RestControllerAdvice(assignableTypes = {
         FormationDraftController.class,
         FormationVersionController.class,
-        FormationVersionSelectionController.class
+        FormationVersionSelectionController.class,
+        FormationProximityConstraintController.class,
+        FormationMobilityConstraintController.class,
+        FormationVisibilityConstraintController.class
 })
 public class FormationPlanningExceptionHandler {
 
@@ -63,10 +68,20 @@ public class FormationPlanningExceptionHandler {
             FormationSelectionConflictException.class,
             PublishedFormationModificationException.class,
             FormationPositionUpdateException.class,
-            FormationPositionLockedException.class
+            FormationPositionLockedException.class,
+            PhysicalConstraintConflictException.class
     })
     public ProblemDetail handleConflict(RuntimeException exception) {
         return problem(HttpStatus.CONFLICT, CONFLICT_DETAIL);
+    }
+
+    @ExceptionHandler(FormationConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(
+            FormationConstraintViolationException exception) {
+        ProblemDetail problem = problem(HttpStatus.CONFLICT, CONFLICT_DETAIL);
+        problem.setProperty("violations",
+                FormationConstraintViolationPresenter.present(exception.result()));
+        return problem;
     }
 
     @ExceptionHandler(ResponseStatusException.class)

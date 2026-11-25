@@ -1,10 +1,24 @@
 package com.rubengarcia.choir.formation.adapter.out.persistence;
 
+import reactor.core.publisher.Mono;
+import org.reactivestreams.Publisher;
+import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import reactor.core.publisher.Flux;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
+import com.rubengarcia.choir.formation.domain.FormationConstraintViolation;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationDuplicationPort;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort.DraftDetails;
@@ -33,9 +47,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
+@Import(FormationCatalogPersistenceAdapterTests.PositionRepositoryFaultConfiguration.class)
 class FormationCatalogPersistenceAdapterTests {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final String SIMULATED_SAVE_FAILURE = "fallo simulado al insertar posiciones";
+    private static final AtomicBoolean FAIL_NEXT_SAVE_ALL = new AtomicBoolean(false);
+    private static final List<String> POSITION_REPOSITORY_CALLS = new CopyOnWriteArrayList<>();
 
     @Autowired
     private FormationCatalogPersistenceAdapter adapter;
@@ -159,7 +177,8 @@ class FormationCatalogPersistenceAdapterTests {
                                 new BigDecimal("80"),
                                 new BigDecimal("90"))))
                 .block(TIMEOUT))
-                .isInstanceOf(FormationPositionLockedException.class);
+                .isInstanceOf(FormationConstraintViolationException.class)
+                .hasMessageContaining("LOCKED_POSITION_MOVED");
 
         assertOriginalPositionRemains();
         assertPositionLocked(true);
@@ -183,6 +202,63 @@ class FormationCatalogPersistenceAdapterTests {
                             .isEqualTo("Etiqueta actualizada");
                     assertThat(position.isLocked()).isTrue();
                 });
+    }
+
+    @Test
+    void replacementCapturesSingerHeightAndKeepsNullHeight() {
+        jdbcTemplate.update(
+                "UPDATE singers SET height_cm = ? WHERE id = ?",
+                172,
+                fixture.singerId());
+
+        Long singerWithoutHeight = insertSinger(
+                fixture.choirId(),
+                "Cantante sin altura " + fixture.suffix(),
+                "ALTO",
+                true);
+
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                singerWithoutHeight,
+                fixture.divisionId());
+
+        adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Cantante con altura",
+                                        new BigDecimal("20"),
+                                        new BigDecimal("30")),
+                                new PositionUpdate(
+                                        singerWithoutHeight,
+                                        "Cantante sin altura",
+                                        new BigDecimal("40"),
+                                        new BigDecimal("50"))))
+                .block(TIMEOUT);
+
+        Integer capturedHeight = jdbcTemplate.queryForObject(
+                "SELECT height_cm_snapshot FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Integer.class,
+                fixture.versionId(),
+                fixture.singerId());
+
+        Integer nullHeight = jdbcTemplate.queryForObject(
+                "SELECT height_cm_snapshot FROM formation_positions "
+                        + "WHERE formation_version_id = ? AND singer_id = ?",
+                Integer.class,
+                fixture.versionId(),
+                singerWithoutHeight);
+
+        assertThat(capturedHeight).isEqualTo(172);
+        assertThat(nullHeight).isNull();
     }
 
     @Test
@@ -235,6 +311,94 @@ class FormationCatalogPersistenceAdapterTests {
 
         assertThat(withNewPosition.positions()).singleElement()
                 .satisfies(position -> assertThat(position.isLocked()).isFalse());
+    }
+
+    @Test
+    void proximityConstraintAcceptsMaximumDistanceAndRejectsExceedingItAtomically() {
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante proximidad " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+
+        jdbcTemplate.update(
+                """
+                INSERT INTO formation_proximity_constraints
+                    (formation_id, choir_id, singer_one_id, singer_two_id,
+                     max_distance, active)
+                VALUES (?, ?, ?, ?, ?, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                Math.min(fixture.singerId(), secondSingerId),
+                Math.max(fixture.singerId(), secondSingerId),
+                new BigDecimal("5.000"));
+
+        DraftDetails accepted = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Primero",
+                                        new BigDecimal("10"),
+                                        new BigDecimal("20")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo",
+                                        new BigDecimal("13"),
+                                        new BigDecimal("24"))))
+                .block(TIMEOUT);
+
+        assertThat(accepted.positions()).hasSize(2);
+        assertThat(countPositions(fixture.versionId())).isEqualTo(2);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Primero modificado",
+                                        new BigDecimal("10"),
+                                        new BigDecimal("20")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo fuera de límite",
+                                        new BigDecimal("13"),
+                                        new BigDecimal("24.001"))))
+                .block(TIMEOUT))
+                .isInstanceOf(FormationConstraintViolationException.class)
+                .hasMessageContaining("PROXIMITY_VIOLATION");
+
+        assertThat(countPositions(fixture.versionId())).isEqualTo(2);
+
+        Map<String, Object> persisted = jdbcTemplate.queryForMap(
+                """
+                SELECT position_label, x_coordinate, y_coordinate
+                FROM formation_positions
+                WHERE formation_version_id = ? AND singer_id = ?
+                """,
+                fixture.versionId(),
+                secondSingerId);
+
+        assertThat(persisted.get("position_label")).isEqualTo("Segundo");
+        assertThat(new BigDecimal(persisted.get("x_coordinate").toString()))
+                .isEqualByComparingTo("13");
+        assertThat(new BigDecimal(persisted.get("y_coordinate").toString()))
+                .isEqualByComparingTo("24");
     }
 
     @RepeatedTest(3)
@@ -893,9 +1057,12 @@ class FormationCatalogPersistenceAdapterTests {
     @Test
     void duplicatesDraftAndKeepsPositionsIndependent() {
         jdbcTemplate.update(
-                "UPDATE formation_positions SET locked = TRUE "
+                "UPDATE formation_positions SET locked = TRUE, height_cm_snapshot = 172 "
                         + "WHERE formation_version_id = ?",
                 fixture.versionId());
+        jdbcTemplate.update(
+                "UPDATE singers SET height_cm = 172 WHERE id = ?",
+                fixture.singerId());
         jdbcTemplate.update(
                 "UPDATE formation_versions "
                         + "SET status = 'PUBLISHED', published_at = CURRENT_TIMESTAMP "
@@ -938,7 +1105,7 @@ class FormationCatalogPersistenceAdapterTests {
 
         Map<String, Object> copiedPosition = jdbcTemplate.queryForMap(
                 "SELECT singer_id, singer_name_snapshot, voice_part_snapshot, "
-                        + "position_label, x_coordinate, y_coordinate, locked "
+                        + "position_label, x_coordinate, y_coordinate, locked, height_cm_snapshot "
                         + "FROM formation_positions WHERE id = ?",
                 copiedPositionId);
 
@@ -952,6 +1119,7 @@ class FormationCatalogPersistenceAdapterTests {
         assertThat((BigDecimal) copiedPosition.get("y_coordinate"))
                 .isEqualByComparingTo("20.000");
         assertThat(copiedPosition.get("locked")).isEqualTo(false);
+        assertThat(copiedPosition.get("height_cm_snapshot")).isEqualTo(172);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM formation_positions WHERE formation_version_id = ?",
@@ -1329,6 +1497,273 @@ class FormationCatalogPersistenceAdapterTests {
                 vocalPlanId,
                 vocalSectionId,
                 1);
+    }
+
+    @Test
+    void mobilityViolationRejectsReplacementAndKeepsDraftPositions() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Fuera de región",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT))
+                .isInstanceOf(FormationConstraintViolationException.class)
+                .hasMessageContaining("MOBILITY_CONSTRAINT_VIOLATION");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void notEvaluableMobilityConstraintRejectsReplacementAndKeepsDraftPositions() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of())
+                .block(TIMEOUT))
+                .isInstanceOf(FormationConstraintViolationException.class)
+                .hasMessageContaining("MOBILITY_NOT_EVALUABLE");
+
+        assertOriginalPositionRemains();
+    }
+
+    @Test
+    void inactiveMobilityConstraintDoesNotBlockReplacement() {
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 0.000, 10.000, 0.000, 10.000, FALSE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                fixture.singerId());
+
+        DraftDetails accepted = adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(new PositionUpdate(
+                                fixture.singerId(),
+                                "Fuera de región inactiva",
+                                new BigDecimal("80"),
+                                new BigDecimal("90"))))
+                .block(TIMEOUT);
+
+        assertThat(accepted.positions()).hasSize(1);
+        assertThat(countPositions(fixture.versionId())).isEqualTo(1);
+    }
+
+    @Test
+    void combinedViolationsReportLockProximityAndMobilityCodesInOrder() {
+        adapter.setPositionLocked(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                fixture.formationId(),
+                fixture.versionId(),
+                originalPositionId(),
+                true)
+                .block(TIMEOUT);
+
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante combinado " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+
+        jdbcTemplate.update("""
+                INSERT INTO formation_proximity_constraints
+                    (formation_id, choir_id, singer_one_id, singer_two_id, max_distance, active)
+                VALUES (?, ?, ?, ?, 1.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                Math.min(fixture.singerId(), secondSingerId),
+                Math.max(fixture.singerId(), secondSingerId));
+
+        jdbcTemplate.update("""
+                INSERT INTO formation_mobility_constraints
+                    (formation_id, choir_id, singer_id, min_x, max_x, min_y, max_y, active)
+                VALUES (?, ?, ?, 5.000, 10.000, 5.000, 10.000, TRUE)
+                """,
+                fixture.formationId(),
+                fixture.choirId(),
+                secondSingerId);
+
+        assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                        fixture.choirId(),
+                        fixture.concertId(),
+                        fixture.repertoireItemId(),
+                        fixture.formationId(),
+                        fixture.versionId(),
+                        List.of(
+                                new PositionUpdate(
+                                        fixture.singerId(),
+                                        "Bloqueado movido",
+                                        new BigDecimal("80"),
+                                        new BigDecimal("90")),
+                                new PositionUpdate(
+                                        secondSingerId,
+                                        "Segundo",
+                                        new BigDecimal("0"),
+                                        new BigDecimal("0"))))
+                .block(TIMEOUT))
+                .isInstanceOf(FormationConstraintViolationException.class)
+                .hasMessageContaining(
+                        "LOCKED_POSITION_MOVED, PROXIMITY_VIOLATION, MOBILITY_CONSTRAINT_VIOLATION")
+                .satisfies(error -> assertThat(
+                        ((FormationConstraintViolationException) error).result().violations())
+                        .extracting(FormationConstraintViolation::type)
+                        .containsExactly("LOCKED_POSITION_MOVED", "PROXIMITY_VIOLATION",
+                                "MOBILITY_CONSTRAINT_VIOLATION"));
+
+        assertOriginalPositionRemains();
+        assertPositionLocked(true);
+    }
+
+    @TestConfiguration
+    static class PositionRepositoryFaultConfiguration {
+
+        private static Object invoke(Object target, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(target, args);
+            } catch (InvocationTargetException exception) {
+                throw exception.getCause();
+            }
+        }
+
+        @Bean
+        static BeanPostProcessor positionRepositoryFaultInjector() {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (!(bean instanceof FormationPositionRepository repository)) {
+                        return bean;
+                    }
+                    return Proxy.newProxyInstance(
+                            FormationPositionRepository.class.getClassLoader(),
+                            new Class<?>[] {FormationPositionRepository.class},
+                            (proxy, method, args) -> {
+                                if (!FAIL_NEXT_SAVE_ALL.get()) {
+                                    return invoke(repository, method, args);
+                                }
+                                if (method.getName().equals("saveAll")) {
+                                    return Flux.defer(() -> {
+                                        POSITION_REPOSITORY_CALLS.add("saveAll");
+                                        return Flux.error(new IllegalStateException(SIMULATED_SAVE_FAILURE));
+                                    });
+                                }
+                                Object result = invoke(repository, method, args);
+                                if (method.getName().equals("deleteByFormationVersionId")) {
+                                    return Mono.from((Publisher<?>) result)
+                                            .doOnSuccess(ignored -> POSITION_REPOSITORY_CALLS.add("delete"));
+                                }
+                                return result;
+                            });
+                }
+            };
+        }
+    }
+
+    @Test
+    void failureAfterDeletingDraftPositionsRollsBackAllChanges() {
+        Long secondSingerId = insertSinger(
+                fixture.choirId(),
+                "Cantante previo " + fixture.suffix(),
+                "ALTO",
+                true);
+        insertAssignment(
+                fixture.choirId(),
+                fixture.concertId(),
+                fixture.repertoireItemId(),
+                secondSingerId,
+                fixture.divisionId());
+        jdbcTemplate.update(
+                """
+                INSERT INTO formation_positions
+                    (formation_version_id, singer_id, singer_name_snapshot,
+                     voice_part_snapshot, position_label, x_coordinate, y_coordinate)
+                VALUES (?, ?, ?, 'ALTO', ?, 30.000, 40.000)
+                """,
+                fixture.versionId(),
+                secondSingerId,
+                "Snapshot previo",
+                "Segunda previa");
+
+        List<Map<String, Object>> before = jdbcTemplate.queryForList(
+                "SELECT * FROM formation_positions WHERE formation_version_id = ? ORDER BY id",
+                fixture.versionId());
+        assertThat(before).hasSize(2);
+
+        List<PositionUpdate> updates = List.of(
+                new PositionUpdate(
+                        fixture.singerId(),
+                        "Reemplazo A",
+                        new BigDecimal("15.000"),
+                        new BigDecimal("25.000")),
+                new PositionUpdate(
+                        secondSingerId,
+                        "Reemplazo B",
+                        new BigDecimal("75.000"),
+                        new BigDecimal("65.000")));
+
+        POSITION_REPOSITORY_CALLS.clear();
+        FAIL_NEXT_SAVE_ALL.set(true);
+        try {
+            assertThatThrownBy(() -> adapter.replaceDraftPositions(
+                            fixture.choirId(),
+                            fixture.concertId(),
+                            fixture.repertoireItemId(),
+                            fixture.formationId(),
+                            fixture.versionId(),
+                            updates)
+                    .block(TIMEOUT))
+                    .hasMessageContaining(SIMULATED_SAVE_FAILURE);
+        } finally {
+            FAIL_NEXT_SAVE_ALL.set(false);
+        }
+
+        assertThat(POSITION_REPOSITORY_CALLS)
+                .containsSubsequence("delete", "saveAll");
+
+        List<Map<String, Object>> after = jdbcTemplate.queryForList(
+                "SELECT * FROM formation_positions WHERE formation_version_id = ? ORDER BY id",
+                fixture.versionId());
+        assertThat(after).isEqualTo(before);
     }
 
     private void insertAssignment(

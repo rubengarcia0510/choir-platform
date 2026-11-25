@@ -163,6 +163,7 @@ public class FormationDuplicationPersistenceAdapter
         copy.setVoiceSectionIdSnapshot(source.getVoiceSectionIdSnapshot());
         copy.setVoiceSectionNameSnapshot(source.getVoiceSectionNameSnapshot());
         copy.setDivisionNumberSnapshot(source.getDivisionNumberSnapshot());
+        copy.setHeightCmSnapshot(source.getHeightCmSnapshot());
         copy.setPositionLabel(source.getPositionLabel());
         copy.setXCoordinate(source.getXCoordinate());
         copy.setYCoordinate(source.getYCoordinate());
