@@ -33,6 +33,9 @@ public class FormationPositionEntity {
     @Column("division_number_snapshot")
     private Integer divisionNumberSnapshot;
 
+    @Column("height_cm_snapshot")
+    private Integer heightCmSnapshot;
+
     @Column("position_label")
     private String positionLabel;
 
@@ -48,30 +51,115 @@ public class FormationPositionEntity {
     @Column("created_at")
     private LocalDateTime createdAt;
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public Long getFormationVersionId() { return formationVersionId; }
-    public void setFormationVersionId(Long value) { this.formationVersionId = value; }
-    public Long getSingerId() { return singerId; }
-    public void setSingerId(Long value) { this.singerId = value; }
-    public String getSingerNameSnapshot() { return singerNameSnapshot; }
-    public void setSingerNameSnapshot(String value) { this.singerNameSnapshot = value; }
-    public String getVoicePartSnapshot() { return voicePartSnapshot; }
-    public void setVoicePartSnapshot(String value) { this.voicePartSnapshot = value; }
-    public Long getVoiceSectionIdSnapshot() { return voiceSectionIdSnapshot; }
-    public void setVoiceSectionIdSnapshot(Long value) { this.voiceSectionIdSnapshot = value; }
-    public String getVoiceSectionNameSnapshot() { return voiceSectionNameSnapshot; }
-    public void setVoiceSectionNameSnapshot(String value) { this.voiceSectionNameSnapshot = value; }
-    public Integer getDivisionNumberSnapshot() { return divisionNumberSnapshot; }
-    public void setDivisionNumberSnapshot(Integer value) { this.divisionNumberSnapshot = value; }
-    public String getPositionLabel() { return positionLabel; }
-    public void setPositionLabel(String value) { this.positionLabel = value; }
-    public BigDecimal getXCoordinate() { return xCoordinate; }
-    public void setXCoordinate(BigDecimal value) { this.xCoordinate = value; }
-    public BigDecimal getYCoordinate() { return yCoordinate; }
-    public void setYCoordinate(BigDecimal value) { this.yCoordinate = value; }
-    public boolean isLocked() { return locked; }
-    public void setLocked(boolean value) { this.locked = value; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime value) { this.createdAt = value; }
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Long getFormationVersionId() {
+        return formationVersionId;
+    }
+
+    public void setFormationVersionId(Long value) {
+        this.formationVersionId = value;
+    }
+
+    public Long getSingerId() {
+        return singerId;
+    }
+
+    public void setSingerId(Long value) {
+        this.singerId = value;
+    }
+
+    public String getSingerNameSnapshot() {
+        return singerNameSnapshot;
+    }
+
+    public void setSingerNameSnapshot(String value) {
+        this.singerNameSnapshot = value;
+    }
+
+    public String getVoicePartSnapshot() {
+        return voicePartSnapshot;
+    }
+
+    public void setVoicePartSnapshot(String value) {
+        this.voicePartSnapshot = value;
+    }
+
+    public Long getVoiceSectionIdSnapshot() {
+        return voiceSectionIdSnapshot;
+    }
+
+    public void setVoiceSectionIdSnapshot(Long value) {
+        this.voiceSectionIdSnapshot = value;
+    }
+
+    public String getVoiceSectionNameSnapshot() {
+        return voiceSectionNameSnapshot;
+    }
+
+    public void setVoiceSectionNameSnapshot(String value) {
+        this.voiceSectionNameSnapshot = value;
+    }
+
+    public Integer getDivisionNumberSnapshot() {
+        return divisionNumberSnapshot;
+    }
+
+    public void setDivisionNumberSnapshot(Integer value) {
+        this.divisionNumberSnapshot = value;
+    }
+
+    public Integer getHeightCmSnapshot() {
+        return heightCmSnapshot;
+    }
+
+    public void setHeightCmSnapshot(Integer value) {
+        this.heightCmSnapshot = value;
+    }
+
+    public String getPositionLabel() {
+        return positionLabel;
+    }
+
+    public void setPositionLabel(String value) {
+        this.positionLabel = value;
+    }
+
+    public BigDecimal getXCoordinate() {
+        return xCoordinate;
+    }
+
+    public void setXCoordinate(BigDecimal value) {
+        this.xCoordinate = value;
+    }
+
+    public BigDecimal getYCoordinate() {
+        return yCoordinate;
+    }
+
+    public void setYCoordinate(BigDecimal value) {
+        this.yCoordinate = value;
+    }
+
+    public boolean isLocked() {
+        return locked;
+    }
+
+    public void setLocked(boolean value) {
+        this.locked = value;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime value) {
+        this.createdAt = value;
+    }
 }

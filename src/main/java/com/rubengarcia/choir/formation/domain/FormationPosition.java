@@ -3,33 +3,21 @@ package com.rubengarcia.choir.formation.domain;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-
 public class FormationPosition {
 
     private Long id;
-
     private Long formationVersionId;
-
     private Long singerId;
-
     private String singerNameSnapshot;
-
     private String voicePartSnapshot;
-
     private Long voiceSectionIdSnapshot;
-
     private String voiceSectionNameSnapshot;
-
     private Integer divisionNumberSnapshot;
-
+    private Integer heightCmSnapshot;
     private String positionLabel;
-
     private BigDecimal xCoordinate;
-
     private BigDecimal yCoordinate;
-
     private boolean locked;
-
     private LocalDateTime createdAt;
 
     public FormationPosition() {
@@ -75,12 +63,37 @@ public class FormationPosition {
         this.voicePartSnapshot = voicePartSnapshot;
     }
 
-    public Long getVoiceSectionIdSnapshot() { return voiceSectionIdSnapshot; }
-    public void setVoiceSectionIdSnapshot(Long value) { this.voiceSectionIdSnapshot = value; }
-    public String getVoiceSectionNameSnapshot() { return voiceSectionNameSnapshot; }
-    public void setVoiceSectionNameSnapshot(String value) { this.voiceSectionNameSnapshot = value; }
-    public Integer getDivisionNumberSnapshot() { return divisionNumberSnapshot; }
-    public void setDivisionNumberSnapshot(Integer value) { this.divisionNumberSnapshot = value; }
+    public Long getVoiceSectionIdSnapshot() {
+        return voiceSectionIdSnapshot;
+    }
+
+    public void setVoiceSectionIdSnapshot(Long voiceSectionIdSnapshot) {
+        this.voiceSectionIdSnapshot = voiceSectionIdSnapshot;
+    }
+
+    public String getVoiceSectionNameSnapshot() {
+        return voiceSectionNameSnapshot;
+    }
+
+    public void setVoiceSectionNameSnapshot(String voiceSectionNameSnapshot) {
+        this.voiceSectionNameSnapshot = voiceSectionNameSnapshot;
+    }
+
+    public Integer getDivisionNumberSnapshot() {
+        return divisionNumberSnapshot;
+    }
+
+    public void setDivisionNumberSnapshot(Integer divisionNumberSnapshot) {
+        this.divisionNumberSnapshot = divisionNumberSnapshot;
+    }
+
+    public Integer getHeightCmSnapshot() {
+        return heightCmSnapshot;
+    }
+
+    public void setHeightCmSnapshot(Integer heightCmSnapshot) {
+        this.heightCmSnapshot = heightCmSnapshot;
+    }
 
     public String getPositionLabel() {
         return positionLabel;

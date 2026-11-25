@@ -3,12 +3,17 @@ package com.rubengarcia.choir.formation.adapter.out.persistence;
 import com.rubengarcia.choir.formation.application.port.out.FormationCatalogPort;
 import com.rubengarcia.choir.formation.application.exception.FormationLifecycleConflictException;
 import com.rubengarcia.choir.formation.application.exception.FormationNotFoundException;
-import com.rubengarcia.choir.formation.application.exception.FormationPositionLockedException;
+import com.rubengarcia.choir.formation.application.exception.FormationConstraintViolationException;
 import com.rubengarcia.choir.formation.application.exception.FormationPositionNotFoundException;
 import com.rubengarcia.choir.formation.application.exception.FormationVersionNotFoundException;
 import com.rubengarcia.choir.formation.domain.Formation;
 import com.rubengarcia.choir.formation.domain.FormationPosition;
 import com.rubengarcia.choir.formation.domain.FormationVersion;
+import com.rubengarcia.choir.formation.domain.CompositeFormationConstraintValidator;
+import com.rubengarcia.choir.formation.domain.FormationConstraintValidationResult;
+import com.rubengarcia.choir.formation.domain.FormationMobilityConstraint;
+import com.rubengarcia.choir.formation.domain.FormationProximityConstraint;
+import com.rubengarcia.choir.formation.domain.MobilityRegion;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -131,10 +136,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                                     repertoireItemId,
                                     versionId,
                                     updates)
-                                    .flatMap(positions -> preservePositionLocks(
-                                            versionId, positions)
-                                            .flatMap(preserved -> replacePositions(
-                                                    formation, version, preserved)));
+                                    .flatMap(proposed -> loadPersistedPositions(versionId)
+                                            .flatMap(persisted -> loadActiveProximityConstraints(formationId)
+                                                    .flatMap(proximity -> loadActiveMobilityConstraints(formationId)
+                                                            .flatMap(mobility -> validateAndReplace(
+                                                                    formation,
+                                                                    version,
+                                                                    persisted,
+                                                                    proposed,
+                                                                    proximity,
+                                                                    mobility)))));
                         }));
     }
 
@@ -242,35 +253,6 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 .collectList();
     }
 
-    private Mono<List<FormationPosition>> preservePositionLocks(
-            long versionId,
-            List<FormationPosition> replacements) {
-        return formationPositionRepository.findByFormationVersionId(versionId)
-                .map(FormationPersistenceMapper::toDomain)
-                .collectList()
-                .flatMap(existing -> {
-                    var existingBySinger = existing.stream()
-                            .collect(java.util.stream.Collectors.toMap(
-                                    FormationPosition::getSingerId,
-                                    position -> position));
-                    for (FormationPosition replacement : replacements) {
-                        FormationPosition current =
-                                existingBySinger.get(replacement.getSingerId());
-                        if (current == null || !current.isLocked()) {
-                            continue;
-                        }
-                        if (current.getXCoordinate().compareTo(
-                                        replacement.getXCoordinate()) != 0
-                                || current.getYCoordinate().compareTo(
-                                        replacement.getYCoordinate()) != 0) {
-                            return Mono.error(new FormationPositionLockedException());
-                        }
-                        replacement.setLocked(true);
-                    }
-                    return Mono.just(replacements);
-                });
-    }
-
     private Mono<InitialPosition> findSingerSnapshot(
             long choirId,
             long concertId,
@@ -283,7 +265,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                             s.voice_part AS voice_part,
                             vs.id AS voice_section_id,
                             vs.name AS voice_section_name,
-                            d.division_number AS division_number
+                            d.division_number AS division_number,
+                            s.height_cm AS height_cm
                         FROM singers s
                         JOIN concert_vocal_assignments a
                             ON a.singer_id = s.id
@@ -310,7 +293,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         row.get("voice_part", String.class),
                         row.get("voice_section_id", Long.class),
                         row.get("voice_section_name", String.class),
-                        row.get("division_number", Integer.class)))
+                        row.get("division_number", Integer.class),
+                        row.get("height_cm", Integer.class)))
                 .one();
     }
 
@@ -326,12 +310,82 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
         position.setVoiceSectionIdSnapshot(snapshot.voiceSectionId());
         position.setVoiceSectionNameSnapshot(snapshot.voiceSectionName());
         position.setDivisionNumberSnapshot(snapshot.divisionNumber());
+        position.setHeightCmSnapshot(snapshot.heightCm());
         position.setPositionLabel(update.positionLabel() == null
                 ? null
                 : update.positionLabel().trim());
         position.setXCoordinate(update.x());
         position.setYCoordinate(update.y());
         return position;
+    }
+
+    private Mono<List<FormationPosition>> loadPersistedPositions(long versionId) {
+        return formationPositionRepository.findByFormationVersionId(versionId)
+                .map(FormationPersistenceMapper::toDomain)
+                .collectList();
+    }
+
+    private Mono<List<FormationProximityConstraint>> loadActiveProximityConstraints(long formationId) {
+        return databaseClient.sql("""
+                        SELECT id, formation_id, singer_one_id, singer_two_id,
+                               max_distance, active, created_at
+                        FROM formation_proximity_constraints
+                        WHERE formation_id = :formationId
+                          AND active = TRUE
+                        ORDER BY id
+                        """)
+                .bind("formationId", formationId)
+                .map((row, metadata) -> new FormationProximityConstraint(
+                        row.get("id", Long.class),
+                        row.get("formation_id", Long.class),
+                        row.get("singer_one_id", Long.class),
+                        row.get("singer_two_id", Long.class),
+                        row.get("max_distance", BigDecimal.class),
+                        Boolean.TRUE.equals(row.get("active", Boolean.class)),
+                        row.get("created_at", LocalDateTime.class)))
+                .all()
+                .collectList();
+    }
+
+    private Mono<List<FormationMobilityConstraint>> loadActiveMobilityConstraints(long formationId) {
+        return databaseClient.sql("""
+                        SELECT id, formation_id, singer_id, min_x, max_x, min_y, max_y,
+                               active, created_at
+                        FROM formation_mobility_constraints
+                        WHERE formation_id = :formationId
+                          AND active = TRUE
+                        ORDER BY id
+                        """)
+                .bind("formationId", formationId)
+                .map((row, metadata) -> new FormationMobilityConstraint(
+                        row.get("id", Long.class),
+                        row.get("formation_id", Long.class),
+                        row.get("singer_id", Long.class),
+                        new MobilityRegion(
+                                row.get("min_x", BigDecimal.class),
+                                row.get("max_x", BigDecimal.class),
+                                row.get("min_y", BigDecimal.class),
+                                row.get("max_y", BigDecimal.class)),
+                        Boolean.TRUE.equals(row.get("active", Boolean.class)),
+                        row.get("created_at", LocalDateTime.class)))
+                .all()
+                .collectList();
+    }
+
+    private Mono<DraftDetails> validateAndReplace(
+            Formation formation,
+            FormationVersion version,
+            List<FormationPosition> persisted,
+            List<FormationPosition> proposed,
+            List<FormationProximityConstraint> proximity,
+            List<FormationMobilityConstraint> mobility) {
+        FormationConstraintValidationResult result =
+                CompositeFormationConstraintValidator.validate(
+                        persisted, proposed, proximity, mobility);
+        if (!result.isValid()) {
+            return Mono.error(new FormationConstraintViolationException(result));
+        }
+        return replacePositions(formation, version, result.positions());
     }
 
     private Mono<DraftDetails> replacePositions(
@@ -402,7 +456,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                             s.voice_part AS voice_part,
                             vs.id AS voice_section_id,
                             vs.name AS voice_section_name,
-                            d.division_number AS division_number
+                            d.division_number AS division_number,
+                            s.height_cm AS height_cm
                         FROM concert_vocal_assignments a
                         JOIN singers s
                             ON s.id = a.singer_id
@@ -432,7 +487,8 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                         row.get("voice_part", String.class),
                         row.get("voice_section_id", Long.class),
                         row.get("voice_section_name", String.class),
-                        row.get("division_number", Integer.class)))
+                        row.get("division_number", Integer.class),
+                        row.get("height_cm", Integer.class)))
                 .all();
     }
 
@@ -470,14 +526,16 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
                 position.setVoiceSectionIdSnapshot(assignment.voiceSectionId());
                 position.setVoiceSectionNameSnapshot(assignment.voiceSectionName());
                 position.setDivisionNumberSnapshot(assignment.divisionNumber());
+                position.setHeightCmSnapshot(assignment.heightCm());
                 position.setXCoordinate(xCoordinate);
                 position.setYCoordinate(yCoordinate(assignmentIndex, sectionSize));
                 positions.add(position);
             }
         }
-
         return positions;
     }
+
+
 
     private BigDecimal xCoordinate(int sectionIndex, int sectionCount) {
         if (sectionCount <= 1) {
@@ -510,5 +568,7 @@ public class FormationCatalogPersistenceAdapter implements FormationCatalogPort 
             String voicePart,
             Long voiceSectionId,
             String voiceSectionName,
-            Integer divisionNumber) {}
+            Integer divisionNumber,
+            Integer heightCm) {}
+
 }

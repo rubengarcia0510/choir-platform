@@ -87,6 +87,7 @@ public final class FormationPersistenceMapper {
         domain.setVoiceSectionIdSnapshot(entity.getVoiceSectionIdSnapshot());
         domain.setVoiceSectionNameSnapshot(entity.getVoiceSectionNameSnapshot());
         domain.setDivisionNumberSnapshot(entity.getDivisionNumberSnapshot());
+        domain.setHeightCmSnapshot(entity.getHeightCmSnapshot());
         domain.setPositionLabel(entity.getPositionLabel());
         domain.setXCoordinate(entity.getXCoordinate());
         domain.setYCoordinate(entity.getYCoordinate());
@@ -109,6 +110,7 @@ public final class FormationPersistenceMapper {
         entity.setVoiceSectionIdSnapshot(domain.getVoiceSectionIdSnapshot());
         entity.setVoiceSectionNameSnapshot(domain.getVoiceSectionNameSnapshot());
         entity.setDivisionNumberSnapshot(domain.getDivisionNumberSnapshot());
+        entity.setHeightCmSnapshot(domain.getHeightCmSnapshot());
         entity.setPositionLabel(domain.getPositionLabel());
         entity.setXCoordinate(domain.getXCoordinate());
         entity.setYCoordinate(domain.getYCoordinate());

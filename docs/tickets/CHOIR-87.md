@@ -1,79 +1,259 @@
-# CHOIR-87 — Validar movimientos contra bloqueos y restricciones de formación
+# CHOIR-87 — Validate movements against formation constraints
 
-- **Estado:** ⏳ Pendiente (Fase 1 — Motor de Restricciones)
-- **Fuente de verdad:** [CHOIR-87 en Jira](https://rubengarcia0510.atlassian.net/browse/CHOIR-87)
-- **Dependencias técnicas previas:** CHOIR-84 (Bloqueos), CHOIR-85 (Proximidad), CHOIR-86 (Movilidad/Visibilidad)
-- **Desbloquea:** CHOIR-88 (Suite de pruebas) y CHOIR-23 (Decisiones bloqueadas en optimizador)
-- **Frontend consumidor:** `choir-platform-web` (CHOIR-87-FRONTEND — Manejo de errores 409/400 en escenario)
+## Scope
+
+Validate proposed draft-position replacements against:
+1. Locked positions.
+2. Proximity constraints.
+3. Mobility constraints.
+
+Visibility is explicitly out of scope. Do not create a VisibilityConstraintValidator or modify visibility services, evaluators, or roster handling.
+
+Frontend feedback belongs to CHOIR-113.
+
+## Existing implementation verified on the base branch
+
+### Draft replacement transaction
+
+`FormationCatalogPersistenceAdapter.replaceDraftPositions()` is the existing transactional entry point. Keep all reads, locking, validation, and writes inside its current R2DBC transaction.
+
+Preserve the existing sequence:
+- Resolve formation and occurrence.
+- Lock the version with `lockVersion(...)`.
+- Verify DRAFT status.
+- Build candidate positions and snapshots.
+- Validate constraints.
+- Persist only after all validations succeed.
+
+Do not introduce another transaction manager, blocking calls, or independent application-service evaluations in the write flow.
+
+### Locked positions
+
+Existing method: `preservePositionLocks(...)` in `FormationCatalogPersistenceAdapter`.
+
+Current behavior:
+- Loads existing positions for the version.
+- Matches current and replacement positions by singer ID.
+- For an existing locked position, rejects changes to X or Y coordinates.
+- Preserves `locked=true` on the replacement when coordinates are unchanged.
+- Does not independently reject missing locked singers or compare labels.
+
+Extract this behavior without changing its semantics. Any change to deletion or label behavior requires separate explicit requirements and tests; do not invent new rules.
+
+### Proximity constraints
+
+Existing method: `validateProximityConstraints(...)` in `FormationCatalogPersistenceAdapter`.
+
+Current behavior:
+- Reads active rows from `formation_proximity_constraints`.
+- Builds a candidate-position lookup by singer ID.
+- Calculates squared Euclidean distance using `BigDecimal`.
+- Rejects only when distance squared is greater than maximum distance squared.
+- Therefore the exact maximum-distance boundary is accepted.
+- If either singer is absent from the candidate positions, the current implementation continues without rejection.
+
+Preserve these rules exactly when extracting the validator.
+
+The existing `FormationProximityConstraintPersistenceAdapter` and `FormationProximityConstraintPort` expose `findForFormation(...)`, but their normal application-service path must not be called from the transactional write flow if it would execute outside the current transaction.
+
+### Mobility constraints
+
+Existing components:
+- `FormationMobilityConstraintPersistenceAdapter`
+- `FormationMobilityConstraintPort`
+- `FormationMobilityConstraint`
+- `MobilityRegion`
+- `MobilityEvaluator`
+- `MobilityEvaluation`
+- `MobilityEvaluationStatus`
+- `MobilityFinding`
+- `MobilityNotEvaluable`
+
+The persistence adapter already has a `findForFormation(...)` query for mobility constraints. However, `replaceDraftPositions()` does not currently load or evaluate mobility constraints.
+
+Load the active mobility constraints using the existing transaction-bound `DatabaseClient` or an equivalent mechanism proven to participate in the same R2DBC transaction. Do not call `FormationMobilityEvaluationService.evaluate()` from the write flow.
+
+Reuse the pure `MobilityEvaluator` with the candidate positions and loaded constraints.
+
+For active mobility constraints:
+- Satisfied evaluation allows persistence.
+- Violated evaluation rejects persistence.
+- NOT_EVALUABLE rejects persistence.
+
+Missing, ambiguous, or incomplete candidate-position data must not be interpreted as satisfying a mobility constraint. Include the reason and relevant identifiers in the structured violation when available.
+
+## Validation architecture
+
+Keep pure validation logic under `com.rubengarcia.choir.formation.domain`.
+
+Proposed components:
+- `FormationConstraintViolation`: stable code, relevant identifiers, readable message.
+- `FormationConstraintValidationResult`: immutable violation list and persistence-eligibility check.
+- `FormationConstraintValidator`: pure validation contract.
+- `CompositeFormationConstraintValidator`: executes all validators and accumulates violations in deterministic order.
+- `LockedPositionValidator`: extracts the existing locked-position behavior.
+- `ProximityConstraintValidator`: extracts the existing proximity behavior.
+- `MobilityConstraintValidator`: adapts `MobilityEvaluator` results into structured violations.
+
+Define any immutable validation context/input types only after inspecting the actual domain types. Do not put SQL, repositories, persistence entities, HTTP types, or adapter dependencies in the domain.
+
+Avoid unnecessary abstractions if the actual types make a simpler design clearer. Keep the implementation cohesive and aligned with existing conventions.
+
+## Persistence integration
+
+Modify `FormationCatalogPersistenceAdapter.replaceDraftPositions()` so that:
+1. Candidate positions are built after the existing lock and DRAFT checks.
+2. Existing positions and active constraints are loaded inside the same transaction.
+3. All three validators execute and accumulate violations.
+4. A structured exception is raised when violations exist.
+5. `replacePositions()` is never called when validation fails.
+6. A valid replacement persists the complete candidate set using the existing transaction.
+
+Do not duplicate existing constraint queries through application services. Prefer transaction-bound reads within the adapter where necessary to preserve atomicity.
+
+## Exception and HTTP response
+
+Create `FormationConstraintViolationException` under `formation.application.exception`.
+
+Update `FormationPlanningExceptionHandler` to map this exception to HTTP 409 with `ProblemDetail` containing a `violations` collection.
+
+Expose only:
+- Stable violation code.
+- Relevant identifiers when available.
+- Readable message.
+
+Do not expose internal exception details or persistence information.
+
+Preserve existing mappings, including `PhysicalConstraintConflictException`, unless the new structured exception deliberately and compatibly replaces a specific path.
+
+## Expected files
+
+### Modify
+- `src/main/java/com/rubengarcia/choir/formation/adapter/out/persistence/FormationCatalogPersistenceAdapter.java`
+- `src/main/java/com/rubengarcia/choir/formation/adapter/in/web/FormationPlanningExceptionHandler.java`
+- `src/test/java/com/rubengarcia/choir/formation/adapter/out/persistence/FormationCatalogPersistenceAdapterTests.java`
+- `src/test/java/com/rubengarcia/choir/formation/adapter/in/web/FormationPlanningExceptionHandlerTests.java`
+
+### Create
+- `src/main/java/com/rubengarcia/choir/formation/domain/FormationConstraintViolation.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/FormationConstraintValidationResult.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/FormationConstraintValidator.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/CompositeFormationConstraintValidator.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/LockedPositionValidator.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/ProximityConstraintValidator.java`
+- `src/main/java/com/rubengarcia/choir/formation/domain/MobilityConstraintValidator.java`
+- `src/main/java/com/rubengarcia/choir/formation/application/exception/FormationConstraintViolationException.java`
+- Focused unit tests for each validator and the composite.
+
+Confirm all additional files and types against the actual code before creating them. Modify ports only if the real transactional implementation requires it and the transaction participation is demonstrated.
+
+## Required tests
+
+### Locked positions
+- Unchanged locked coordinates are accepted.
+- Changed locked coordinates are rejected.
+- `locked=true` is preserved.
+- Existing label and deletion behavior remains unchanged.
+
+### Proximity
+- Within maximum distance is accepted.
+- Exact maximum-distance boundary is accepted.
+- Beyond maximum distance is rejected.
+- Missing-position behavior remains unchanged.
+
+### Mobility
+- Satisfied evaluation is accepted.
+- Violated evaluation is rejected.
+- NOT_EVALUABLE is rejected.
+- Missing, ambiguous, or incomplete candidate data produces NOT_EVALUABLE and prevents persistence.
+
+### Composite
+- Every validator executes.
+- Multiple violations are accumulated.
+- Violation ordering is deterministic.
+
+### Transaction and persistence
+- Valid replacement persists the complete position set.
+- Rejected replacement does not modify positions, snapshots, or locks.
+- Persistence failure rolls back the complete replacement.
+- Verify mobility reads participate in the same transaction as the draft replacement.
+
+### HTTP
+- Structured violations return HTTP 409.
+- Response contains stable codes, relevant IDs, and readable messages.
+- Internal implementation details are not exposed.
+- Existing exception mappings remain compatible.
+
+Run focused tests, exception-handler tests, and the complete backend test suite.
+
+## Explicit exclusions
+
+- No visibility validation.
+- No Angular/frontend changes.
+- No changes to transition behavior or CHOIR-121/CHOIR-122.
+- No independent mobility or visibility service calls from the transactional save flow.
 
 ---
 
-## 1. Objetivo y Alcance
+## Contrato HTTP implementado
 
-Centralizar en el backend la **validación integral del guardado de posiciones de un borrador de formación** frente a:
-1. Posiciones bloqueadas (`locked = true`).
-2. Restricciones de proximidad activas (CHOIR-85).
-3. Restricciones de movilidad y visibilidad activas (CHOIR-86).
+- **Excepción de aplicación:** `FormationConstraintViolationException` transporta el
+  `FormationConstraintValidationResult` completo, con las violaciones en orden determinista.
+  `PhysicalConstraintConflictException` se mantiene para los duplicados de restricciones de
+  movilidad, sin cambios de comportamiento.
+- **Escritura de borrador:** si el composite encuentra violaciones, la escritura se rechaza
+  dentro de la transacción R2DBC existente, antes de persistir. Un resultado válido reemplaza
+  el borrador completo.
+- **Respuesta:** HTTP 409 con `ProblemDetail`, título `Conflict`, detalle
+  «La operación no puede completarse en el estado actual» y la propiedad `violations`.
+- **Elementos de `violations`:** `code` siempre. `constraintId`, `singerId`, `singerOneId`,
+  `singerTwoId`, `positionId` y `reason` solo cuando el dato existe; no se inventan IDs de
+  posiciones no persistidas. `message` es una explicación legible.
+- **Códigos:** `LOCKED_POSITION_MOVED`, `PROXIMITY_VIOLATION`, `MOBILITY_CONSTRAINT_VIOLATION`,
+  `MOBILITY_NOT_EVALUABLE`.
 
-Validar cada guardado de posiciones antes de persistir en base de datos. Si una posición bloqueada fue movida o si una restricción se incumple, la operación debe ser rechazada de forma atómica. Usar `400 Bad Request` para solicitudes malformadas y `409 Conflict` para conflictos con el estado o restricciones del dominio. La respuesta de conflicto debe incluir violaciones estructuradas con identificadores de coreutas y explicaciones legibles para que el frontend las resalte en el escenario.
+Ejemplo de respuesta:
 
----
-
-## 2. Contrato de Error Estructurado
-
-Cuando el endpoint `PUT .../formations/{formationId}/versions/{versionId}/positions` recibe una distribución inválida, responde:
-
-* **HTTP Status:** `409 Conflict` (o `400 Bad Request` si es error de formato).
-* **Payload de Error:**
 ```json
 {
+  "type": "about:blank",
+  "title": "Conflict",
   "status": 409,
-  "error": "ConstraintViolationException",
-  "message": "La formación contiene 2 restricciones espaciales no satisfechas",
+  "detail": "La operación no puede completarse en el estado actual",
   "violations": [
     {
-      "type": "LOCKED_POSITION_MOVED",
-      "singerId": 14,
-      "positionId": 105,
-      "message": "La posición de Ana Gómez está bloqueada y no puede ser modificada"
+      "code": "LOCKED_POSITION_MOVED",
+      "singerId": 10,
+      "message": "La posición bloqueada del coreuta 10 no puede cambiar sus coordenadas."
     },
     {
-      "type": "PROXIMITY_VIOLATION",
-      "firstSingerId": 12,
-      "secondSingerId": 15,
-      "message": "Pedro y Laura deben estar a una distancia máxima de 2.0 unidades de escenario (distancia actual: 3.4)"
+      "code": "PROXIMITY_VIOLATION",
+      "constraintId": 1,
+      "singerOneId": 10,
+      "singerTwoId": 20,
+      "message": "Los coreutas 10 y 20 superan la distancia máxima de la restricción 1."
+    },
+    {
+      "code": "MOBILITY_NOT_EVALUABLE",
+      "constraintId": 3,
+      "singerId": 30,
+      "reason": "MISSING_DRAFT_POSITION",
+      "message": "No se puede evaluar la restricción de movilidad 3 del coreuta 30: el coreuta no tiene posición en el borrador."
     }
   ]
 }
 ```
 
----
+**Cobertura de tests:**
+- `FormationConstraintViolationPresenterTests` (7): códigos, identificadores opcionales, orden,
+  claves permitidas y ausencia de detalles de persistencia.
+- `FormationConstraintViolationExceptionTests` (4): mensaje ordenado, resultado conservado y
+  rechazo de resultados inválidos o nulos.
+- `FormationPlanningExceptionHandlerTests` (7, Gradle): 409 por tipo de violación, motivo de
+  `NOT_EVALUABLE`, orden, ausencia de IDs inventados, mapping existente de
+  `PhysicalConstraintConflictException` y ausencia de detalles internos.
+- `FormationCatalogPersistenceAdapterTests` (Gradle): rechazos de bloqueo, proximidad, movilidad,
+  `NOT_EVALUABLE` y combinación de los tres códigos, con verificación de que no se persiste nada.
 
-## 3. Instrucciones de Implementación
-
-1. **Pipeline de Validación en Caso de Uso:**
-   * Modificar `SaveDraftPositionsUseCase` (o el caso de uso correspondiente a guardado de borradores):
-     1. Obtener posiciones actuales persistidas en el borrador.
-     2. Verificar que ninguna posición con `locked == true` que siga presente en el payload haya cambiado sus coordenadas `(x, y)` respecto al estado persistido.
-     3. Permitir omitir una posición bloqueada del payload para quitar al coreuta de la formación, conforme al comportamiento existente de CHOIR-108. No exigir desbloquearla para quitarla; solo el cambio de coordenadas de una posición bloqueada presente es una violación.
-     4. Invocar al composite de validadores `FormationConstraintValidator`:
-        - `ProximityValidator` (CHOIR-85)
-        - `MobilityValidator` (CHOIR-86)
-        - `VisibilityValidator` (CHOIR-86)
-     5. Si hay violaciones, abortar la transacción inmediatamente y lanzar `FormationConstraintViolationException`.
-     6. Si no hay violaciones, proceder al guardado y actualización de versión de borrador.
-2. **Tratamiento en Controlador Web:**
-   * Agregar handler en `@RestControllerAdvice` o en el controlador web para serializar `FormationConstraintViolationException` con la lista de violaciones.
-3. **Aislamiento Arquitectónico:**
-   * Las reglas de validación deben ser clases de dominio o aplicación puras, sin dependencias de infraestructura web ni R2DBC.
-
----
-
-## 4. Criterios de Aceptación
-
-- [ ] Los movimientos válidos se guardan normalmente y actualizan la versión del borrador.
-- [ ] Mover una posición bloqueada es rechazado con error `LOCKED_POSITION_MOVED`.
-- [ ] Omitir una posición bloqueada para quitar al coreuta de la formación sigue permitido; no equivale a mover la posición.
-- [ ] Una formación que viole restricciones de proximidad o movilidad es rechazada sin cambios parciales en la base de datos.
-- [ ] La respuesta HTTP incluye la lista detallada de violaciones con IDs de coreutas y descripciones legibles.
-- [ ] La validación no depende del frontend: el backend rechaza solicitudes inválidas enviadas por cualquier cliente HTTP.
+**Pendiente:** validación en PostgreSQL por el job de CI sobre el commit publicado. Visibilidad no
+forma parte de este contrato.
