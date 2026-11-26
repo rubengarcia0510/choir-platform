@@ -8,6 +8,11 @@ public record StageBoundary(List<StageBoundaryPoint> vertices) {
 
     public StageBoundary {
         Objects.requireNonNull(vertices, "vertices es obligatorio");
+        for (StageBoundaryPoint vertex : vertices) {
+            if (vertex == null) {
+                throw new StageGeometryException("El contorno no admite vértices nulos");
+            }
+        }
         vertices = List.copyOf(vertices);
         if (vertices.size() < 3) {
             throw new StageGeometryException("El contorno requiere al menos tres vértices");
@@ -15,7 +20,6 @@ public record StageBoundary(List<StageBoundaryPoint> vertices) {
         for (int i = 0; i < vertices.size(); i++) {
             StageBoundaryPoint current = vertices.get(i);
             StageBoundaryPoint next = vertices.get((i + 1) % vertices.size());
-            Objects.requireNonNull(current, "los vértices no pueden ser nulos");
             if (current.sameAs(next)) {
                 throw new StageGeometryException("El contorno no admite vértices consecutivos repetidos");
             }
