@@ -37,4 +37,9 @@ public record StageTemplate(
         elements = List.copyOf(Objects.requireNonNull(elements, "elements es obligatorio"));
         StageGeometryValidator.validate(widthCm, depthCm, boundary, accesses, elements);
     }
+
+    /** Copia de la plantilla marcada como archivada. La plantilla original no cambia. */
+    public StageTemplate archive() {
+        return new StageTemplate(id, choirId, name, widthCm, depthCm, boundary, accesses, elements, true);
+    }
 }
