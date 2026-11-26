@@ -5,9 +5,11 @@ import com.rubengarcia.choir.scene.application.model.StageGeometry;
 import com.rubengarcia.choir.scene.application.port.in.StageGeometryQueryUseCase;
 import com.rubengarcia.choir.scene.application.port.out.StageAuthorizationPort;
 import com.rubengarcia.choir.scene.application.port.out.StageSnapshotPersistencePort;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 /** Consulta de la geometría histórica de una inclusión, sin acceder a tablas de escena desde fuera. */
+@Service
 public class StageGeometryQueryService implements StageGeometryQueryUseCase {
 
     private final StageSnapshotPersistencePort snapshots;

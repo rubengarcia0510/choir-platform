@@ -7,9 +7,11 @@ import com.rubengarcia.choir.scene.application.port.out.StageAuthorizationPort;
 import com.rubengarcia.choir.scene.application.port.out.StageTemplatePersistencePort;
 import com.rubengarcia.choir.scene.domain.StageTemplate;
 import reactor.core.publisher.Flux;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 /** Gestión de plantillas. Autoriza sobre el coro antes de cualquier acceso a persistencia. */
+@Service
 public class StageTemplateManagementService implements StageTemplateUseCase {
 
     private final StageTemplatePersistencePort templates;
