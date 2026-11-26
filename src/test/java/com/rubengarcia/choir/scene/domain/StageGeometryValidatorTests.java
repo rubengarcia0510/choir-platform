@@ -3,8 +3,10 @@ package com.rubengarcia.choir.scene.domain;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -154,6 +156,47 @@ class StageGeometryValidatorTests {
         assertThrows(StageGeometryException.class, () -> template(
                 lShape, List.of(),
                 List.of(element("Diagonal", StageElementType.OBSTACLE, 100, 100, 200, 200, 0))));
+    }
+
+    @Test
+    void elementCompletelyInsideAConcaveContourIsAccepted() {
+        assertDoesNotThrow(() -> template(
+                concaveV(), List.of(),
+                List.of(element("Caja", StageElementType.OBSTACLE, 50, 50, 100, 100, 0))));
+    }
+
+    @Test
+    void elementCrossingThroughAConcaveVertexIsRejected() {
+        assertThrows(StageGeometryException.class, () -> template(
+                concaveV(), List.of(),
+                List.of(element("Caja", StageElementType.OBSTACLE, 150, 150, 100, 100, 0))));
+    }
+
+    @Test
+    void elementInvadingTheExteriorWithAllCornersInsideIsRejected() {
+        // Las cuatro esquinas quedan dentro o sobre el contorno, pero el vértice (200,200) entra en el elemento.
+        StageGeometryException error = assertThrows(StageGeometryException.class, () -> template(
+                concaveV(), List.of(),
+                List.of(element("Franja", StageElementType.OBSTACLE, 100, 190, 200, 20, 0))));
+        assertTrue(error.getMessage().contains("invade") || error.getMessage().contains("cruza"),
+                "debe rechazarse por invasión del exterior, no por otra regla");
+    }
+
+    @Test
+    void elementTouchingTheBoundaryWithoutInvadingIsAccepted() {
+        assertDoesNotThrow(() -> template(
+                concaveV(), List.of(),
+                List.of(element("Banco", StageElementType.BENCH, 50, 0, 100, 40, 0))));
+    }
+
+    @Test
+    void nullContourVerticesAreRejectedWithTheDomainException() {
+        assertThrows(StageGeometryException.class, () -> new StageBoundary(
+                Arrays.asList(p(0, 0), null, p(100, 100))));
+    }
+
+    private static StageBoundary concaveV() {
+        return new StageBoundary(List.of(p(0, 0), p(400, 0), p(400, 400), p(200, 200), p(0, 400)));
     }
 
     // ------------------------------------------------------------------
