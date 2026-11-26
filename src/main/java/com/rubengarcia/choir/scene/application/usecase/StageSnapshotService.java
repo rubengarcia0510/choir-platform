@@ -10,14 +10,12 @@ import com.rubengarcia.choir.scene.application.port.out.StageSnapshotPersistence
 import com.rubengarcia.choir.scene.application.port.out.StageTemplatePersistencePort;
 import com.rubengarcia.choir.scene.domain.StageSnapshot;
 import java.time.LocalDateTime;
-import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 /**
  * Asociación de un escenario a una inclusión del repertorio. La autorización sobre la ocurrencia se
  * ejecuta antes de leer la plantilla o escribir el snapshot. Una inclusión admite un único snapshot.
  */
-@Service
 public class StageSnapshotService implements StageSnapshotUseCase {
 
     private final StageTemplatePersistencePort templates;
