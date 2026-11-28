@@ -85,12 +85,16 @@ final class StageGeometryRows {
                 .then(insertElements(db, t, choirId, parentId, elements));
     }
 
-    static Mono<Void> deleteGeometry(DatabaseClient db, Tables t, long choirId, long parentId) {
-        return db.sql("DELETE FROM " + t.elements() + " WHERE " + t.parentColumn() + " = :parentId AND choir_id = :choirId")
+    /**
+     * El borrado solo puede operar sobre geometría de plantillas.
+     * Los detalles de snapshots son inmutables y no tienen una operación de borrado.
+     */
+    static Mono<Void> deleteTemplateGeometry(DatabaseClient db, long choirId, long parentId) {
+        return db.sql("DELETE FROM stage_elements WHERE stage_template_id = :parentId AND choir_id = :choirId")
                 .bind("parentId", parentId).bind("choirId", choirId).then()
-                .then(db.sql("DELETE FROM " + t.accesses() + " WHERE " + t.parentColumn() + " = :parentId AND choir_id = :choirId")
+                .then(db.sql("DELETE FROM stage_accesses WHERE stage_template_id = :parentId AND choir_id = :choirId")
                         .bind("parentId", parentId).bind("choirId", choirId).then())
-                .then(db.sql("DELETE FROM " + t.boundary() + " WHERE " + t.parentColumn() + " = :parentId AND choir_id = :choirId")
+                .then(db.sql("DELETE FROM stage_boundary_points WHERE stage_template_id = :parentId AND choir_id = :choirId")
                         .bind("parentId", parentId).bind("choirId", choirId).then());
     }
 

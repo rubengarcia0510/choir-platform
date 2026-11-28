@@ -85,8 +85,8 @@ public class StageTemplatePersistenceAdapter implements StageTemplatePersistence
                     if (updated == 0) {
                         return Mono.empty();
                     }
-                    return StageGeometryRows.deleteGeometry(databaseClient,
-                                    StageGeometryRows.Tables.TEMPLATE, template.choirId(), template.id())
+                    return StageGeometryRows.deleteTemplateGeometry(databaseClient,
+                                    template.choirId(), template.id())
                             .then(StageGeometryRows.insertGeometry(databaseClient,
                                     StageGeometryRows.Tables.TEMPLATE, template.choirId(), template.id(),
                                     template.boundary(), template.accesses(), template.elements()))

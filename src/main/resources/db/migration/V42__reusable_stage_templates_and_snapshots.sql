@@ -102,7 +102,7 @@ CREATE TABLE concert_stage_snapshots (
     CONSTRAINT fk_concert_stage_snapshots_inclusion FOREIGN KEY (concert_id, repertoire_item_id)
         REFERENCES concert_repertoire (concert_id, repertoire_item_id),
     CONSTRAINT fk_concert_stage_snapshots_source FOREIGN KEY (source_template_id, choir_id)
-        REFERENCES stage_templates (id, choir_id),
+        REFERENCES stage_templates (id, choir_id) ON DELETE RESTRICT,
     CONSTRAINT ck_concert_stage_snapshots_name CHECK (CHAR_LENGTH(TRIM(name)) > 0),
     CONSTRAINT ck_concert_stage_snapshots_width CHECK (width_cm > 0),
     CONSTRAINT ck_concert_stage_snapshots_depth CHECK (depth_cm > 0)
