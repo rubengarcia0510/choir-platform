@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +36,10 @@ class StageHttpIntegrationTests {
     private final java.util.List<Long> choirIds = new java.util.ArrayList<>();
 
     @Autowired
-    StageHttpIntegrationTests(WebTestClient web, JdbcTemplate jdbc, PasswordEncoder passwordEncoder) {
+    StageHttpIntegrationTests(
+            WebTestClient web,
+            JdbcTemplate jdbc,
+            PasswordEncoder passwordEncoder) {
         this.web = web;
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
@@ -43,7 +47,6 @@ class StageHttpIntegrationTests {
 
     @AfterEach
     void cleanUp() {
-        new StagePersistenceFixture(jdbc).cleanup();
         for (Long choirId : choirIds) {
             jdbc.update("DELETE FROM concert_stage_snapshot_elements WHERE choir_id = ?", choirId);
             jdbc.update("DELETE FROM concert_stage_snapshot_accesses WHERE choir_id = ?", choirId);
@@ -53,15 +56,19 @@ class StageHttpIntegrationTests {
             jdbc.update("DELETE FROM stage_accesses WHERE choir_id = ?", choirId);
             jdbc.update("DELETE FROM stage_boundary_points WHERE choir_id = ?", choirId);
             jdbc.update("DELETE FROM stage_templates WHERE choir_id = ?", choirId);
-            jdbc.update("DELETE FROM concert_repertoire WHERE concert_id IN (SELECT id FROM concerts WHERE choir_id = ?)",
+            jdbc.update(
+                    "DELETE FROM concert_repertoire WHERE concert_id IN "
+                            + "(SELECT id FROM concerts WHERE choir_id = ?)",
                     choirId);
             jdbc.update("DELETE FROM concerts WHERE choir_id = ?", choirId);
             jdbc.update("DELETE FROM repertoire_items WHERE choir_id = ?", choirId);
             jdbc.update("DELETE FROM choirs WHERE id = ?", choirId);
         }
+
         for (Long directorId : directorIds) {
             jdbc.update("DELETE FROM directors WHERE id = ?", directorId);
         }
+
         choirIds.clear();
         directorIds.clear();
     }
@@ -77,13 +84,20 @@ class StageHttpIntegrationTests {
         Scenario owner = scenario("owner");
         Session session = login(owner.email());
 
-        Map<String, Object> created = post(session, stagesPath(owner.choirId()), rectangleBody("Escenario A"), 201);
+        Map<String, Object> created = post(
+                session,
+                stagesPath(owner.choirId()),
+                rectangleBody("Escenario A"),
+                201);
         long stageId = ((Number) created.get("id")).longValue();
 
         get(session, stagePath(owner.choirId(), stageId), 200);
         assertThat(list(session, stagesPath(owner.choirId()))).hasSize(1);
+
         delete(session, stagePath(owner.choirId(), stageId), 204);
-        assertThat(get(session, stagePath(owner.choirId(), stageId), 200).get("archived")).isEqualTo(true);
+
+        assertThat(get(session, stagePath(owner.choirId(), stageId), 200).get("archived"))
+                .isEqualTo(true);
     }
 
     @Test
@@ -108,9 +122,16 @@ class StageHttpIntegrationTests {
     void invalidGeometryAnswersBadRequest() {
         Scenario owner = scenario("geometria");
         Session session = login(owner.email());
-        Map<String, Object> body = Map.of("name", "Dos vértices", "widthCm", 800, "depthCm", 600,
-                "boundary", List.of(Map.of("x", 0, "y", 0), Map.of("x", 800, "y", 0)),
-                "accesses", List.of(), "elements", List.of());
+
+        Map<String, Object> body = Map.of(
+                "name", "Dos vértices",
+                "widthCm", 800,
+                "depthCm", 600,
+                "boundary", List.of(
+                        Map.of("x", 0, "y", 0),
+                        Map.of("x", 800, "y", 0)),
+                "accesses", List.of(),
+                "elements", List.of());
 
         post(session, stagesPath(owner.choirId()), body, 400);
     }
@@ -119,15 +140,28 @@ class StageHttpIntegrationTests {
     void associationIsCreatedOnceAndExposesTheGeometryContract() {
         Scenario owner = scenario("asociacion");
         Session session = login(owner.email());
-        Map<String, Object> template = post(session, stagesPath(owner.choirId()), rectangleBody("Plantilla"), 201);
+
+        Map<String, Object> template = post(
+                session,
+                stagesPath(owner.choirId()),
+                rectangleBody("Plantilla"),
+                201);
         long stageId = ((Number) template.get("id")).longValue();
+
         String stagePath = concertStagePath(owner);
 
-        Map<String, Object> association = post(session, stagePath, Map.of("stageId", stageId), 201);
+        Map<String, Object> association = post(
+                session,
+                stagePath,
+                Map.of("stageId", stageId),
+                201);
+
         assertThat(((Number) association.get("version")).intValue()).isEqualTo(1);
+
         post(session, stagePath, Map.of("stageId", stageId), 409);
 
         Map<String, Object> geometry = get(session, stagePath, 200);
+
         assertThat(((Number) geometry.get("snapshotId")).longValue())
                 .isEqualTo(((Number) association.get("snapshotId")).longValue());
         assertThat(geometry.get("contour")).isNotNull();
@@ -139,92 +173,262 @@ class StageHttpIntegrationTests {
         Scenario owner = scenario("geometria-dueno");
         Scenario intruder = scenario("geometria-intruso");
         Session ownerSession = login(owner.email());
-        Map<String, Object> template = post(ownerSession, stagesPath(owner.choirId()), rectangleBody("Base"), 201);
+
+        Map<String, Object> template = post(
+                ownerSession,
+                stagesPath(owner.choirId()),
+                rectangleBody("Base"),
+                201);
         long stageId = ((Number) template.get("id")).longValue();
-        post(ownerSession, concertStagePath(owner), Map.of("stageId", stageId), 201);
+
+        post(
+                ownerSession,
+                concertStagePath(owner),
+                Map.of("stageId", stageId),
+                201);
 
         Session intruderSession = login(intruder.email());
+
         get(intruderSession, concertStagePath(owner), 403);
-        post(intruderSession, concertStagePath(owner), Map.of("stageId", stageId), 403);
+        post(
+                intruderSession,
+                concertStagePath(owner),
+                Map.of("stageId", stageId),
+                403);
+    }
+
+    @Test
+    void snapshotRemainsUnchangedAfterTemplateUpdateAndArchive() {
+        Scenario owner = scenario("snapshot-inmutable");
+        Session session = login(owner.email());
+
+        Map<String, Object> created = post(
+                session,
+                stagesPath(owner.choirId()),
+                rectangleBody("Original"),
+                201);
+        long stageId = ((Number) created.get("id")).longValue();
+
+        String templatePath = stagePath(owner.choirId(), stageId);
+        String concertPath = concertStagePath(owner);
+
+        Map<String, Object> originalSnapshot = post(
+                session,
+                concertPath,
+                Map.of("stageId", stageId),
+                201);
+
+        Map<String, Object> replacement = Map.of(
+                "name", "Escenario modificado",
+                "widthCm", 900,
+                "depthCm", 700,
+                "boundary", List.of(
+                        Map.of("x", 0, "y", 0),
+                        Map.of("x", 900, "y", 0),
+                        Map.of("x", 900, "y", 700),
+                        Map.of("x", 0, "y", 700)),
+                "accesses", List.of(),
+                "elements", List.of());
+
+        put(session, templatePath, replacement, 200);
+
+        Map<String, Object> updatedTemplate = get(session, templatePath, 200);
+        assertThat(((Number) updatedTemplate.get("widthCm")).intValue()).isEqualTo(900);
+        assertThat(updatedTemplate.get("name")).isEqualTo("Escenario modificado");
+
+        delete(session, templatePath, 204);
+
+        Map<String, Object> archivedTemplate = get(session, templatePath, 200);
+        assertThat(archivedTemplate.get("archived")).isEqualTo(true);
+
+        Map<String, Object> historicalGeometry = get(session, concertPath, 200);
+
+        assertThat(((Number) historicalGeometry.get("snapshotId")).longValue())
+                .isEqualTo(((Number) originalSnapshot.get("snapshotId")).longValue());
+        assertThat(((Number) historicalGeometry.get("version")).intValue()).isEqualTo(1);
+        assertThat(((Number) historicalGeometry.get("widthCm")).intValue()).isEqualTo(800);
+        assertThat(((Number) historicalGeometry.get("depthCm")).intValue()).isEqualTo(600);
+        assertThat(historicalGeometry.get("contour"))
+                .isEqualTo(originalSnapshot.get("contour"));
+        assertThat(historicalGeometry.get("elements"))
+                .isEqualTo(originalSnapshot.get("elements"));
     }
 
     private Scenario scenario(String suffix) {
         String unique = suffix + "-" + UUID.randomUUID();
         String email = unique + "@example.test";
-        jdbc.update("INSERT INTO directors (display_name, email, password_hash, email_verified) VALUES (?, ?, ?, TRUE)",
-                "Director " + unique, email, passwordEncoder.encode(PASSWORD));
-        Long directorId = jdbc.queryForObject("SELECT id FROM directors WHERE email = ?", Long.class, email);
+
+        jdbc.update(
+                "INSERT INTO directors (display_name, email, password_hash, email_verified) "
+                        + "VALUES (?, ?, ?, TRUE)",
+                "Director " + unique,
+                email,
+                passwordEncoder.encode(PASSWORD));
+
+        Long directorId = jdbc.queryForObject(
+                "SELECT id FROM directors WHERE email = ?",
+                Long.class,
+                email);
         directorIds.add(directorId);
-        jdbc.update("INSERT INTO choirs (director_id, name) VALUES (?, ?)", directorId, "Coro " + unique);
-        Long choirId = jdbc.queryForObject("SELECT id FROM choirs WHERE director_id = ? AND name = ?",
-                Long.class, directorId, "Coro " + unique);
+
+        jdbc.update(
+                "INSERT INTO choirs (director_id, name) VALUES (?, ?)",
+                directorId,
+                "Coro " + unique);
+
+        Long choirId = jdbc.queryForObject(
+                "SELECT id FROM choirs WHERE director_id = ? AND name = ?",
+                Long.class,
+                directorId,
+                "Coro " + unique);
         choirIds.add(choirId);
-        jdbc.update("INSERT INTO concerts (choir_id, title) VALUES (?, ?)", choirId, "Concierto " + unique);
-        Long concertId = jdbc.queryForObject("SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
-                Long.class, choirId, "Concierto " + unique);
-        jdbc.update("INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)", choirId, "Obra " + unique);
-        Long workId = jdbc.queryForObject("SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
-                Long.class, choirId, "Obra " + unique);
-        jdbc.update("INSERT INTO concert_repertoire (concert_id, repertoire_item_id, order_index) VALUES (?, ?, 0)",
-                concertId, workId);
+
+        jdbc.update(
+                "INSERT INTO concerts (choir_id, title) VALUES (?, ?)",
+                choirId,
+                "Concierto " + unique);
+
+        Long concertId = jdbc.queryForObject(
+                "SELECT id FROM concerts WHERE choir_id = ? AND title = ?",
+                Long.class,
+                choirId,
+                "Concierto " + unique);
+
+        jdbc.update(
+                "INSERT INTO repertoire_items (choir_id, title) VALUES (?, ?)",
+                choirId,
+                "Obra " + unique);
+
+        Long workId = jdbc.queryForObject(
+                "SELECT id FROM repertoire_items WHERE choir_id = ? AND title = ?",
+                Long.class,
+                choirId,
+                "Obra " + unique);
+
+        jdbc.update(
+                "INSERT INTO concert_repertoire (concert_id, repertoire_item_id, order_index) "
+                        + "VALUES (?, ?, 0)",
+                concertId,
+                workId);
+
         return new Scenario(email, choirId, concertId, workId);
     }
 
     private Session login(String email) {
-        EntityExchangeResult<Map<String, String>> csrf = web.get().uri("/api/auth/csrf")
-                .exchange().expectStatus().isOk()
+        EntityExchangeResult<Map<String, String>> csrf = web.get()
+                .uri("/api/auth/csrf")
+                .exchange()
+                .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<Map<String, String>>() {})
                 .returnResult();
+
         ResponseCookie initial = csrf.getResponseCookies().getFirst("SESSION");
         String token = csrf.getResponseBody().get("token");
 
-        EntityExchangeResult<String> login = web.post().uri("/api/auth/login")
+        EntityExchangeResult<String> login = web.post()
+                .uri("/api/auth/login")
                 .cookie("SESSION", initial.getValue())
                 .header("X-CSRF-TOKEN", token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(Map.of("email", email, "password", PASSWORD))
-                .exchange().expectStatus().isOk()
-                .expectBody(String.class).returnResult();
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .returnResult();
+
         return new Session(login.getResponseCookies().getFirst("SESSION").getValue(), token);
     }
 
-    private Map<String, Object> post(Session s, String uri, Object body, int status) {
-        return exchange(web.post().uri(uri).cookie("SESSION", s.id()).header("X-CSRF-TOKEN", s.csrf())
-                .contentType(MediaType.APPLICATION_JSON).bodyValue(body), status);
+    private Map<String, Object> post(Session session, String uri, Object body, int status) {
+        return exchange(
+                web.post()
+                        .uri(uri)
+                        .cookie("SESSION", session.id())
+                        .header("X-CSRF-TOKEN", session.csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(body),
+                status);
     }
 
-    private Map<String, Object> get(Session s, String uri, int status) {
-        return exchange(web.get().uri(uri).cookie("SESSION", s.id()), status);
+    private Map<String, Object> put(Session session, String uri, Object body, int status) {
+        return exchange(
+                web.put()
+                        .uri(uri)
+                        .cookie("SESSION", session.id())
+                        .header("X-CSRF-TOKEN", session.csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(body),
+                status);
     }
 
-    private List<Map<String, Object>> list(Session s, String uri) {
-        return web.get().uri(uri).cookie("SESSION", s.id()).exchange().expectStatus().isOk()
+    private Map<String, Object> get(Session session, String uri, int status) {
+        return exchange(
+                web.get().uri(uri).cookie("SESSION", session.id()),
+                status);
+    }
+
+    private List<Map<String, Object>> list(Session session, String uri) {
+        return web.get()
+                .uri(uri)
+                .cookie("SESSION", session.id())
+                .exchange()
+                .expectStatus().isOk()
                 .expectBody(new ParameterizedTypeReference<List<Map<String, Object>>>() {})
-                .returnResult().getResponseBody();
+                .returnResult()
+                .getResponseBody();
     }
 
-    private void delete(Session s, String uri, int status) {
-        web.delete().uri(uri).cookie("SESSION", s.id()).header("X-CSRF-TOKEN", s.csrf())
-                .exchange().expectStatus().isEqualTo(status);
+    private void delete(Session session, String uri, int status) {
+        web.delete()
+                .uri(uri)
+                .cookie("SESSION", session.id())
+                .header("X-CSRF-TOKEN", session.csrf())
+                .exchange()
+                .expectStatus()
+                .isEqualTo(status);
     }
 
-    private Map<String, Object> exchange(WebTestClient.RequestHeadersSpec<?> request, int status) {
-        WebTestClient.ResponseSpec response = request.exchange().expectStatus().isEqualTo(status);
+    private Map<String, Object> exchange(
+            WebTestClient.RequestHeadersSpec<?> request,
+            int status) {
+        WebTestClient.ResponseSpec response = request.exchange()
+                .expectStatus()
+                .isEqualTo(status);
+
         if (status == 204) {
             return Map.of();
         }
-        return response.expectBody(new ParameterizedTypeReference<Map<String, Object>>() {})
-                .returnResult().getResponseBody();
+
+        return response
+                .expectBody(new ParameterizedTypeReference<Map<String, Object>>() {})
+                .returnResult()
+                .getResponseBody();
     }
 
     private static Map<String, Object> rectangleBody(String name) {
-        return Map.of("name", name, "widthCm", 800, "depthCm", 600,
-                "boundary", List.of(Map.of("x", 0, "y", 0), Map.of("x", 800, "y", 0),
-                        Map.of("x", 800, "y", 600), Map.of("x", 0, "y", 600)),
-                "accesses", List.of(Map.of("name", "Puerta",
-                        "start", Map.of("x", 300, "y", 0), "end", Map.of("x", 400, "y", 0))),
-                "elements", List.of(Map.of("name", "Escalón", "type", "STEP",
-                        "x", 100, "y", 500, "widthCm", 200, "depthCm", 30, "elevationCm", 15.125)));
+        return Map.of(
+                "name", name,
+                "widthCm", 800,
+                "depthCm", 600,
+                "boundary", List.of(
+                        Map.of("x", 0, "y", 0),
+                        Map.of("x", 800, "y", 0),
+                        Map.of("x", 800, "y", 600),
+                        Map.of("x", 0, "y", 600)),
+                "accesses", List.of(
+                        Map.of(
+                                "name", "Puerta",
+                                "start", Map.of("x", 300, "y", 0),
+                                "end", Map.of("x", 400, "y", 0))),
+                "elements", List.of(
+                        Map.of(
+                                "name", "Escalón",
+                                "type", "STEP",
+                                "x", 100,
+                                "y", 500,
+                                "widthCm", 200,
+                                "depthCm", 30,
+                                "elevationCm", 15.125)));
     }
 
     private static String stagesPath(long choirId) {
@@ -235,9 +439,11 @@ class StageHttpIntegrationTests {
         return stagesPath(choirId) + "/" + stageId;
     }
 
-    private static String concertStagePath(Scenario s) {
-        return "/api/choirs/" + s.choirId() + "/concerts/" + s.concertId()
-                + "/repertoire/" + s.workId() + "/stage";
+    private static String concertStagePath(Scenario scenario) {
+        return "/api/choirs/" + scenario.choirId()
+                + "/concerts/" + scenario.concertId()
+                + "/repertoire/" + scenario.workId()
+                + "/stage";
     }
 
     private record Scenario(String email, long choirId, long concertId, long workId) {

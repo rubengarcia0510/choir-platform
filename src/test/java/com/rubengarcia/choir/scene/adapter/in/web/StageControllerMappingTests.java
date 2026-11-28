@@ -2,12 +2,12 @@ package com.rubengarcia.choir.scene.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.rubengarcia.choir.scene.adapter.in.web.StageDtos.AssociateStageRequest;
+import com.rubengarcia.choir.scene.adapter.in.web.StageDtos.PointDto;
 import com.rubengarcia.choir.scene.application.port.in.StageGeometryQueryUseCase;
 import com.rubengarcia.choir.scene.application.port.in.StageSnapshotUseCase;
 import com.rubengarcia.choir.scene.application.port.in.StageTemplateUseCase;
@@ -17,7 +17,6 @@ import com.rubengarcia.choir.scene.domain.StageBoundaryPoint;
 import com.rubengarcia.choir.scene.domain.StageSnapshot;
 import com.rubengarcia.choir.scene.domain.StageTemplate;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,7 +30,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-/** Mapeo de controllers con casos de uso mockeados: argumentos, identidad del director y códigos HTTP. */
 @ExtendWith(MockitoExtension.class)
 class StageControllerMappingTests {
 
@@ -63,12 +61,12 @@ class StageControllerMappingTests {
     @Test
     void templateUpdateBindsTheStagePathIdentityIntoTheReplacement() {
         when(authentication.getName()).thenReturn(EMAIL);
-        when(templates.update(eq(EMAIL), eq(1L), eq(10L), any())).thenReturn(Mono.just(template(10L)));
+        when(templates.update(eq(EMAIL), eq(1L), eq(10L), any()))
+                .thenReturn(Mono.just(template(10L)));
         StageTemplateController controller = new StageTemplateController(templates);
 
         StepVerifier.create(controller.update(authentication, 1L, 10L,
-                        new StageDtos.StageTemplateRequest("Escenario", bd("800"), bd("600"),
-                                List.of(p("0", "0"), p("800", "0"), p("800", "600")), List.of(), List.of())))
+                        request()))
                 .expectNextCount(1)
                 .verifyComplete();
 
@@ -84,9 +82,7 @@ class StageControllerMappingTests {
         when(templates.create(eq(EMAIL), any())).thenReturn(Mono.just(template(10L)));
         StageTemplateController controller = new StageTemplateController(templates);
 
-        StepVerifier.create(controller.create(authentication, 1L,
-                        new StageDtos.StageTemplateRequest("Escenario", bd("800"), bd("600"),
-                                List.of(p("0", "0"), p("800", "0"), p("800", "600")), List.of(), List.of())))
+        StepVerifier.create(controller.create(authentication, 1L, request()))
                 .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED))
                 .verifyComplete();
     }
@@ -104,10 +100,12 @@ class StageControllerMappingTests {
     @Test
     void associationCreatesAndAnswersCreatedWithTheGeometryView() {
         when(authentication.getName()).thenReturn(EMAIL);
-        when(snapshots.associate(EMAIL, 1L, 5L, 9L, 10L)).thenReturn(Mono.just(snapshot(77L)));
+        when(snapshots.associate(EMAIL, 1L, 5L, 9L, 10L))
+                .thenReturn(Mono.just(snapshot(77L)));
         ConcertStageController controller = new ConcertStageController(snapshots, geometry);
 
-        StepVerifier.create(controller.associate(authentication, 1L, 5L, 9L, new AssociateStageRequest(10L)))
+        StepVerifier.create(controller.associate(authentication, 1L, 5L, 9L,
+                        new AssociateStageRequest(10L)))
                 .assertNext(response -> {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
                     ResponseEntity<StageDtos.StageGeometryResponse> entity = response;
@@ -120,7 +118,8 @@ class StageControllerMappingTests {
     @Test
     void geometryQueryReturnsTheStageGeometryContract() {
         when(authentication.getName()).thenReturn(EMAIL);
-        when(geometry.geometry(EMAIL, 1L, 5L, 9L)).thenReturn(Mono.just(StageGeometry.from(snapshot(77L))));
+        when(geometry.geometry(EMAIL, 1L, 5L, 9L))
+                .thenReturn(Mono.just(StageGeometry.from(snapshot(77L))));
         ConcertStageController controller = new ConcertStageController(snapshots, geometry);
 
         StepVerifier.create(controller.geometry(authentication, 1L, 5L, 9L))
@@ -128,17 +127,28 @@ class StageControllerMappingTests {
                 .verifyComplete();
     }
 
+    private static StageDtos.StageTemplateRequest request() {
+        return new StageDtos.StageTemplateRequest(
+                "Escenario",
+                bd("800"),
+                bd("600"),
+                List.of(dto("0", "0"), dto("800", "0"), dto("800", "600")),
+                List.of(),
+                List.of());
+    }
+
     private static StageTemplate template(long id) {
         return new StageTemplate(id, 1L, "Escenario", bd("800"), bd("600"),
-                new StageBoundary(List.of(p0(), p("800", "0"), p("800", "600"))), List.of(), List.of(), false);
+                new StageBoundary(List.of(p("0", "0"), p("800", "0"), p("800", "600"))),
+                List.of(), List.of(), false);
     }
 
     private static StageSnapshot snapshot(long id) {
         return StageWebMapperTests.snapshot(id);
     }
 
-    private static StageBoundaryPoint p0() {
-        return p("0", "0");
+    private static PointDto dto(String x, String y) {
+        return new PointDto(bd(x), bd(y));
     }
 
     private static StageBoundaryPoint p(String x, String y) {
